@@ -1,0 +1,3040 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Game Vault — Fuzzy Library</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0a0b;
+  --bg-soft: #131316;
+  --card: #16161b;
+  --card-hover: #1c1c22;
+  --border: rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.16);
+  --text: #f0ece4;
+  --muted: #76716a;
+  --dim: #4a4640;
+  --accent: #f5a623;
+  --accent-hover: #ffb74d;
+  --accent-soft: rgba(245,166,35,0.12);
+  --success: #4ade80;
+  --success-soft: rgba(74,222,128,0.1);
+  --danger: #ef4444;
+  --danger-soft: rgba(239,68,68,0.1);
+  --info: #6db6ff;
+  --info-soft: rgba(109,182,255,0.1);
+  --display: 'Instrument Serif', Georgia, serif;
+  --body: 'Bricolage Grotesque', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-image:
+    radial-gradient(ellipse 80% 50% at 80% 0%, rgba(245,166,35,0.08), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 10% 100%, rgba(109,182,255,0.05), transparent 60%);
+  min-height: 100vh;
+}
+
+.app { max-width: 1200px; margin: 0 auto; padding: 24px 20px 80px; }
+
+/* ─── Header ─────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding-bottom: 28px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+.brand-mark {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 6px;
+}
+.brand-title {
+  font-family: var(--display);
+  font-size: 48px;
+  font-weight: 400;
+  font-style: italic;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.brand-sub {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  margin-top: 8px;
+}
+.stats { display: flex; gap: 8px; flex-wrap: wrap; }
+.stat {
+  background: var(--card);
+  border: 1px solid var(--border);
+  padding: 8px 14px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.stat-num { color: var(--text); font-weight: 600; margin-left: 8px; }
+
+/* ─── Tabs ───────────────────────────────────────────────── */
+.tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 14px 20px;
+  font-family: var(--body);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.18s;
+  white-space: nowrap;
+  position: relative;
+}
+.tab:hover { color: var(--text); }
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.tab-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  margin-left: 6px;
+  opacity: 0.7;
+}
+
+/* ─── Views ──────────────────────────────────────────────── */
+.view { display: none; animation: fadeIn 0.25s ease; }
+.view.active { display: block; }
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ─── Toolbar / inputs ───────────────────────────────────── */
+.toolbar { display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px; }
+.toolbar-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+.input-group { position: relative; flex: 1; min-width: 0; }
+.input-group .input { padding-left: 36px; }
+.input-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+  font-family: var(--mono);
+  font-size: 14px;
+}
+
+.input, .textarea, .select {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 11px 14px;
+  border-radius: 6px;
+  font-family: var(--body);
+  font-size: 14px;
+  transition: border-color 0.15s, background 0.15s;
+  width: 100%;
+}
+.input:focus, .textarea:focus, .select:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--card);
+}
+.textarea {
+  min-height: 220px;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.select {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M3 4.5l3 3 3-3' stroke='%2376716a' stroke-width='1.5' fill='none'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+  width: auto;
+}
+
+.btn {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 11px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--body);
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--card-hover);
+}
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0a0a0b;
+  font-weight: 600;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.btn-success { color: var(--success); border-color: rgba(74,222,128,0.3); }
+.btn-success:hover { background: var(--success-soft); }
+.btn-danger { color: var(--danger); border-color: rgba(239,68,68,0.3); }
+.btn-danger:hover { background: var(--danger-soft); }
+.btn-info { color: var(--info); border-color: rgba(109,182,255,0.3); }
+.btn-info:hover { background: var(--info-soft); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--muted); padding: 6px 10px; }
+.btn-ghost:hover { color: var(--text); background: var(--card); border-color: transparent; }
+.btn-sm { padding: 7px 12px; font-size: 12px; }
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--muted);
+}
+.checkbox input { accent-color: var(--accent); }
+.checkbox:hover { color: var(--text); }
+
+/* File picker — input overlays the label so tap works everywhere */
+.file-picker-btn {
+  position: relative;
+  cursor: pointer;
+  overflow: hidden;
+}
+.file-picker-btn input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 0; /* Some Android browsers respect tap area better with this */
+}
+
+/* ─── List ───────────────────────────────────────────────── */
+.list-wrap {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  background: var(--bg-soft);
+}
+.list-head .filter-info { color: var(--accent); }
+.list-scroll {
+  height: 600px;
+  overflow-y: auto;
+  position: relative;
+}
+.virtual-spacer { position: relative; }
+.row {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  gap: 14px;
+  transition: background 0.1s;
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 48px;
+}
+.row:hover { background: var(--bg-soft); }
+.row .serial {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  min-width: 56px;
+  flex-shrink: 0;
+}
+.row .name {
+  flex: 1;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row .name mark {
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 1px 2px;
+  border-radius: 2px;
+}
+.row .actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+.row:hover .actions, .row:focus-within .actions { opacity: 1; }
+.row .badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
+}
+.badge-dup { background: var(--accent-soft); color: var(--accent); }
+.badge-played { background: var(--success-soft); color: var(--success); }
+
+.empty {
+  padding: 80px 24px;
+  text-align: center;
+  color: var(--muted);
+}
+.empty-icon { font-size: 32px; margin-bottom: 12px; opacity: 0.4; }
+.empty-text { font-family: var(--mono); font-size: 12px; letter-spacing: 0.04em; }
+
+/* ─── Bulk results ───────────────────────────────────────── */
+.results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+.result-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.result-card.found { border-top: 3px solid var(--success); }
+.result-card.missing { border-top: 3px solid var(--danger); }
+.result-card.extras { border-top: 3px solid var(--info); }
+
+.result-header {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.result-title {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 4px;
+}
+.result-desc { font-size: 12px; color: var(--muted); }
+.result-count {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 36px;
+  line-height: 1;
+}
+.result-card.found .result-count { color: var(--success); }
+.result-card.missing .result-count { color: var(--danger); }
+.result-card.extras .result-count { color: var(--info); }
+
+.result-list {
+  max-height: 360px;
+  overflow-y: auto;
+  flex: 1;
+  padding: 6px 0;
+}
+.result-item {
+  padding: 8px 18px;
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+.result-item:hover { background: var(--bg-soft); }
+.result-item .item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.match-info {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.match-info.exact { color: var(--success); }
+.match-info.fuzzy { color: var(--accent); }
+
+/* Duplicate review pair rows */
+.dup-pair {
+  padding: 10px 18px;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dup-pair:hover { background: var(--bg-soft); }
+.dup-pair-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.dup-pair-line .label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  width: 60px;
+  flex-shrink: 0;
+}
+.dup-pair-line .label.new { color: var(--accent); }
+.dup-pair-line .label.existing { color: var(--muted); }
+.dup-pair-line .name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dup-pair-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+  margin-left: 60px;
+  flex-wrap: wrap;
+}
+.dup-pair-actions .btn-sm {
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+.result-actions {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  background: var(--bg-soft);
+}
+
+/* ─── Toast ──────────────────────────────────────────────── */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 20px;
+  font-size: 13px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  z-index: 100;
+  opacity: 0;
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+  max-width: 90vw;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.success { border-color: rgba(74,222,128,0.5); }
+.toast.error { border-color: rgba(239,68,68,0.5); color: var(--danger); }
+.toast.info { border-color: rgba(109,182,255,0.5); }
+
+/* ─── Modal ──────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(4px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 20px;
+}
+.modal-overlay.show { display: flex; }
+.modal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px;
+  width: 100%;
+  max-width: 460px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+.modal h3 {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 26px;
+  margin-bottom: 6px;
+}
+.modal p { color: var(--muted); margin-bottom: 18px; font-size: 13px; }
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 22px;
+}
+
+/* ─── Section header ─────────────────────────────────────── */
+.section-title {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 28px;
+  font-weight: 400;
+  margin-bottom: 4px;
+}
+.section-desc {
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+/* ─── Settings cards ─────────────────────────────────────── */
+.setting-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 12px;
+}
+.setting-card h4 { font-size: 14px; margin-bottom: 4px; }
+.setting-card p { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+.setting-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+/* ─── Status bar ─────────────────────────────────────────── */
+.status-bar {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  padding: 8px 12px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 12px;
+  letter-spacing: 0.04em;
+}
+
+/* ─── Mobile ─────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .app { padding: 16px 14px 80px; }
+  .brand-title { font-size: 36px; }
+  .brand-sub { display: none; }
+  .header { padding-bottom: 20px; margin-bottom: 18px; }
+  .toolbar-row { flex-direction: column; align-items: stretch; }
+  .toolbar-row .btn, .toolbar-row .select { width: 100%; }
+  .row { padding: 0 12px; gap: 10px; }
+  .row .actions { opacity: 1; }
+  .row .name { font-size: 13px; }
+  .list-scroll { height: 520px; }
+  .stats { width: 100%; }
+  .stat { flex: 1; text-align: center; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+</style>
+</head>
+<body>
+<div class="app">
+
+<header class="header">
+  <div>
+    <span class="brand-mark">◆ vault.sys / v1</span>
+    <h1 class="brand-title">game vault</h1>
+    <div class="brand-sub">fuzzy-aware library · tokenized matching engine</div>
+  </div>
+  <div class="stats">
+    <div class="stat">vault<span class="stat-num" id="stat-vault">0</span></div>
+    <div class="stat">played<span class="stat-num" id="stat-played">0</span></div>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="vault">Vault <span class="tab-count" id="tc-vault">(0)</span></button>
+  <button class="tab" data-tab="played">Played <span class="tab-count" id="tc-played">(0)</span></button>
+  <button class="tab" data-tab="bulk-add">Bulk Add</button>
+  <button class="tab" data-tab="bulk-check">Bulk Check</button>
+  <button class="tab" data-tab="settings">Settings</button>
+</nav>
+
+<!-- ──── VAULT VIEW ──────────────────────────────────────── -->
+<section class="view active" id="view-vault">
+  <h2 class="section-title">main vault</h2>
+  <p class="section-desc">তোমার পুরো collection। search fuzzy, এতে special character, year, edition keyword match করে।</p>
+
+  <div class="toolbar">
+    <div class="toolbar-row">
+      <div class="input-group">
+        <span class="input-icon">+</span>
+        <input class="input" id="vault-add-input" placeholder="নতুন গেম যোগ করো..." autocomplete="off">
+      </div>
+      <button class="btn btn-primary" id="vault-add-btn">Add</button>
+    </div>
+    <div class="toolbar-row">
+      <div class="input-group">
+        <span class="input-icon">⌕</span>
+        <input class="input" id="vault-search" placeholder="search ভল্ট (fuzzy)..." autocomplete="off">
+      </div>
+      <select class="select" id="vault-sort">
+        <option value="recent">Recent first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="az">A → Z</option>
+        <option value="za">Z → A</option>
+      </select>
+      <button class="btn btn-sm" id="vault-dup-toggle" title="Show duplicates only">Duplicates</button>
+      <button class="btn btn-sm btn-danger" id="vault-dup-remove" title="Remove duplicate entries (keep first)">Remove dups</button>
+    </div>
+  </div>
+
+  <div class="status-bar" id="vault-status">loading…</div>
+
+  <div class="list-wrap">
+    <div class="list-head">
+      <span id="vault-list-info">items</span>
+      <span class="filter-info" id="vault-filter-info"></span>
+    </div>
+    <div class="list-scroll" id="vault-list-scroll">
+      <div class="virtual-spacer" id="vault-spacer"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ──── PLAYED VIEW ─────────────────────────────────────── -->
+<section class="view" id="view-played">
+  <h2 class="section-title">played list</h2>
+  <p class="section-desc">যেগুলো ইতিমধ্যে খেলেছ। আলাদা list, আলাদা search।</p>
+
+  <div class="toolbar">
+    <div class="toolbar-row">
+      <div class="input-group">
+        <span class="input-icon">+</span>
+        <input class="input" id="played-add-input" placeholder="খেলেছো এমন গেম যোগ করো..." autocomplete="off">
+      </div>
+      <button class="btn btn-primary" id="played-add-btn">Add</button>
+    </div>
+    <div class="toolbar-row">
+      <div class="input-group">
+        <span class="input-icon">⌕</span>
+        <input class="input" id="played-search" placeholder="search played list..." autocomplete="off">
+      </div>
+      <select class="select" id="played-sort">
+        <option value="recent">Recent first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="az">A → Z</option>
+        <option value="za">Z → A</option>
+      </select>
+      <button class="btn btn-sm" id="played-dup-toggle">Duplicates</button>
+      <button class="btn btn-sm btn-danger" id="played-dup-remove" title="Remove duplicate entries (keep first)">Remove dups</button>
+    </div>
+  </div>
+
+  <div class="status-bar" id="played-status">loading…</div>
+
+  <div class="list-wrap">
+    <div class="list-head">
+      <span id="played-list-info">items</span>
+      <span class="filter-info" id="played-filter-info"></span>
+    </div>
+    <div class="list-scroll" id="played-list-scroll">
+      <div class="virtual-spacer" id="played-spacer"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ──── BULK ADD VIEW ───────────────────────────────────── -->
+<section class="view" id="view-bulk-add">
+  <h2 class="section-title">bulk add</h2>
+  <p class="section-desc">এক লাইনে এক গেম। ১ লাখ পর্যন্ত একসাথে। duplicate auto skip হবে।</p>
+
+  <div class="toolbar">
+    <textarea class="textarea" id="bulk-add-text" placeholder="Max Payne&#10;Assassin's Creed: Brotherhood&#10;Prince of Persia&#10;..."></textarea>
+    <div class="toolbar-row">
+      <select class="select" id="bulk-add-target">
+        <option value="vault">→ Add to Vault</option>
+        <option value="played">→ Add to Played</option>
+      </select>
+      <label class="checkbox">
+        <input type="checkbox" id="bulk-add-dedupe" checked>
+        Skip duplicates (fuzzy)
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" id="bulk-add-trim" checked>
+        Trim & clean lines
+      </label>
+      <button class="btn btn-primary" id="bulk-add-go">Process & Add</button>
+      <button class="btn" id="bulk-add-clear">Clear</button>
+    </div>
+  </div>
+
+  <div id="bulk-add-result" style="display:none;">
+    <div class="results-grid">
+      <div class="result-card found">
+        <div class="result-header">
+          <div>
+            <span class="result-title">✓ added</span>
+            <span class="result-desc">নতুন entry hisebe save হলো</span>
+          </div>
+          <div class="result-count" id="ba-added-count">0</div>
+        </div>
+      </div>
+      <div class="result-card missing">
+        <div class="result-header">
+          <div>
+            <span class="result-title">✗ skipped</span>
+            <span class="result-desc">exact duplicate — vault এ আগে থেকেই আছে</span>
+          </div>
+          <div class="result-count" id="ba-skipped-count">0</div>
+        </div>
+        <div class="result-list" id="ba-skipped-list"></div>
+        <div class="result-actions" id="ba-skipped-actions" style="display:none;">
+          <button class="btn btn-sm btn-success" id="ba-add-all-skipped">Add all anyway</button>
+        </div>
+      </div>
+      <div class="result-card extras">
+        <div class="result-header">
+          <div>
+            <span class="result-title">⚠ possible duplicates</span>
+            <span class="result-desc">added হয়েছে কিন্তু similar কিছু আছে — review করো</span>
+          </div>
+          <div class="result-count" id="ba-flagged-count">0</div>
+        </div>
+        <div class="result-list" id="ba-flagged-list"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ──── BULK CHECK VIEW ─────────────────────────────────── -->
+<section class="view" id="view-bulk-check">
+  <h2 class="section-title">bulk check</h2>
+  <p class="section-desc">তোমার list-এর প্রতিটা item ভল্টে আছে কি না, কোনগুলো নেই, আর ভল্টে কোনগুলো extra আছে — সব এক সাথে।</p>
+
+  <div class="toolbar">
+    <textarea class="textarea" id="bulk-check-text" placeholder="যেই list চেক করতে চাও সেগুলো paste করো, এক লাইনে এক গেম..."></textarea>
+    <div class="toolbar-row">
+      <select class="select" id="bulk-check-target">
+        <option value="vault">⚙ Check against Vault</option>
+        <option value="played">⚙ Check against Played</option>
+      </select>
+      <label class="checkbox">
+        <input type="checkbox" id="bulk-check-fuzzy" checked>
+        Fuzzy fallback (Levenshtein)
+      </label>
+      <button class="btn btn-primary" id="bulk-check-go">Run Check</button>
+      <button class="btn" id="bulk-check-clear">Clear</button>
+    </div>
+  </div>
+
+  <div id="bulk-check-status" class="status-bar" style="display:none;"></div>
+
+  <div id="bulk-check-result" style="display:none;">
+    <div class="results-grid">
+      <!-- FOUND -->
+      <div class="result-card found">
+        <div class="result-header">
+          <div>
+            <span class="result-title">✓ found</span>
+            <span class="result-desc">ভল্টে আছে</span>
+          </div>
+          <div class="result-count" id="bc-found-count">0</div>
+        </div>
+        <div class="result-list" id="bc-found-list"></div>
+        <div class="result-actions">
+          <button class="btn btn-sm btn-success" data-copy="found">Copy</button>
+          <button class="btn btn-sm btn-success" data-mark-played>Mark all Played</button>
+        </div>
+      </div>
+
+      <!-- MISSING -->
+      <div class="result-card missing">
+        <div class="result-header">
+          <div>
+            <span class="result-title">✗ missing</span>
+            <span class="result-desc">তোমার list-এ আছে, ভল্টে নাই</span>
+          </div>
+          <div class="result-count" id="bc-missing-count">0</div>
+        </div>
+        <div class="result-list" id="bc-missing-list"></div>
+        <div class="result-actions">
+          <button class="btn btn-sm btn-danger" data-copy="missing">Copy</button>
+          <button class="btn btn-sm btn-danger" data-add-missing>Add all to Vault</button>
+        </div>
+      </div>
+
+      <!-- EXTRAS -->
+      <div class="result-card extras">
+        <div class="result-header">
+          <div>
+            <span class="result-title">+ extras</span>
+            <span class="result-desc">ভল্টে আছে, তোমার list-এ নাই</span>
+          </div>
+          <div class="result-count" id="bc-extras-count">0</div>
+        </div>
+        <div class="result-list" id="bc-extras-list"></div>
+        <div class="result-actions">
+          <button class="btn btn-sm btn-info" data-copy="extras">Copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ──── SETTINGS VIEW ───────────────────────────────────── -->
+<section class="view" id="view-settings">
+  <h2 class="section-title">settings</h2>
+  <p class="section-desc">data export, import, ও config।</p>
+
+  <div class="setting-card">
+    <h4>Export data</h4>
+    <p>পুরো vault + played JSON file হিসেবে download হবে। backup করে রাখো।</p>
+    <div class="setting-row">
+      <button class="btn" id="export-json">Download JSON</button>
+      <button class="btn" id="export-csv">Download CSV</button>
+    </div>
+  </div>
+
+  <div class="setting-card">
+    <h4>Download full app (HTML)</h4>
+    <p>পুরো app + তোমার data একটা single HTML file হিসেবে save হবে। যেকোনো PC/phone-এ open করলে data সহ চলবে। Claude Code-এ source হিসেবে দিতে পারো।</p>
+    <div class="setting-row">
+      <button class="btn btn-primary" id="export-html-with-data">📦 HTML + my data</button>
+      <button class="btn" id="export-html-blank">📄 HTML (blank, source only)</button>
+    </div>
+    <div id="export-html-info" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:10px;"></div>
+  </div>
+
+  <div class="setting-card">
+    <h4>Import from file</h4>
+    <p>PC বা Android থেকে file নাও — <span style="font-family:var(--mono);">.txt</span> (এক লাইনে এক গেম), <span style="font-family:var(--mono);">.csv</span>, অথবা <span style="font-family:var(--mono);">.json</span>। existing data-র সাথে merge হবে, fuzzy duplicate skip।</p>
+    <div class="setting-row" style="gap:10px;">
+      <select class="select" id="import-target">
+        <option value="vault">→ Add to Vault</option>
+        <option value="played">→ Add to Played</option>
+      </select>
+      <label class="btn btn-primary file-picker-btn">
+        📁 Choose file…
+        <input type="file" id="import-file"
+               accept=".json,.txt,.csv,text/plain,application/json,text/csv,text/comma-separated-values">
+      </label>
+      <button class="btn btn-sm" id="import-any-btn" title="If above doesn't work, try this — shows all files">All files</button>
+    </div>
+    <div id="import-info" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:10px;min-height:14px;"></div>
+  </div>
+
+  <div class="setting-card">
+    <h4>Fuzzy threshold</h4>
+    <p>কতটুকু similarity হলে fuzzy match হবে (0.5 = loose, 0.95 = strict)।</p>
+    <div class="setting-row">
+      <input type="range" id="fuzzy-threshold" min="0.5" max="0.95" step="0.01" value="0.82" style="flex:1;accent-color:var(--accent);">
+      <span id="fuzzy-threshold-val" style="font-family:var(--mono);min-width:50px;text-align:right;">0.82</span>
+    </div>
+  </div>
+
+  <div class="setting-card">
+    <h4 style="color:var(--danger);">Danger zone</h4>
+    <p>এই action revertible না। সাবধানে।</p>
+    <div class="setting-row">
+      <button class="btn btn-danger" id="clear-vault">Clear Vault</button>
+      <button class="btn btn-danger" id="clear-played">Clear Played</button>
+      <button class="btn btn-danger" id="clear-all">Clear Everything</button>
+    </div>
+  </div>
+
+  <div class="setting-card">
+    <h4>About</h4>
+    <p style="margin-bottom:0;">
+      <span style="font-family:var(--mono);">v1.0</span> — built for fuzzy game library tracking.
+      Storage backend: <span style="font-family:var(--mono);" id="storage-info">checking…</span>.
+      Engine: normalize → token-sort → Levenshtein.
+    </p>
+  </div>
+</section>
+
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="modal-overlay" id="modal">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════
+   GAME VAULT — single-file app
+   Storage: Anthropic artifact persistent storage (window.storage)
+   Falls back to in-memory if unavailable.
+   ════════════════════════════════════════════════════════════════ */
+
+/* ─── Storage layer ───────────────────────────────────────── */
+const Storage = (() => {
+  // Tier 1: Anthropic artifact storage (works inside Claude.ai)
+  const HAS_API = typeof window.storage !== 'undefined';
+
+  // Tier 2: localStorage (works when downloaded as standalone HTML)
+  let HAS_LS = false;
+  try {
+    const k = '__gv_test__';
+    localStorage.setItem(k, '1');
+    localStorage.removeItem(k);
+    HAS_LS = true;
+  } catch (e) { HAS_LS = false; }
+
+  // Tier 3: in-memory (last resort)
+  const memCache = {};
+
+  const PREFIX = 'gv:';
+
+  let backend, label;
+  if (HAS_API) { backend = 'api'; label = 'artifact storage (persistent)'; }
+  else if (HAS_LS) { backend = 'ls'; label = 'localStorage (persistent)'; }
+  else { backend = 'mem'; label = 'in-memory (session only)'; }
+
+  return {
+    available: backend !== 'mem',
+    backend,
+    label,
+
+    async get(key) {
+      if (backend === 'api') {
+        try {
+          const r = await window.storage.get(key);
+          return r ? r.value : null;
+        } catch (e) { return null; }
+      }
+      if (backend === 'ls') {
+        try { return localStorage.getItem(PREFIX + key); }
+        catch (e) { return null; }
+      }
+      return memCache[key] ?? null;
+    },
+
+    async set(key, value) {
+      if (backend === 'api') {
+        try { await window.storage.set(key, value); return true; }
+        catch (e) { console.error('storage.set fail:', e); return false; }
+      }
+      if (backend === 'ls') {
+        try { localStorage.setItem(PREFIX + key, value); return true; }
+        catch (e) {
+          console.error('localStorage quota or error:', e);
+          return false;
+        }
+      }
+      memCache[key] = value;
+      return true;
+    },
+
+    async del(key) {
+      if (backend === 'api') {
+        try { await window.storage.delete(key); } catch (e) {}
+      } else if (backend === 'ls') {
+        try { localStorage.removeItem(PREFIX + key); } catch (e) {}
+      }
+      delete memCache[key];
+    }
+  };
+})();
+
+const CHUNK_SIZE = 25000;
+
+async function saveList(name, items) {
+  const chunks = Math.max(1, Math.ceil(items.length / CHUNK_SIZE));
+  // Read previous chunk count to clean up if shrinking
+  let oldChunks = 0;
+  const oldMeta = await Storage.get(`${name}-meta`);
+  if (oldMeta) { try { oldChunks = JSON.parse(oldMeta).chunks || 0; } catch(e){} }
+
+  // Strip computed fields before save
+  const lean = items.map(it => ({ id: it.id, name: it.name, dateAdded: it.dateAdded }));
+
+  const tasks = [];
+  for (let i = 0; i < chunks; i++) {
+    const slice = lean.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+    tasks.push(Storage.set(`${name}-chunk-${i}`, JSON.stringify(slice)));
+  }
+  await Promise.all(tasks);
+  await Storage.set(`${name}-meta`, JSON.stringify({ chunks, total: items.length, updated: Date.now() }));
+
+  // Delete extra old chunks
+  for (let i = chunks; i < oldChunks; i++) {
+    await Storage.del(`${name}-chunk-${i}`);
+  }
+}
+
+async function loadList(name) {
+  const metaRaw = await Storage.get(`${name}-meta`);
+  if (!metaRaw) return [];
+  let meta;
+  try { meta = JSON.parse(metaRaw); } catch (e) { return []; }
+  const tasks = [];
+  for (let i = 0; i < meta.chunks; i++) {
+    tasks.push(Storage.get(`${name}-chunk-${i}`));
+  }
+  const results = await Promise.all(tasks);
+  const items = [];
+  for (const r of results) {
+    if (r) { try { items.push(...JSON.parse(r)); } catch (e) {} }
+  }
+  return items;
+}
+
+/* ─── Fuzzy matching engine ──────────────────────────────── */
+
+const ROMAN = {
+  'i':'1','ii':'2','iii':'3','iv':'4','v':'5','vi':'6','vii':'7','viii':'8','ix':'9',
+  'x':'10','xi':'11','xii':'12','xiii':'13','xiv':'14','xv':'15','xvi':'16','xvii':'17','xviii':'18','xix':'19','xx':'20'
+};
+
+// Combined edition keyword regex (longest match first inside groups)
+const EDITION_RX = new RegExp(
+  '\\b(' + [
+    'definitive edition','definitive',
+    'remastered','remaster',
+    'complete edition','complete',
+    'game of the year edition','game of the year','goty edition','goty',
+    'deluxe edition','deluxe',
+    'ultimate edition','ultimate',
+    'gold edition','gold',
+    'enhanced edition','enhanced',
+    'hd remaster','hd collection','hd',
+    'special edition','special',
+    'collectors edition','collector edition','collectors','collector',
+    'anniversary edition','anniversary',
+    'directors cut','director cut',
+    'extended edition','extended',
+    'platinum edition','platinum',
+    'season pass','all dlc',
+    'standard edition','standard',
+    'redux','reloaded','revisited','reborn',
+    'game of the year','goty'
+  ].join('|') + ')\\b', 'g');
+
+const YEAR_RX = /\b(19|20)\d{2}\b/g;
+const PAREN_RX = /\([^)]*\)|\[[^\]]*\]|\{[^}]*\}/g;
+const APOSTROPHE_RX = /[\u2018\u2019\u201A\u201B'`\u00B4]/g;
+const NON_ALPHANUM_RX = /[^a-z0-9\s]/g;
+const ROMAN_RX = /\b([ivx]+)\b/g;
+const TM_RX = /[\u00AE\u2122\u00A9]/g;
+const WS_RX = /\s+/g;
+
+function normalize(str) {
+  if (!str) return '';
+  let s = str.toLowerCase();
+  s = s.replace(APOSTROPHE_RX, '');     // remove apostrophes (Assassin's → Assassins)
+  s = s.replace(TM_RX, ' ');
+  s = s.replace(PAREN_RX, ' ');         // strip (...) [...] {...}
+  s = s.replace(NON_ALPHANUM_RX, ' ');  // collapse special chars
+  s = s.replace(YEAR_RX, ' ');          // remove years
+  s = s.replace(EDITION_RX, ' ');       // strip edition keywords
+  // Roman numerals → digits
+  s = s.replace(ROMAN_RX, (m) => ROMAN[m] !== undefined ? ROMAN[m] : m);
+  s = s.replace(WS_RX, ' ').trim();
+  return s;
+}
+
+// Light normalization for dedup — keeps edition words & years so
+// "The Last of Us" ≠ "The Last of Us Remastered" in bulk add.
+// Only used for duplicate checking, NOT for fuzzy matching.
+function normalizeDedup(str) {
+  if (!str) return '';
+  let s = str.toLowerCase();
+  s = s.replace(APOSTROPHE_RX, '');
+  s = s.replace(TM_RX, ' ');
+  s = s.replace(PAREN_RX, ' ');
+  s = s.replace(NON_ALPHANUM_RX, ' ');
+  // Roman numerals → digits (so "II" and "2" still match)
+  s = s.replace(ROMAN_RX, (m) => ROMAN[m] !== undefined ? ROMAN[m] : m);
+  s = s.replace(WS_RX, ' ').trim();
+  return s;
+}
+
+function tokenSort(str) {
+  const n = normalize(str);
+  if (!n) return '';
+  return n.split(' ').filter(Boolean).sort().join(' ');
+}
+
+/* ─── Levenshtein with buffer reuse + early termination ─── */
+const _levBufA = new Uint16Array(512);
+const _levBufB = new Uint16Array(512);
+
+function levenshtein(a, b, maxDist) {
+  if (a === b) return 0;
+  if (!a) return b.length;
+  if (!b) return a.length;
+  // Always put shorter string in inner loop for cache-friendliness
+  if (a.length > b.length) { const t = a; a = b; b = t; }
+  const al = a.length, bl = b.length;
+  if (maxDist !== undefined && bl - al > maxDist) return maxDist + 1;
+
+  const cap = bl + 1;
+  let prev = cap <= 512 ? _levBufA : new Uint16Array(cap);
+  let curr = cap <= 512 ? _levBufB : new Uint16Array(cap);
+  for (let i = 0; i <= bl; i++) prev[i] = i;
+
+  for (let i = 1; i <= al; i++) {
+    curr[0] = i;
+    let minRow = i;
+    const ac = a.charCodeAt(i - 1);
+    for (let j = 1; j <= bl; j++) {
+      const cost = ac === b.charCodeAt(j - 1) ? 0 : 1;
+      const d = prev[j] + 1;
+      const ins = curr[j - 1] + 1;
+      const sub = prev[j - 1] + cost;
+      const v = d < ins ? (d < sub ? d : sub) : (ins < sub ? ins : sub);
+      curr[j] = v;
+      if (v < minRow) minRow = v;
+    }
+    if (maxDist !== undefined && minRow > maxDist) return maxDist + 1;
+    const tmp = prev; prev = curr; curr = tmp;
+  }
+  return prev[bl];
+}
+
+function stringSim(a, b, threshold) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  const maxLen = a.length > b.length ? a.length : b.length;
+  const minLen = a.length < b.length ? a.length : b.length;
+  if (minLen / maxLen < 0.5) return 0;
+  // Cap maxDist using threshold (e.g., threshold 0.6 means we tolerate up to 40% errors)
+  const t = threshold || 0.5;
+  const maxDist = Math.floor(maxLen * (1 - t));
+  const dist = levenshtein(a, b, maxDist);
+  if (dist > maxDist) return 0;
+  return 1 - dist / maxLen;
+}
+
+/* ─── SearchIndex with trigram + token + acronym ─── */
+class SearchIndex {
+  constructor() {
+    this.items = [];                  // ordered list (insertion order)
+    this.byId = new Map();            // id → item
+    this.byNorm = new Map();          // norm → first item
+    this.byTokenSort = new Map();     // token-sorted → first item
+    this.dups = new Map();            // norm → [items]
+    this.trigrams = new Map();        // trigram → Set<id>
+    this.tokens = new Map();          // token → Set<id>
+    this.acronyms = new Map();        // acronym → Set<id>
+    this.tokenList = null;            // sorted token list cache (for prefix scan)
+    this._tokensDirty = true;
+  }
+
+  static getTrigrams(str) {
+    if (!str || str.length < 2) return [];
+    const padded = '  ' + str + '  ';
+    const out = [];
+    const seen = new Set();
+    for (let i = 0; i <= padded.length - 3; i++) {
+      const tg = padded.slice(i, i + 3);
+      if (!seen.has(tg)) { seen.add(tg); out.push(tg); }
+    }
+    return out;
+  }
+
+  static getTokens(str) {
+    if (!str) return [];
+    return str.split(' ').filter(Boolean);
+  }
+
+  static getAcronym(tokens) {
+    if (tokens.length < 2) return '';
+    let s = '';
+    for (let i = 0; i < tokens.length; i++) {
+      const c = tokens[i][0];
+      if (c) s += c;
+    }
+    return s;
+  }
+
+  add(item) {
+    if (item._norm === undefined) item._norm = normalize(item.name);
+    if (item._ts === undefined) item._ts = tokenSort(item.name);
+    if (item._lower === undefined) item._lower = item.name.toLowerCase();
+
+    const id = item.id;
+    if (this.byId.has(id)) return; // already indexed
+
+    this.items.push(item);
+    this.byId.set(id, item);
+
+    const norm = item._norm;
+    if (norm) {
+      if (!this.byNorm.has(norm)) this.byNorm.set(norm, item);
+      let g = this.dups.get(norm);
+      if (!g) { g = []; this.dups.set(norm, g); }
+      g.push(item);
+    }
+
+    const ts = item._ts;
+    if (ts && !this.byTokenSort.has(ts)) this.byTokenSort.set(ts, item);
+
+    // Trigrams
+    for (const tg of SearchIndex.getTrigrams(norm)) {
+      let s = this.trigrams.get(tg);
+      if (!s) { s = new Set(); this.trigrams.set(tg, s); }
+      s.add(id);
+    }
+
+    // Tokens
+    const tokens = SearchIndex.getTokens(norm);
+    for (const tk of tokens) {
+      let s = this.tokens.get(tk);
+      if (!s) { s = new Set(); this.tokens.set(tk, s); }
+      s.add(id);
+    }
+    this._tokensDirty = true;
+
+    // Acronym (only meaningful for 2+ tokens, length 2-8)
+    if (tokens.length >= 2) {
+      const acr = SearchIndex.getAcronym(tokens);
+      if (acr.length >= 2 && acr.length <= 8) {
+        let s = this.acronyms.get(acr);
+        if (!s) { s = new Set(); this.acronyms.set(acr, s); }
+        s.add(id);
+      }
+    }
+  }
+
+  remove(item) {
+    const id = item.id;
+    if (!this.byId.has(id)) return;
+
+    const idx = this.items.indexOf(item);
+    if (idx >= 0) this.items.splice(idx, 1);
+    this.byId.delete(id);
+
+    const norm = item._norm;
+    if (norm) {
+      const g = this.dups.get(norm);
+      if (g) {
+        const di = g.indexOf(item);
+        if (di >= 0) g.splice(di, 1);
+        if (g.length === 0) {
+          this.dups.delete(norm);
+          this.byNorm.delete(norm);
+        } else if (this.byNorm.get(norm) === item) {
+          this.byNorm.set(norm, g[0]);
+        }
+      }
+    }
+
+    const ts = item._ts;
+    if (ts && this.byTokenSort.get(ts) === item) {
+      this.byTokenSort.delete(ts);
+      // Try to find another item with same token-sort to promote
+      for (const it of this.items) {
+        if (it._ts === ts) { this.byTokenSort.set(ts, it); break; }
+      }
+    }
+
+    for (const tg of SearchIndex.getTrigrams(norm)) {
+      const s = this.trigrams.get(tg);
+      if (s) { s.delete(id); if (!s.size) this.trigrams.delete(tg); }
+    }
+
+    const tokens = SearchIndex.getTokens(norm);
+    for (const tk of tokens) {
+      const s = this.tokens.get(tk);
+      if (s) { s.delete(id); if (!s.size) this.tokens.delete(tk); }
+    }
+    this._tokensDirty = true;
+
+    if (tokens.length >= 2) {
+      const acr = SearchIndex.getAcronym(tokens);
+      if (acr.length >= 2 && acr.length <= 8) {
+        const s = this.acronyms.get(acr);
+        if (s) { s.delete(id); if (!s.size) this.acronyms.delete(acr); }
+      }
+    }
+  }
+
+  clear() {
+    this.items = [];
+    this.byId.clear();
+    this.byNorm.clear();
+    this.byTokenSort.clear();
+    this.dups.clear();
+    this.trigrams.clear();
+    this.tokens.clear();
+    this.acronyms.clear();
+    this._tokensDirty = true;
+  }
+
+  rebuild(items) {
+    this.clear();
+    for (const it of items) this.add(it);
+  }
+
+  // Trigram-based candidate selection — returns top K items by trigram overlap
+  getCandidates(norm, limit) {
+    const tgs = SearchIndex.getTrigrams(norm);
+    if (tgs.length === 0) return [];
+
+    const counts = new Map();
+    for (const tg of tgs) {
+      const s = this.trigrams.get(tg);
+      if (!s) continue;
+      for (const id of s) {
+        counts.set(id, (counts.get(id) || 0) + 1);
+      }
+    }
+    if (counts.size === 0) return [];
+
+    // Filter: require at least ~30% trigram overlap with query
+    const minHits = Math.max(1, Math.floor(tgs.length * 0.3));
+    const filtered = [];
+    for (const [id, c] of counts) {
+      if (c >= minHits) filtered.push([id, c]);
+    }
+
+    filtered.sort((a, b) => b[1] - a[1]);
+    const lim = Math.min(limit || 200, filtered.length);
+    const out = new Array(lim);
+    for (let i = 0; i < lim; i++) out[i] = this.byId.get(filtered[i][0]);
+    return out;
+  }
+
+  // Find best fuzzy match for one query (used by bulk check)
+  matchOne(query, useFuzzy = true, threshold = 0.82) {
+    const norm = normalize(query);
+    if (!norm) return null;
+
+    if (this.byNorm.has(norm)) {
+      return { item: this.byNorm.get(norm), score: 1, type: 'exact' };
+    }
+
+    const ts = tokenSort(query);
+    if (ts && this.byTokenSort.has(ts)) {
+      return { item: this.byTokenSort.get(ts), score: 0.97, type: 'token-sort' };
+    }
+
+    // Acronym shortcut: if query is 2-8 chars, no spaces, and matches acronym
+    if (norm.length >= 2 && norm.length <= 8 && norm.indexOf(' ') === -1) {
+      const acrSet = this.acronyms.get(norm);
+      if (acrSet && acrSet.size === 1) {
+        const id = acrSet.values().next().value;
+        const item = this.byId.get(id);
+        if (item) return { item, score: 0.92, type: 'acronym' };
+      }
+    }
+
+    if (!useFuzzy) return null;
+
+    const candidates = this.getCandidates(norm, 200);
+    let best = null;
+    for (let i = 0; i < candidates.length; i++) {
+      const it = candidates[i];
+      const sim = stringSim(norm, it._norm, threshold);
+      if (sim >= threshold && (!best || sim > best.score)) {
+        best = { item: it, score: sim, type: 'fuzzy' };
+        if (sim >= 0.99) break; // can't get better
+      }
+    }
+    return best;
+  }
+
+  // Live ranked search — returns scored results in relevance order
+  search(query, opts) {
+    opts = opts || {};
+    const limit = opts.limit || 500;
+    const norm = normalize(query);
+    const lower = query.toLowerCase().trim();
+    if (!norm && !lower) return [];
+
+    const seen = new Set();
+    const out = [];
+
+    const push = (item, score, why) => {
+      if (seen.has(item.id)) return;
+      seen.add(item.id);
+      out.push({ item, score, why });
+    };
+
+    // 1. Exact normalized match (highest)
+    if (norm && this.byNorm.has(norm)) {
+      push(this.byNorm.get(norm), 1000, 'exact');
+    }
+
+    // 2. Token-sort match
+    if (norm) {
+      const ts = tokenSort(query);
+      if (ts && this.byTokenSort.has(ts)) {
+        push(this.byTokenSort.get(ts), 950, 'reorder');
+      }
+    }
+
+    // 3. Raw substring on original name (most intuitive for users)
+    if (lower) {
+      for (let i = 0; i < this.items.length; i++) {
+        const it = this.items[i];
+        const idx = it._lower.indexOf(lower);
+        if (idx === 0) push(it, 900, 'starts-with');
+        else if (idx > 0) push(it, 700 - idx, 'contains');
+      }
+    }
+
+    // 4. Substring on normalized form (catches edition/punctuation)
+    if (norm && norm !== lower) {
+      for (let i = 0; i < this.items.length; i++) {
+        const it = this.items[i];
+        if (seen.has(it.id)) continue;
+        const idx = it._norm.indexOf(norm);
+        if (idx === 0) push(it, 600, 'norm-starts');
+        else if (idx > 0) push(it, 500 - idx, 'norm-contains');
+      }
+    }
+
+    // 5. Acronym match
+    if (norm && norm.length >= 2 && norm.length <= 8 && norm.indexOf(' ') === -1) {
+      const set = this.acronyms.get(norm);
+      if (set) {
+        for (const id of set) {
+          const it = this.byId.get(id);
+          if (it) push(it, 450, 'acronym');
+        }
+      }
+    }
+
+    // 6. Token-prefix match (typing "ass" finds "assassins creed")
+    if (norm && norm.indexOf(' ') === -1 && norm.length >= 2 && out.length < limit) {
+      for (const [tk, ids] of this.tokens) {
+        if (tk.length > norm.length && tk.startsWith(norm)) {
+          for (const id of ids) {
+            const it = this.byId.get(id);
+            if (it) push(it, 400, 'token-prefix');
+            if (out.length >= limit) break;
+          }
+          if (out.length >= limit) break;
+        }
+      }
+    }
+
+    // 7. Fuzzy fallback — only if we don't have many results
+    if (out.length < 30 && norm && norm.length >= 3) {
+      const candidates = this.getCandidates(norm, 80);
+      for (const it of candidates) {
+        if (seen.has(it.id)) continue;
+        const sim = stringSim(norm, it._norm, 0.6);
+        if (sim >= 0.6) push(it, 100 + Math.floor(sim * 100), 'fuzzy');
+      }
+    }
+
+    out.sort((a, b) => b.score - a.score);
+    return out.slice(0, limit);
+  }
+}
+
+// Backwards-compat helpers
+function buildIndex(items) {
+  const idx = new SearchIndex();
+  idx.rebuild(items);
+  return idx;
+}
+
+function findMatch(query, items, index, useFuzzy = true, threshold = 0.82) {
+  return index.matchOne(query, useFuzzy, threshold);
+}
+
+/* ─── State ──────────────────────────────────────────────── */
+const state = {
+  vault: [],
+  played: [],
+  vIndex: null,
+  pIndex: null,
+  currentTab: 'vault',
+  vaultFilter: '',
+  playedFilter: '',
+  vaultSort: 'recent',
+  playedSort: 'recent',
+  vaultDupOnly: false,
+  playedDupOnly: false,
+  fuzzyThreshold: 0.82,
+  bulkCheckResult: null,
+  saveTimers: { vault: null, played: null },
+  loaded: false
+};
+
+function newId() { return 'g_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+/* ─── Persistence with debounce ───────────────────────────── */
+function scheduleSave(name) {
+  clearTimeout(state.saveTimers[name]);
+  state.saveTimers[name] = setTimeout(async () => {
+    const items = state[name];
+    try {
+      await saveList(name, items);
+    } catch (e) {
+      toast('Save failed: ' + e.message, 'error');
+    }
+  }, 400);
+}
+
+/* ─── DOM helpers ────────────────────────────────────────── */
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+
+function el(tag, props = {}, ...children) {
+  const e = document.createElement(tag);
+  for (const k in props) {
+    if (k === 'class') e.className = props[k];
+    else if (k === 'html') e.innerHTML = props[k];
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2).toLowerCase(), props[k]);
+    else if (k === 'data') for (const dk in props.data) e.dataset[dk] = props.data[dk];
+    else e.setAttribute(k, props[k]);
+  }
+  for (const c of children) {
+    if (c == null) continue;
+    e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  }
+  return e;
+}
+
+function toast(msg, kind = 'info', ms = 2400) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + kind;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.className = 'toast ' + kind, ms);
+}
+
+/* ─── Modal ──────────────────────────────────────────────── */
+function modal({ title, body, confirmLabel = 'OK', confirmKind = 'btn-primary', onConfirm, cancelLabel = 'Cancel', showCancel = true }) {
+  const overlay = $('#modal');
+  const content = $('#modal-content');
+  content.innerHTML = '';
+  content.appendChild(el('h3', {}, title));
+  if (typeof body === 'string') content.appendChild(el('p', {}, body));
+  else if (body) content.appendChild(body);
+
+  const actions = el('div', { class: 'modal-actions' });
+  if (showCancel) actions.appendChild(el('button', { class: 'btn', onClick: () => overlay.classList.remove('show') }, cancelLabel));
+  actions.appendChild(el('button', {
+    class: 'btn ' + confirmKind,
+    onClick: async () => {
+      overlay.classList.remove('show');
+      if (onConfirm) await onConfirm();
+    }
+  }, confirmLabel));
+  content.appendChild(actions);
+  overlay.classList.add('show');
+}
+$('#modal').addEventListener('click', (e) => {
+  if (e.target === $('#modal')) $('#modal').classList.remove('show');
+});
+
+/* ─── Virtual scrolling list ─────────────────────────────── */
+class VList {
+  constructor(scrollEl, spacerEl, rowHeight = 48) {
+    this.scroll = scrollEl;
+    this.spacer = spacerEl;
+    this.rowH = rowHeight;
+    this.items = [];
+    this.renderRow = null;
+    this.scroll.addEventListener('scroll', () => this.render(), { passive: true });
+    new ResizeObserver(() => this.render()).observe(this.scroll);
+  }
+  setItems(items) {
+    this.items = items;
+    this.spacer.style.height = (items.length * this.rowH) + 'px';
+    this.scroll.scrollTop = 0;
+    this.render();
+  }
+  render() {
+    if (!this.renderRow) return;
+    const scrollTop = this.scroll.scrollTop;
+    const viewH = this.scroll.clientHeight;
+    const buffer = 4;
+    const start = Math.max(0, Math.floor(scrollTop / this.rowH) - buffer);
+    const visible = Math.ceil(viewH / this.rowH) + buffer * 2;
+    const end = Math.min(this.items.length, start + visible);
+
+    this.spacer.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    for (let i = start; i < end; i++) {
+      const node = this.renderRow(this.items[i], i);
+      node.style.top = (i * this.rowH) + 'px';
+      frag.appendChild(node);
+    }
+    this.spacer.appendChild(frag);
+  }
+}
+
+/* ─── Renderers ──────────────────────────────────────────── */
+function highlight(text, query) {
+  if (!query) return text;
+  const q = query.trim().toLowerCase();
+  if (!q) return text;
+  const lower = text.toLowerCase();
+  const i = lower.indexOf(q);
+  if (i === -1) return text;
+  return text.slice(0, i) + '<mark>' + text.slice(i, i + q.length) + '</mark>' + text.slice(i + q.length);
+}
+
+function makeRow(item, idx, source) {
+  const row = el('div', { class: 'row' });
+  row.appendChild(el('span', { class: 'serial' }, '#' + String(idx + 1).padStart(4, '0')));
+
+  const name = el('span', { class: 'name' });
+  const query = source === 'vault' ? state.vaultFilter : state.playedFilter;
+  name.innerHTML = highlight(escapeHtml(item.name), query);
+  row.appendChild(name);
+
+  // duplicate badge
+  const idx2 = source === 'vault' ? state.vIndex : state.pIndex;
+  if (idx2 && idx2.dups.get(item._norm)?.length > 1) {
+    row.appendChild(el('span', { class: 'badge badge-dup' }, 'dup'));
+  }
+
+  const actions = el('div', { class: 'actions' });
+  if (source === 'vault') {
+    actions.appendChild(el('button', {
+      class: 'btn btn-ghost btn-sm', title: 'Mark as played',
+      onClick: () => moveToPlayed(item)
+    }, '✓ played'));
+  } else {
+    actions.appendChild(el('button', {
+      class: 'btn btn-ghost btn-sm', title: 'Move to vault',
+      onClick: () => moveToVault(item)
+    }, '↶ vault'));
+  }
+  actions.appendChild(el('button', {
+    class: 'btn btn-ghost btn-sm', title: 'Edit',
+    onClick: () => editItem(item, source)
+  }, 'edit'));
+  actions.appendChild(el('button', {
+    class: 'btn btn-ghost btn-sm', title: 'Delete', style: 'color:var(--danger);',
+    onClick: () => deleteItem(item, source)
+  }, '×'));
+  row.appendChild(actions);
+  return row;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]);
+}
+
+/* ─── Filters / sort ─────────────────────────────────────── */
+function getFilteredItems(source) {
+  const items = state[source];
+  const filter = (source === 'vault' ? state.vaultFilter : state.playedFilter).trim();
+  const sort = source === 'vault' ? state.vaultSort : state.playedSort;
+  const dupOnly = source === 'vault' ? state.vaultDupOnly : state.playedDupOnly;
+  const idx = source === 'vault' ? state.vIndex : state.pIndex;
+
+  let result;
+
+  if (filter && idx) {
+    // Use ranked search engine — score-ordered results
+    const ranked = idx.search(filter, { limit: 1000 });
+    result = ranked.map(r => r.item);
+
+    if (dupOnly) {
+      result = result.filter(it => (idx.dups.get(it._norm) || []).length > 1);
+    }
+
+    // If user explicitly chose a sort, override score order;
+    // otherwise leave search relevance as the default order.
+    if (sort === 'az') result.sort((a, b) => a.name.localeCompare(b.name));
+    else if (sort === 'za') result.sort((a, b) => b.name.localeCompare(a.name));
+    else if (sort === 'oldest') result.sort((a, b) => (a.dateAdded || 0) - (b.dateAdded || 0));
+    // 'recent' — keep search-score order; user can switch manually if needed
+    return result;
+  }
+
+  // No filter — show all
+  result = items.slice();
+
+  if (dupOnly && idx) {
+    result = result.filter(it => (idx.dups.get(it._norm) || []).length > 1);
+  }
+
+  if (sort === 'az') result.sort((a, b) => a.name.localeCompare(b.name));
+  else if (sort === 'za') result.sort((a, b) => b.name.localeCompare(a.name));
+  else if (sort === 'recent') result.sort((a, b) => (b.dateAdded || 0) - (a.dateAdded || 0));
+  else if (sort === 'oldest') result.sort((a, b) => (a.dateAdded || 0) - (b.dateAdded || 0));
+
+  return result;
+}
+
+/* ─── Render lists ──────────────────────────────────────── */
+const vList = new VList($('#vault-list-scroll'), $('#vault-spacer'));
+const pList = new VList($('#played-list-scroll'), $('#played-spacer'));
+vList.renderRow = (it, i) => makeRow(it, i, 'vault');
+pList.renderRow = (it, i) => makeRow(it, i, 'played');
+
+function renderVault() {
+  const items = getFilteredItems('vault');
+  vList.setItems(items);
+  $('#vault-list-info').textContent = items.length + ' / ' + state.vault.length + ' items';
+  const filterText = [];
+  if (state.vaultFilter) filterText.push('search: "' + state.vaultFilter + '"');
+  if (state.vaultDupOnly) filterText.push('duplicates only');
+  $('#vault-filter-info').textContent = filterText.join(' · ');
+  if (items.length === 0) showEmpty('vault-spacer', state.vault.length === 0 ? 'কোনো item নাই — উপরে add করো' : 'কোনো match পাওয়া যায়নি');
+}
+
+function renderPlayed() {
+  const items = getFilteredItems('played');
+  pList.setItems(items);
+  $('#played-list-info').textContent = items.length + ' / ' + state.played.length + ' items';
+  const filterText = [];
+  if (state.playedFilter) filterText.push('search: "' + state.playedFilter + '"');
+  if (state.playedDupOnly) filterText.push('duplicates only');
+  $('#played-filter-info').textContent = filterText.join(' · ');
+  if (items.length === 0) showEmpty('played-spacer', state.played.length === 0 ? 'এখনো কোনো played গেম নাই' : 'কোনো match পাওয়া যায়নি');
+}
+
+function showEmpty(spacerId, msg) {
+  const sp = document.getElementById(spacerId);
+  sp.style.height = '320px';
+  sp.innerHTML = '<div class="empty"><div class="empty-icon">∅</div><div class="empty-text">' + escapeHtml(msg) + '</div></div>';
+}
+
+function updateStats() {
+  $('#stat-vault').textContent = state.vault.length.toLocaleString();
+  $('#stat-played').textContent = state.played.length.toLocaleString();
+  $('#tc-vault').textContent = '(' + state.vault.length + ')';
+  $('#tc-played').textContent = '(' + state.played.length + ')';
+}
+
+function rebuildIndexes() {
+  state.vIndex = buildIndex(state.vault);
+  state.pIndex = buildIndex(state.played);
+}
+
+// Chunked async rebuild — keeps UI responsive for huge lists
+async function rebuildIndexesAsync(onProgress) {
+  state.vIndex = new SearchIndex();
+  state.pIndex = new SearchIndex();
+  const CHUNK = 5000;
+  const total = state.vault.length + state.played.length;
+  let done = 0;
+
+  for (let i = 0; i < state.vault.length; i += CHUNK) {
+    const end = Math.min(i + CHUNK, state.vault.length);
+    for (let j = i; j < end; j++) state.vIndex.add(state.vault[j]);
+    done += (end - i);
+    if (onProgress) onProgress(done, total);
+    if (end < state.vault.length) await new Promise(r => setTimeout(r, 0));
+  }
+
+  for (let i = 0; i < state.played.length; i += CHUNK) {
+    const end = Math.min(i + CHUNK, state.played.length);
+    for (let j = i; j < end; j++) state.pIndex.add(state.played[j]);
+    done += (end - i);
+    if (onProgress) onProgress(done, total);
+    if (end < state.played.length) await new Promise(r => setTimeout(r, 0));
+  }
+}
+
+/* ─── CRUD ───────────────────────────────────────────────── */
+function addItem(name, target = 'vault', { allowDup = false } = {}) {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const idx = target === 'vault' ? state.vIndex : state.pIndex;
+  const norm = normalize(trimmed);
+
+  if (!allowDup && norm && idx && idx.byNorm.has(norm)) {
+    return { dup: true, existing: idx.byNorm.get(norm) };
+  }
+
+  const item = { id: newId(), name: trimmed, dateAdded: Date.now() };
+  item._norm = norm;
+  item._ts = tokenSort(trimmed);
+
+  state[target].push(item);
+  idx.add(item);                  // O(1) incremental — updates trigrams, tokens, acronyms too
+
+  scheduleSave(target);
+  return { added: true, item };
+}
+
+function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
+  const idx = target === 'vault' ? state.vIndex : state.pIndex;
+  const seenDedup = new Map();   // dedupNorm → first item seen this batch
+  const addedItems = [];
+  const skipped = [];            // {input: string, existing: Item}  — NOT added
+  const flagged = [];            // {item, neighbors: Item[]}        — ADDED but has fuzzy siblings
+
+  for (const raw of names) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const nd = normalizeDedup(trimmed);
+    const n  = normalize(trimmed);
+
+    // ── Dedup check (exact match using light norm) ──
+    let exactDup = null;
+    if (dedupe && nd) {
+      if (seenDedup.has(nd)) {
+        exactDup = seenDedup.get(nd);
+      } else if (n && idx.byNorm.has(n)) {
+        // byNorm uses full normalize; verify via dedup norm too
+        const cand = idx.byNorm.get(n);
+        if (normalizeDedup(cand.name) === nd) exactDup = cand;
+        else {
+          // Walk dups group looking for a true exact-dedup match
+          const group = idx.dups.get(n);
+          if (group) {
+            for (const it of group) {
+              if (normalizeDedup(it.name) === nd) { exactDup = it; break; }
+            }
+          }
+        }
+      }
+    }
+
+    if (exactDup) {
+      skipped.push({ input: trimmed, existing: exactDup });
+      continue;
+    }
+
+    // ── Add ──
+    const item = { id: newId(), name: trimmed, dateAdded: Date.now() + addedItems.length };
+    item._norm = n;
+    item._ts = tokenSort(trimmed);
+    state[target].push(item);
+    idx.add(item);
+    if (nd) seenDedup.set(nd, item);
+    addedItems.push(item);
+
+    // ── Flag fuzzy near-matches (same full-norm but different dedup-norm) ──
+    if (n) {
+      const group = idx.dups.get(n);
+      if (group && group.length > 1) {
+        const neighbors = [];
+        for (const other of group) {
+          if (other.id === item.id) continue;
+          if (normalizeDedup(other.name) !== nd) neighbors.push(other);
+        }
+        if (neighbors.length) flagged.push({ item, neighbors });
+      }
+    }
+  }
+
+  scheduleSave(target);
+  return { added: addedItems.length, addedItems, skipped, flagged };
+}
+
+function deleteItem(item, source) {
+  modal({
+    title: 'Delete এই item?',
+    body: '"' + item.name + '" — এটা কি delete করবে?',
+    confirmLabel: 'Delete',
+    confirmKind: 'btn-danger',
+    onConfirm: () => {
+      const arr = state[source];
+      const i = arr.findIndex(x => x.id === item.id);
+      if (i >= 0) {
+        const removed = arr.splice(i, 1)[0];
+        const idx = source === 'vault' ? state.vIndex : state.pIndex;
+        idx.remove(removed);       // incremental — fast even on 100k items
+        scheduleSave(source);
+        if (source === 'vault') renderVault(); else renderPlayed();
+        updateStats();
+        toast('Deleted', 'success');
+      }
+    }
+  });
+}
+
+function editItem(item, source) {
+  const inputBox = el('input', {
+    class: 'input', value: item.name, autocomplete: 'off',
+    style: 'width:100%;'
+  });
+  setTimeout(() => { inputBox.focus(); inputBox.select(); }, 50);
+  inputBox.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      $('.modal-actions .btn-primary')?.click();
+    }
+  });
+
+  modal({
+    title: 'Edit item',
+    body: inputBox,
+    confirmLabel: 'Save',
+    onConfirm: () => {
+      const v = inputBox.value.trim();
+      if (!v) return;
+      const idx = source === 'vault' ? state.vIndex : state.pIndex;
+
+      // Remove old version from index, mutate, re-add — keeps insertion order via items array
+      idx.remove(item);
+      item.name = v;
+      item._norm = normalize(v);
+      item._ts = tokenSort(v);
+      item._lower = v.toLowerCase();
+      // Re-add (note: this appends to idx.items; for ordered list we keep state[source] as authoritative)
+      idx.add(item);
+
+      scheduleSave(source);
+      if (source === 'vault') renderVault(); else renderPlayed();
+      toast('Updated', 'success');
+    }
+  });
+}
+
+function moveToPlayed(item) {
+  // copy to played if not already there; do not delete from vault
+  const exists = state.pIndex && state.pIndex.byNorm.get(item._norm);
+  if (exists) {
+    toast('Played list-এ ইতিমধ্যেই আছে', 'info');
+    return;
+  }
+  const r = addItem(item.name, 'played');
+  if (r && r.added) {
+    renderPlayed();
+    updateStats();
+    toast('Played list-এ যোগ করা হলো', 'success');
+  }
+}
+
+function moveToVault(item) {
+  const exists = state.vIndex && state.vIndex.byNorm.get(item._norm);
+  if (exists) {
+    toast('Vault-এ ইতিমধ্যেই আছে', 'info');
+    return;
+  }
+  const r = addItem(item.name, 'vault');
+  if (r && r.added) {
+    renderVault();
+    updateStats();
+    toast('Vault-এ যোগ করা হলো', 'success');
+  }
+}
+
+/* ─── Bulk check engine ──────────────────────────────────── */
+async function runBulkCheck(inputText, target, useFuzzy, onProgress) {
+  const lines = inputText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length === 0) return null;
+
+  const items = state[target];
+  const idx = target === 'vault' ? state.vIndex : state.pIndex;
+
+  // Dedupe input for matching purposes (track originals)
+  const inputMap = new Map();
+  const inputOrder = [];
+  for (const line of lines) {
+    const n = normalize(line);
+    if (!n) continue;
+    if (!inputMap.has(n)) {
+      inputMap.set(n, line);
+      inputOrder.push(line);
+    }
+  }
+
+  const found = [];
+  const missing = [];
+  const matchedItemIds = new Set();
+
+  // Chunked processing: yield to UI every CHUNK lines so it doesn't freeze
+  const CHUNK = 500;
+  for (let i = 0; i < inputOrder.length; i += CHUNK) {
+    const end = Math.min(i + CHUNK, inputOrder.length);
+    for (let j = i; j < end; j++) {
+      const line = inputOrder[j];
+      const m = idx.matchOne(line, useFuzzy, state.fuzzyThreshold);
+      if (m) {
+        found.push({ input: line, match: m });
+        matchedItemIds.add(m.item.id);
+      } else {
+        missing.push(line);
+      }
+    }
+    if (onProgress) onProgress(end, inputOrder.length);
+    // Yield only between chunks, not after every item
+    if (end < inputOrder.length) {
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  // Extras: items in vault not matched to any input
+  const extras = [];
+  for (const it of items) if (!matchedItemIds.has(it.id)) extras.push(it);
+
+  return {
+    target,
+    found,
+    missing,
+    extras,
+    totalInput: lines.length,
+    uniqueInput: inputOrder.length,
+    duplicateInputCount: lines.length - inputOrder.length
+  };
+}
+
+function renderBulkCheckResult(r) {
+  $('#bc-found-count').textContent = r.found.length;
+  $('#bc-missing-count').textContent = r.missing.length;
+  $('#bc-extras-count').textContent = r.extras.length;
+
+  // Render lists (cap to first 500 visible items for speed)
+  const renderItems = (containerId, items, transform) => {
+    const c = $(containerId);
+    c.innerHTML = '';
+    const cap = 500;
+    const slice = items.slice(0, cap);
+    const frag = document.createDocumentFragment();
+    for (const it of slice) {
+      const node = transform(it);
+      frag.appendChild(node);
+    }
+    if (items.length > cap) {
+      frag.appendChild(el('div', {
+        class: 'result-item',
+        style: 'color:var(--muted);font-style:italic;font-size:12px;'
+      }, '+ ' + (items.length - cap).toLocaleString() + ' more (use Copy to get full list)'));
+    }
+    c.appendChild(frag);
+  };
+
+  renderItems('#bc-found-list', r.found, (f) => {
+    const item = el('div', { class: 'result-item' });
+    item.appendChild(el('span', { class: 'item-name' }, f.input + (f.input !== f.match.item.name ? ' → ' + f.match.item.name : '')));
+    item.appendChild(el('span', {
+      class: 'match-info ' + (f.match.type === 'exact' ? 'exact' : 'fuzzy')
+    }, f.match.type + ' ' + Math.round(f.match.score * 100) + '%'));
+    return item;
+  });
+
+  renderItems('#bc-missing-list', r.missing, (line) => {
+    return el('div', { class: 'result-item' }, el('span', { class: 'item-name' }, line));
+  });
+
+  renderItems('#bc-extras-list', r.extras, (it) => {
+    return el('div', { class: 'result-item' }, el('span', { class: 'item-name' }, it.name));
+  });
+
+  $('#bulk-check-result').style.display = 'block';
+
+  $('#bulk-check-status').style.display = 'block';
+  $('#bulk-check-status').textContent =
+    'input: ' + r.totalInput + ' lines · unique: ' + r.uniqueInput +
+    ' · target: ' + r.target + ' (' + state[r.target].length + ' items)' +
+    (r.duplicateInputCount > 0 ? ' · ' + r.duplicateInputCount + ' duplicate input lines ignored' : '');
+}
+
+/* ─── Tab switching ──────────────────────────────────────── */
+function switchTab(name) {
+  state.currentTab = name;
+  $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+  // Re-render to ensure VList recomputes after display change
+  if (name === 'vault') renderVault();
+  if (name === 'played') renderPlayed();
+}
+
+$$('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+/* ─── Wire vault controls ────────────────────────────────── */
+$('#vault-add-btn').addEventListener('click', () => {
+  const v = $('#vault-add-input').value.trim();
+  if (!v) return;
+  const r = addItem(v, 'vault');
+  if (r.dup) {
+    toast('আগে থেকেই আছে: "' + r.existing.name + '"', 'error');
+  } else if (r.added) {
+    $('#vault-add-input').value = '';
+    renderVault();
+    updateStats();
+    toast('Added', 'success');
+  }
+});
+$('#vault-add-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('#vault-add-btn').click();
+});
+
+// Adaptive debounce — fast for small lists, longer for huge ones (avoid stutter)
+function adaptiveDelay(source) {
+  const n = state[source].length;
+  if (n < 1000) return 60;
+  if (n < 10000) return 100;
+  if (n < 50000) return 150;
+  return 220;
+}
+
+let _vaultSearchTimer = 0;
+$('#vault-search').addEventListener('input', e => {
+  state.vaultFilter = e.target.value;
+  clearTimeout(_vaultSearchTimer);
+  _vaultSearchTimer = setTimeout(() => renderVault(), adaptiveDelay('vault'));
+});
+$('#vault-sort').addEventListener('change', e => {
+  state.vaultSort = e.target.value;
+  renderVault();
+});
+$('#vault-dup-toggle').addEventListener('click', () => {
+  state.vaultDupOnly = !state.vaultDupOnly;
+  $('#vault-dup-toggle').classList.toggle('btn-primary', state.vaultDupOnly);
+  renderVault();
+});
+
+/* ─── Wire played controls ───────────────────────────────── */
+$('#played-add-btn').addEventListener('click', () => {
+  const v = $('#played-add-input').value.trim();
+  if (!v) return;
+  const r = addItem(v, 'played');
+  if (r.dup) {
+    toast('আগে থেকেই আছে: "' + r.existing.name + '"', 'error');
+  } else if (r.added) {
+    $('#played-add-input').value = '';
+    renderPlayed();
+    updateStats();
+    toast('Added', 'success');
+  }
+});
+$('#played-add-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('#played-add-btn').click();
+});
+
+let _playedSearchTimer = 0;
+$('#played-search').addEventListener('input', e => {
+  state.playedFilter = e.target.value;
+  clearTimeout(_playedSearchTimer);
+  _playedSearchTimer = setTimeout(() => renderPlayed(), adaptiveDelay('played'));
+});
+$('#played-sort').addEventListener('change', e => {
+  state.playedSort = e.target.value;
+  renderPlayed();
+});
+$('#played-dup-toggle').addEventListener('click', () => {
+  state.playedDupOnly = !state.playedDupOnly;
+  $('#played-dup-toggle').classList.toggle('btn-primary', state.playedDupOnly);
+  renderPlayed();
+});
+
+function removeDuplicates(source) {
+  const arr = state[source];
+  const idx = source === 'vault' ? state.vIndex : state.pIndex;
+  const seen = new Set();
+  const kept = [];
+  const toRemove = [];
+  for (const it of arr) {
+    const n = it._norm || normalize(it.name);
+    if (n && seen.has(n)) { toRemove.push(it); continue; }
+    if (n) seen.add(n);
+    kept.push(it);
+  }
+  if (toRemove.length === 0) {
+    toast('কোনো duplicate পাওয়া যায়নি', 'info');
+    return;
+  }
+  modal({
+    title: 'Remove ' + toRemove.length + ' duplicate(s)?',
+    body: 'প্রত্যেক group থেকে first entry রাখা হবে, বাকিগুলো delete হবে। এটা revertible না।',
+    confirmLabel: 'Remove duplicates',
+    confirmKind: 'btn-danger',
+    onConfirm: () => {
+      state[source] = kept;
+      // Incremental: remove only the duplicates from index
+      for (const it of toRemove) idx.remove(it);
+      scheduleSave(source);
+      if (source === 'vault') renderVault(); else renderPlayed();
+      updateStats();
+      toast('Removed ' + toRemove.length + ' duplicate(s)', 'success');
+    }
+  });
+}
+
+$('#vault-dup-remove').addEventListener('click', () => removeDuplicates('vault'));
+$('#played-dup-remove').addEventListener('click', () => removeDuplicates('played'));
+
+function debounce(fn, ms) {
+  let t;
+  return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+/* ─── Bulk add wiring ────────────────────────────────────── */
+$('#bulk-add-go').addEventListener('click', () => {
+  const text = $('#bulk-add-text').value;
+  if (!text.trim()) { toast('Textarea-এ কিছু paste করো', 'error'); return; }
+  const target = $('#bulk-add-target').value;
+  const dedupe = $('#bulk-add-dedupe').checked;
+  const trim = $('#bulk-add-trim').checked;
+
+  const lines = text.split(/\r?\n/);
+  const cleaned = trim ? lines.map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean) : lines.filter(l => l.trim());
+
+  const result = bulkAdd(cleaned, target, { dedupe });
+  state.lastBulkAddResult = { result, target };
+
+  renderBulkAddResult(state.lastBulkAddResult);
+  renderVault(); renderPlayed(); updateStats();
+
+  toast('Done — added ' + result.added + ', skipped ' + result.skipped.length +
+        (result.flagged.length ? ', ' + result.flagged.length + ' to review' : ''),
+        result.added > 0 ? 'success' : 'info');
+});
+
+function renderBulkAddResult({ result, target }) {
+  $('#ba-added-count').textContent = result.added.toLocaleString();
+  $('#ba-skipped-count').textContent = result.skipped.length.toLocaleString();
+  $('#ba-flagged-count').textContent = result.flagged.length.toLocaleString();
+  $('#bulk-add-result').style.display = 'block';
+
+  // Skipped list
+  const skipList = $('#ba-skipped-list');
+  skipList.innerHTML = '';
+  const cap = 200;
+  const skipSlice = result.skipped.slice(0, cap);
+
+  for (const s of skipSlice) {
+    const row = el('div', { class: 'dup-pair' });
+
+    row.appendChild(el('div', { class: 'dup-pair-line' },
+      el('span', { class: 'label new' }, 'INPUT'),
+      el('span', { class: 'name' }, s.input)
+    ));
+    row.appendChild(el('div', { class: 'dup-pair-line' },
+      el('span', { class: 'label existing' }, '↳ MATCH'),
+      el('span', { class: 'name' }, s.existing.name)
+    ));
+
+    const actions = el('div', { class: 'dup-pair-actions' });
+    const addBtn = el('button', {
+      class: 'btn btn-sm btn-success',
+      onClick: () => {
+        const r = addItem(s.input, target, { allowDup: true });
+        if (r && r.added) {
+          row.style.opacity = '0.4';
+          row.style.pointerEvents = 'none';
+          actions.innerHTML = '<span style="font-family:var(--mono);font-size:11px;color:var(--success);">✓ added to ' + target + '</span>';
+          renderVault(); renderPlayed(); updateStats();
+        }
+      }
+    }, '+ Add anyway');
+    actions.appendChild(addBtn);
+    row.appendChild(actions);
+    skipList.appendChild(row);
+  }
+  if (result.skipped.length > cap) {
+    skipList.appendChild(el('div', {
+      class: 'result-item',
+      style: 'color:var(--muted);font-style:italic;font-size:12px;'
+    }, '+ ' + (result.skipped.length - cap).toLocaleString() + ' more skipped'));
+  }
+  $('#ba-skipped-actions').style.display = result.skipped.length > 0 ? 'flex' : 'none';
+
+  // Flagged list (added but with similar entries)
+  const flagList = $('#ba-flagged-list');
+  flagList.innerHTML = '';
+  const flagSlice = result.flagged.slice(0, cap);
+
+  for (const f of flagSlice) {
+    const row = el('div', { class: 'dup-pair' });
+
+    row.appendChild(el('div', { class: 'dup-pair-line' },
+      el('span', { class: 'label new' }, 'NEW'),
+      el('span', { class: 'name' }, f.item.name)
+    ));
+    for (const nb of f.neighbors.slice(0, 3)) {
+      row.appendChild(el('div', { class: 'dup-pair-line' },
+        el('span', { class: 'label existing' }, '↳ SIMILAR'),
+        el('span', { class: 'name' }, nb.name)
+      ));
+    }
+    if (f.neighbors.length > 3) {
+      row.appendChild(el('div', { class: 'dup-pair-line' },
+        el('span', { class: 'label existing' }, ''),
+        el('span', { class: 'name', style: 'color:var(--muted);font-size:12px;' },
+          '+ ' + (f.neighbors.length - 3) + ' more')
+      ));
+    }
+
+    const actions = el('div', { class: 'dup-pair-actions' });
+    const removeNew = el('button', {
+      class: 'btn btn-sm btn-danger',
+      onClick: () => {
+        const arr = state[target];
+        const i = arr.findIndex(x => x.id === f.item.id);
+        if (i >= 0) {
+          arr.splice(i, 1);
+          (target === 'vault' ? state.vIndex : state.pIndex).remove(f.item);
+          scheduleSave(target);
+          renderVault(); renderPlayed(); updateStats();
+          row.style.opacity = '0.4';
+          row.style.pointerEvents = 'none';
+          actions.innerHTML = '<span style="font-family:var(--mono);font-size:11px;color:var(--danger);">✗ removed new</span>';
+        }
+      }
+    }, '× Remove new');
+    actions.appendChild(removeNew);
+
+    const keep = el('button', {
+      class: 'btn btn-sm btn-ghost',
+      onClick: () => {
+        row.style.opacity = '0.5';
+        actions.innerHTML = '<span style="font-family:var(--mono);font-size:11px;color:var(--muted);">✓ kept both</span>';
+      }
+    }, '✓ Keep both');
+    actions.appendChild(keep);
+
+    row.appendChild(actions);
+    flagList.appendChild(row);
+  }
+  if (result.flagged.length > cap) {
+    flagList.appendChild(el('div', {
+      class: 'result-item',
+      style: 'color:var(--muted);font-style:italic;font-size:12px;'
+    }, '+ ' + (result.flagged.length - cap).toLocaleString() + ' more flagged'));
+  }
+}
+
+// Add all skipped — force-add ignoring dedup
+$('#ba-add-all-skipped').addEventListener('click', () => {
+  const lr = state.lastBulkAddResult;
+  if (!lr || !lr.result.skipped.length) return;
+  modal({
+    title: 'Add ' + lr.result.skipped.length + ' skipped item(s)?',
+    body: 'These were skipped as exact duplicates. Force-add all?',
+    confirmLabel: 'Add all',
+    onConfirm: () => {
+      let added = 0;
+      for (const s of lr.result.skipped) {
+        const r = addItem(s.input, lr.target, { allowDup: true });
+        if (r && r.added) added++;
+      }
+      // Clear from result so list refreshes empty
+      lr.result.skipped = [];
+      renderBulkAddResult(lr);
+      renderVault(); renderPlayed(); updateStats();
+      toast('Force-added ' + added, 'success');
+    }
+  });
+});
+
+$('#bulk-add-clear').addEventListener('click', () => {
+  $('#bulk-add-text').value = '';
+  $('#bulk-add-result').style.display = 'none';
+  state.lastBulkAddResult = null;
+});
+
+/* ─── Bulk check wiring ──────────────────────────────────── */
+$('#bulk-check-go').addEventListener('click', async () => {
+  const text = $('#bulk-check-text').value;
+  if (!text.trim()) { toast('Textarea-এ list paste করো', 'error'); return; }
+  const target = $('#bulk-check-target').value;
+  const useFuzzy = $('#bulk-check-fuzzy').checked;
+  const btn = $('#bulk-check-go');
+  const status = $('#bulk-check-status');
+
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  status.style.display = 'block';
+  status.textContent = 'preparing…';
+
+  const t0 = performance.now();
+  try {
+    const r = await runBulkCheck(text, target, useFuzzy, (done, total) => {
+      // Throttle status updates to avoid layout thrash
+      if (done % 2000 === 0 || done === total) {
+        const pct = Math.floor((done / total) * 100);
+        status.textContent = 'matching… ' + done.toLocaleString() + ' / ' + total.toLocaleString() + ' (' + pct + '%)';
+      }
+    });
+    const dt = (performance.now() - t0).toFixed(0);
+    if (!r) { toast('No valid input', 'error'); return; }
+    state.bulkCheckResult = r;
+    renderBulkCheckResult(r);
+    toast('Check complete in ' + dt + 'ms (found ' + r.found.length + ', missing ' + r.missing.length + ')', 'success');
+  } catch (err) {
+    toast('Error: ' + err.message, 'error');
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Check';
+  }
+});
+$('#bulk-check-clear').addEventListener('click', () => {
+  $('#bulk-check-text').value = '';
+  $('#bulk-check-result').style.display = 'none';
+  $('#bulk-check-status').style.display = 'none';
+  state.bulkCheckResult = null;
+});
+
+// Result actions
+$$('[data-copy]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const r = state.bulkCheckResult;
+    if (!r) return;
+    const kind = btn.dataset.copy;
+    let lines = [];
+    if (kind === 'found') lines = r.found.map(f => f.match.item.name);
+    if (kind === 'missing') lines = r.missing;
+    if (kind === 'extras') lines = r.extras.map(it => it.name);
+    navigator.clipboard.writeText(lines.join('\n')).then(
+      () => toast('Copied ' + lines.length + ' lines', 'success'),
+      () => toast('Copy failed', 'error')
+    );
+  });
+});
+
+$('[data-mark-played]')?.addEventListener('click', () => {
+  const r = state.bulkCheckResult;
+  if (!r) return;
+  if (r.target !== 'vault') { toast('শুধু vault check-এর জন্য', 'info'); return; }
+  modal({
+    title: 'Mark all as Played?',
+    body: r.found.length + ' items played list-এ যোগ হবে। continue?',
+    confirmLabel: 'Yes, mark played',
+    onConfirm: () => {
+      const names = r.found.map(f => f.match.item.name);
+      const res = bulkAdd(names, 'played', { dedupe: true });
+      renderPlayed(); updateStats();
+      toast('Added ' + res.added + ' to played, skipped ' + res.skipped.length, 'success');
+    }
+  });
+});
+
+$('[data-add-missing]')?.addEventListener('click', () => {
+  const r = state.bulkCheckResult;
+  if (!r) return;
+  modal({
+    title: 'Add missing to ' + r.target + '?',
+    body: r.missing.length + ' items ' + r.target + ' list-এ যোগ হবে।',
+    confirmLabel: 'Add all',
+    onConfirm: async () => {
+      const res = bulkAdd(r.missing, r.target, { dedupe: true });
+      renderVault(); renderPlayed(); updateStats();
+      // Re-run check so result UI reflects the additions
+      const newR = await runBulkCheck($('#bulk-check-text').value, r.target, $('#bulk-check-fuzzy').checked);
+      if (newR) { state.bulkCheckResult = newR; renderBulkCheckResult(newR); }
+      toast('Added ' + res.added + ', skipped ' + res.skipped.length, 'success');
+    }
+  });
+});
+
+/* ─── Settings ───────────────────────────────────────────── */
+function downloadFile(content, filename, mimeType) {
+  try {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);   // Firefox needs this
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+    return true;
+  } catch (e) {
+    console.error('Download failed:', e);
+    // Fallback: open as data URL in new tab so user can save manually
+    try {
+      const dataUrl = 'data:' + mimeType + ';charset=utf-8,' + encodeURIComponent(content);
+      window.open(dataUrl, '_blank');
+      return true;
+    } catch (e2) {
+      return false;
+    }
+  }
+}
+
+$('#export-json').addEventListener('click', () => {
+  if (state.vault.length === 0 && state.played.length === 0) {
+    toast('Vault আর played দুটোই খালি, export করার মতো কিছু নাই', 'info');
+    return;
+  }
+  const data = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    vault: state.vault.map(it => ({ name: it.name, dateAdded: it.dateAdded })),
+    played: state.played.map(it => ({ name: it.name, dateAdded: it.dateAdded }))
+  };
+  const ok = downloadFile(
+    JSON.stringify(data, null, 2),
+    'game-vault-' + new Date().toISOString().slice(0, 10) + '.json',
+    'application/json'
+  );
+  toast(ok ? 'Exported · vault: ' + state.vault.length + ', played: ' + state.played.length : 'Export failed', ok ? 'success' : 'error');
+});
+
+$('#export-csv').addEventListener('click', () => {
+  if (state.vault.length === 0 && state.played.length === 0) {
+    toast('Vault আর played দুটোই খালি, export করার মতো কিছু নাই', 'info');
+    return;
+  }
+  const rows = [['list','name','date_added']];
+  for (const it of state.vault) rows.push(['vault', it.name, new Date(it.dateAdded).toISOString()]);
+  for (const it of state.played) rows.push(['played', it.name, new Date(it.dateAdded).toISOString()]);
+  const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
+  // BOM for Excel UTF-8 detection (Bengali names display correctly)
+  const ok = downloadFile(
+    '\uFEFF' + csv,
+    'game-vault-' + new Date().toISOString().slice(0, 10) + '.csv',
+    'text/csv;charset=utf-8'
+  );
+  toast(ok ? 'CSV exported · ' + (rows.length - 1) + ' rows' : 'Export failed', ok ? 'success' : 'error');
+});
+
+/* ─── HTML download (full app + optional data) ─── */
+async function getAppSource() {
+  // Prefer fetching the original document so we get a clean copy regardless of
+  // what's been mutated in the DOM. Fall back to document.documentElement.outerHTML.
+  try {
+    const res = await fetch(location.href, { cache: 'no-store' });
+    if (res.ok) {
+      const txt = await res.text();
+      if (txt && txt.length > 1000 && txt.indexOf('</html>') > 0) return txt;
+    }
+  } catch (e) { /* fall through */ }
+  return '<!doctype html>\n' + document.documentElement.outerHTML;
+}
+
+async function exportHtml({ embedData }) {
+  const info = $('#export-html-info');
+  info.style.color = 'var(--muted)';
+  info.textContent = '⏳ preparing source…';
+
+  let html;
+  try {
+    html = await getAppSource();
+  } catch (e) {
+    info.style.color = 'var(--danger)';
+    info.textContent = '✗ source fetch failed: ' + e.message;
+    toast('Source fetch failed', 'error');
+    return;
+  }
+
+  if (embedData) {
+    // Inject a one-shot bootstrap before init() that seeds the storage with
+    // current vault + played, so the file opens with the data preloaded.
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      vault: state.vault.map(it => ({ name: it.name, dateAdded: it.dateAdded })),
+      played: state.played.map(it => ({ name: it.name, dateAdded: it.dateAdded })),
+    };
+    const json = JSON.stringify(payload).replace(/<\/script>/gi, '<\\/script>');
+
+    const bootstrap =
+'\n/* ── EMBEDDED DATA BOOTSTRAP (auto-generated) ── */\n' +
+'(function(){\n' +
+'  if (window.__gv_seeded__) return;\n' +
+'  window.__gv_seeded__ = true;\n' +
+'  var EMBEDDED = ' + json + ';\n' +
+'  var ORIG_INIT;\n' +
+'  function chunkAndSeed(name, items) {\n' +
+'    var CHUNK = 25000;\n' +
+'    var chunks = Math.max(1, Math.ceil(items.length / CHUNK));\n' +
+'    for (var i = 0; i < chunks; i++) {\n' +
+'      var slice = items.slice(i * CHUNK, (i + 1) * CHUNK);\n' +
+'      try { localStorage.setItem("gv:" + name + "-chunk-" + i, JSON.stringify(slice)); } catch(e){}\n' +
+'    }\n' +
+'    try { localStorage.setItem("gv:" + name + "-meta", JSON.stringify({ chunks: chunks, total: items.length, updated: Date.now() })); } catch(e){}\n' +
+'  }\n' +
+'  // Only seed if vault is empty, so re-opening doesn\'t overwrite local edits\n' +
+'  try {\n' +
+'    var existing = localStorage.getItem("gv:vault-meta");\n' +
+'    if (!existing) {\n' +
+'      chunkAndSeed("vault", EMBEDDED.vault);\n' +
+'      chunkAndSeed("played", EMBEDDED.played);\n' +
+'      console.log("[Game Vault] Embedded data seeded:", EMBEDDED.vault.length, "vault,", EMBEDDED.played.length, "played");\n' +
+'    }\n' +
+'  } catch(e) { console.warn("seed failed:", e); }\n' +
+'})();\n';
+
+    // Insert the bootstrap at the very start of the main <script> block
+    // so it runs before init(). Use the marker we know exists at top of script.
+    const marker = '/* ════════════════════════════════════════════════════════════════';
+    const idx = html.indexOf(marker);
+    if (idx > 0) {
+      html = html.slice(0, idx) + bootstrap + '\n' + html.slice(idx);
+    } else {
+      // Fallback: inject right after the first <script> tag
+      html = html.replace(/<script>/, '<script>' + bootstrap);
+    }
+  }
+
+  const date = new Date().toISOString().slice(0, 10);
+  const fname = embedData
+    ? 'game-vault-with-data-' + date + '.html'
+    : 'game-vault-source-' + date + '.html';
+
+  const ok = downloadFile(html, fname, 'text/html;charset=utf-8');
+  if (ok) {
+    info.style.color = 'var(--success)';
+    info.textContent = '✓ saved · ' + fname + ' · ' + (html.length / 1024).toFixed(0) + ' KB' +
+      (embedData ? ' · ' + (state.vault.length + state.played.length) + ' items embedded' : '');
+    toast('HTML exported', 'success');
+  } else {
+    info.style.color = 'var(--danger)';
+    info.textContent = '✗ download failed';
+    toast('Download failed', 'error');
+  }
+}
+
+$('#export-html-with-data').addEventListener('click', () => exportHtml({ embedData: true }));
+$('#export-html-blank').addEventListener('click', () => exportHtml({ embedData: false }));
+
+/* Like bulkAdd but accepts items with optional preserved dateAdded.
+   Used for restoring backups so original timestamps survive. */
+function bulkAddRich(richItems, target) {
+  const idx = target === 'vault' ? state.vIndex : state.pIndex;
+  const seenDedup = new Map();
+  const addedItems = [];
+  const skipped = [];
+  const flagged = [];
+  let counter = 0;
+
+  for (const raw of richItems) {
+    let name, dateAdded;
+    if (typeof raw === 'string') {
+      name = raw.trim();
+      dateAdded = Date.now() + counter;
+    } else if (raw && typeof raw === 'object') {
+      name = String(raw.name || raw.title || '').trim();
+      const d = Number(raw.dateAdded);
+      dateAdded = (Number.isFinite(d) && d > 0) ? d : Date.now() + counter;
+    } else continue;
+
+    if (!name) continue;
+    const nd = normalizeDedup(name);
+    const n  = normalize(name);
+
+    // Exact dup check
+    let exactDup = null;
+    if (nd) {
+      if (seenDedup.has(nd)) {
+        exactDup = seenDedup.get(nd);
+      } else if (n && idx.byNorm.has(n)) {
+        const cand = idx.byNorm.get(n);
+        if (normalizeDedup(cand.name) === nd) exactDup = cand;
+        else {
+          const group = idx.dups.get(n);
+          if (group) for (const it of group) {
+            if (normalizeDedup(it.name) === nd) { exactDup = it; break; }
+          }
+        }
+      }
+    }
+
+    if (exactDup) {
+      skipped.push({ input: name, existing: exactDup });
+      continue;
+    }
+
+    const item = { id: newId(), name, dateAdded };
+    item._norm = n;
+    item._ts = tokenSort(name);
+
+    state[target].push(item);
+    idx.add(item);
+    if (nd) seenDedup.set(nd, item);
+    addedItems.push(item);
+    counter++;
+
+    if (n) {
+      const group = idx.dups.get(n);
+      if (group && group.length > 1) {
+        const neighbors = [];
+        for (const other of group) {
+          if (other.id === item.id) continue;
+          if (normalizeDedup(other.name) !== nd) neighbors.push(other);
+        }
+        if (neighbors.length) flagged.push({ item, neighbors });
+      }
+    }
+  }
+
+  scheduleSave(target);
+  return { added: addedItems.length, addedItems, skipped, flagged };
+}
+
+$('#import-any-btn').addEventListener('click', () => {
+  // Create a fresh file input without accept filter — for Android pickers that
+  // hide files based on extension. This shows ALL files.
+  const tmp = document.createElement('input');
+  tmp.type = 'file';
+  tmp.style.position = 'fixed';
+  tmp.style.left = '0';
+  tmp.style.top = '0';
+  tmp.style.opacity = '0';
+  tmp.style.pointerEvents = 'none';
+  document.body.appendChild(tmp);
+  tmp.addEventListener('change', (ev) => {
+    // Forward the file to the main handler by setting it on the real input
+    const realInput = $('#import-file');
+    try {
+      // Modern way: DataTransfer
+      const dt = new DataTransfer();
+      if (ev.target.files[0]) dt.items.add(ev.target.files[0]);
+      realInput.files = dt.files;
+      realInput.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (e) {
+      // Fallback: directly invoke the handler logic
+      handleImportFile(ev.target.files[0]);
+    }
+    document.body.removeChild(tmp);
+  });
+  tmp.click();
+});
+
+$('#import-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const target = $('#import-target').value; // 'vault' or 'played'
+  const info = $('#import-info');
+  info.style.color = 'var(--muted)';
+  info.textContent = '⏳ reading ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)…';
+
+  try {
+    const text = await file.text();
+    if (!text.trim()) throw new Error('File খালি');
+
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    const trimmed = text.trim();
+    const looksJson = ext === 'json' || trimmed.startsWith('{') || trimmed.startsWith('[');
+
+    // ─── JSON path ──────────────────────────────────────
+    if (looksJson) {
+      try {
+        const data = JSON.parse(text);
+
+        // Backup format: { vault: [...], played: [...] } — restore both, preserve dates
+        if (data && (Array.isArray(data.vault) || Array.isArray(data.played))) {
+          await new Promise(r => setTimeout(r, 30));
+          const t0 = performance.now();
+          let vAdded = 0, vSkipped = 0, pAdded = 0, pSkipped = 0;
+          if (Array.isArray(data.vault)) {
+            const r = bulkAddRich(data.vault, 'vault');
+            vAdded = r.added; vSkipped = r.skipped.length;
+          }
+          if (Array.isArray(data.played)) {
+            const r = bulkAddRich(data.played, 'played');
+            pAdded = r.added; pSkipped = r.skipped.length;
+          }
+          const dt = (performance.now() - t0).toFixed(0);
+          renderVault(); renderPlayed(); updateStats();
+          info.style.color = 'var(--success)';
+          info.textContent = '✓ backup restored in ' + dt + 'ms — vault: +' + vAdded +
+            ' (' + vSkipped + ' dup), played: +' + pAdded + ' (' + pSkipped + ' dup)';
+          toast('Backup restored', 'success');
+          e.target.value = '';
+          return;
+        }
+
+        // Plain JSON array → goes to selected target
+        if (Array.isArray(data)) {
+          const items = data.filter(it => it != null);
+          await runImportToTarget(items, target, 'json array', info);
+          e.target.value = '';
+          return;
+        }
+
+        throw new Error('JSON structure বুঝা গেল না');
+      } catch (jsonErr) {
+        if (ext === 'json') throw new Error('Invalid JSON: ' + jsonErr.message);
+        // Fall through to text mode for ambiguous files
+      }
+    }
+
+    // ─── CSV path ───────────────────────────────────────
+    if (ext === 'csv' || (looksJson === false && /,/.test(trimmed.split(/\r?\n/)[0]))) {
+      const parsed = parseCsvSmart(text);
+      if (parsed.routed) {
+        // Has 'list' column → split into vault/played
+        await new Promise(r => setTimeout(r, 30));
+        const t0 = performance.now();
+        const rV = bulkAddRich(parsed.vault, 'vault');
+        const rP = bulkAddRich(parsed.played, 'played');
+        const dt = (performance.now() - t0).toFixed(0);
+        renderVault(); renderPlayed(); updateStats();
+        info.style.color = 'var(--success)';
+        info.textContent = '✓ csv restored in ' + dt + 'ms — vault: +' + rV.added +
+          ' (' + rV.skipped.length + ' dup), played: +' + rP.added + ' (' + rP.skipped.length + ' dup)';
+        toast('CSV restored', 'success');
+        e.target.value = '';
+        return;
+      }
+      // Otherwise fall through, send all to target
+      await runImportToTarget(parsed.lines, target, 'csv', info);
+      e.target.value = '';
+      return;
+    }
+
+    // ─── Plain text path ────────────────────────────────
+    const lines = parseTextLines(text);
+    await runImportToTarget(lines, target, 'text', info);
+    e.target.value = '';
+  } catch (err) {
+    info.style.color = 'var(--danger)';
+    info.textContent = '✗ error: ' + err.message;
+    toast('Import failed: ' + err.message, 'error');
+    e.target.value = '';
+  }
+});
+
+async function runImportToTarget(items, target, mode, info) {
+  if (!items || items.length === 0) throw new Error('কোনো valid line পাওয়া যায়নি');
+  info.textContent = '⏳ adding ' + items.length.toLocaleString() + ' items (' + mode + ' → ' + target + ')…';
+  await new Promise(r => setTimeout(r, 30));
+  const t0 = performance.now();
+  const result = bulkAddRich(items, target);
+  const dt = (performance.now() - t0).toFixed(0);
+  renderVault(); renderPlayed(); updateStats();
+  info.style.color = 'var(--success)';
+  info.textContent = '✓ done in ' + dt + 'ms — ' + target + ': +' + result.added.toLocaleString() +
+    ' added, ' + result.skipped.length.toLocaleString() + ' duplicate skipped';
+  toast('Added ' + result.added.toLocaleString() + ' to ' + target, 'success');
+}
+
+function parseTextLines(text) {
+  return text.split(/\r?\n/)
+    .map(l => l.replace(/^\uFEFF/, '').trim())
+    .filter(Boolean)
+    .filter(l => !l.startsWith('#') && !l.startsWith('//'));
+}
+
+/* Smart CSV: detects 'list' column for routed import, else falls back to single-column extraction */
+function parseCsvSmart(text) {
+  const rows = text.split(/\r?\n/).map(l => l.replace(/^\uFEFF/, '')).filter(l => l.trim());
+  if (rows.length === 0) return { routed: false, lines: [] };
+
+  const firstCells = parseCsvRow(rows[0]);
+  const lowered = firstCells.map(c => c.trim().toLowerCase());
+  const hasHeader = lowered.some(h => /^(name|title|game|list|category|date_added|added)$/i.test(h));
+
+  if (hasHeader) {
+    const nameIdx = lowered.findIndex(h => /^(name|title|game)$/i.test(h));
+    const listIdx = lowered.findIndex(h => /^(list|category|type)$/i.test(h));
+    const dateIdx = lowered.findIndex(h => /^(date_added|added|created|timestamp)$/i.test(h));
+
+    if (nameIdx >= 0 && listIdx >= 0) {
+      // Routed import — split by list value
+      const vault = [], played = [];
+      for (let i = 1; i < rows.length; i++) {
+        const cells = parseCsvRow(rows[i]);
+        const name = (cells[nameIdx] || '').trim();
+        if (!name) continue;
+        const listVal = (cells[listIdx] || '').trim().toLowerCase();
+        const date = dateIdx >= 0 ? Date.parse(cells[dateIdx]) : NaN;
+        const item = { name, dateAdded: Number.isFinite(date) ? date : undefined };
+        if (listVal === 'played') played.push(item);
+        else vault.push(item); // default to vault
+      }
+      return { routed: true, vault, played };
+    }
+
+    if (nameIdx >= 0) {
+      // Single-list import — extract name + optional date
+      const lines = [];
+      for (let i = 1; i < rows.length; i++) {
+        const cells = parseCsvRow(rows[i]);
+        const name = (cells[nameIdx] || '').trim();
+        if (!name) continue;
+        const date = dateIdx >= 0 ? Date.parse(cells[dateIdx]) : NaN;
+        lines.push({ name, dateAdded: Number.isFinite(date) ? date : undefined });
+      }
+      return { routed: false, lines };
+    }
+  }
+
+  // No header found → first column = name
+  const lines = [];
+  for (const row of rows) {
+    const cells = parseCsvRow(row);
+    const v = (cells[0] || '').trim();
+    if (v) lines.push(v);
+  }
+  return { routed: false, lines };
+}
+
+function parseCsvRow(row) {
+  const out = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < row.length; i++) {
+    const ch = row[i];
+    if (inQuotes) {
+      if (ch === '"' && row[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') inQuotes = false;
+      else cur += ch;
+    } else {
+      if (ch === '"') inQuotes = true;
+      else if (ch === ',') { out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+$('#fuzzy-threshold').addEventListener('input', e => {
+  state.fuzzyThreshold = parseFloat(e.target.value);
+  $('#fuzzy-threshold-val').textContent = state.fuzzyThreshold.toFixed(2);
+  Storage.set('fuzzy-threshold', String(state.fuzzyThreshold));
+});
+
+$('#clear-vault').addEventListener('click', () => {
+  modal({
+    title: 'Clear vault?',
+    body: 'এই action revertible না। ভল্টের সব data delete হবে।',
+    confirmLabel: 'Clear vault',
+    confirmKind: 'btn-danger',
+    onConfirm: async () => {
+      state.vault = [];
+      rebuildIndexes();
+      await saveList('vault', []);
+      renderVault(); updateStats();
+      toast('Vault cleared', 'success');
+    }
+  });
+});
+$('#clear-played').addEventListener('click', () => {
+  modal({
+    title: 'Clear played list?',
+    body: 'Played list-এর সব data delete হবে।',
+    confirmLabel: 'Clear played',
+    confirmKind: 'btn-danger',
+    onConfirm: async () => {
+      state.played = [];
+      rebuildIndexes();
+      await saveList('played', []);
+      renderPlayed(); updateStats();
+      toast('Played cleared', 'success');
+    }
+  });
+});
+$('#clear-all').addEventListener('click', () => {
+  modal({
+    title: 'Clear EVERYTHING?',
+    body: 'একদম। শেষ। সব। তুমি কি sure?',
+    confirmLabel: 'Yes, clear all',
+    confirmKind: 'btn-danger',
+    onConfirm: async () => {
+      state.vault = []; state.played = [];
+      rebuildIndexes();
+      await saveList('vault', []);
+      await saveList('played', []);
+      renderVault(); renderPlayed(); updateStats();
+      toast('Everything cleared', 'success');
+    }
+  });
+});
+
+/* ─── Init ───────────────────────────────────────────────── */
+async function init() {
+  $('#storage-info').textContent = Storage.label;
+  $('#vault-status').textContent = 'loading vault…';
+  $('#played-status').textContent = 'loading played…';
+
+  // Load saved fuzzy threshold
+  const ft = await Storage.get('fuzzy-threshold');
+  if (ft) {
+    state.fuzzyThreshold = parseFloat(ft);
+    $('#fuzzy-threshold').value = state.fuzzyThreshold;
+    $('#fuzzy-threshold-val').textContent = state.fuzzyThreshold.toFixed(2);
+  }
+
+  // Load lists
+  try {
+    const t0 = performance.now();
+    const [v, p] = await Promise.all([loadList('vault'), loadList('played')]);
+    state.vault = v;
+    state.played = p;
+    const totalItems = v.length + p.length;
+
+    if (totalItems > 10000) {
+      $('#vault-status').textContent = 'building index for ' + totalItems.toLocaleString() + ' items…';
+      await rebuildIndexesAsync((done, total) => {
+        if (done % 20000 === 0 || done === total) {
+          $('#vault-status').textContent = 'building index… ' + Math.floor(done / total * 100) + '%';
+        }
+      });
+    } else {
+      rebuildIndexes();
+    }
+
+    const dt = (performance.now() - t0).toFixed(0);
+    $('#vault-status').textContent = 'ready · ' + state.vault.length + ' items · loaded in ' + dt + 'ms · storage: ' + Storage.label;
+    $('#played-status').textContent = 'ready · ' + state.played.length + ' items · storage: ' + Storage.label;
+  } catch (e) {
+    $('#vault-status').textContent = 'load error: ' + e.message;
+    toast('Load error', 'error');
+  }
+
+  state.loaded = true;
+  renderVault();
+  renderPlayed();
+  updateStats();
+
+  if (!Storage.available) {
+    toast('Note: persistent storage unavailable in this context, using in-memory', 'info', 5000);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
