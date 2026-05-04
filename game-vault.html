@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -501,6 +502,58 @@ body {
 .toast.error { border-color: rgba(239,68,68,0.5); color: var(--danger); }
 .toast.info { border-color: rgba(109,182,255,0.5); }
 
+/* ─── Debug panel ────────────────────────────────────────── */
+.debug-panel {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  width: 340px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  z-index: 90;
+  display: none;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+}
+.debug-panel.show { display: block; }
+.debug-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+  border-radius: 8px 8px 0 0;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+}
+.debug-panel-actions { display: flex; gap: 4px; }
+.debug-panel-actions .btn { padding: 3px 8px; font-size: 11px; }
+.debug-panel-body { padding: 10px 12px; }
+.debug-panel-section { margin-bottom: 12px; }
+.debug-panel-section:last-child { margin-bottom: 0; }
+.debug-panel-section h5 {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.debug-panel-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  gap: 8px;
+}
+.debug-panel-row .label { color: var(--muted); }
+.debug-panel-row .val { color: var(--accent); text-align: right; }
+.debug-panel-foot { font-size: 10px; color: var(--muted); margin-top: 8px; font-style: italic; }
+
 /* ─── Modal ──────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed; inset: 0;
@@ -896,6 +949,14 @@ body {
   </div>
 
   <div class="setting-card">
+    <h4>Performance debug</h4>
+    <p>Profile timing দেখাও — startup, search, save/load latency। Real operations only, no synthetic benchmark।</p>
+    <div class="setting-row">
+      <button class="btn" id="toggle-debug-panel">Show debug panel</button>
+    </div>
+  </div>
+
+  <div class="setting-card">
     <h4 style="color:var(--danger);">Danger zone</h4>
     <p>এই action revertible না। সাবধানে।</p>
     <div class="setting-row">
@@ -918,6 +979,16 @@ body {
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="debug-panel" id="debug-panel">
+  <div class="debug-panel-header">
+    <span>⚡ profiler</span>
+    <div class="debug-panel-actions">
+      <button class="btn btn-sm" id="debug-copy-stats">Copy stats</button>
+      <button class="btn btn-sm" id="debug-panel-close" title="Close">✕</button>
+    </div>
+  </div>
+  <div class="debug-panel-body" id="debug-panel-body"></div>
+</div>
 <div class="modal-overlay" id="modal">
   <div class="modal" id="modal-content"></div>
 </div>
@@ -929,34 +1000,127 @@ body {
    Falls back to in-memory if unavailable.
    ════════════════════════════════════════════════════════════════ */
 
+/* ─── Profiler ──────────────────────────────────────────── */
+const Profiler = (() => {
+  const data = new Map();
+  const CAPS = { 'search.vault': 50, 'search.played': 50 };
+  const DEFAULT_CAP = 10;
+
+  function record(metric, ms, meta) {
+    let entry = data.get(metric);
+    if (!entry) {
+      entry = { samples: [], cap: CAPS[metric] || DEFAULT_CAP };
+      data.set(metric, entry);
+    }
+    entry.samples.push({ ms, meta: meta || null, t: Date.now() });
+    if (entry.samples.length > entry.cap) entry.samples.shift();
+  }
+
+  function summary() {
+    const out = {};
+    for (const [metric, entry] of data) {
+      const s = entry.samples;
+      if (!s.length) continue;
+      const last = s[s.length - 1];
+      let sum = 0;
+      for (const x of s) sum += x.ms;
+      out[metric] = {
+        last: +last.ms.toFixed(2),
+        avg: +(sum / s.length).toFixed(2),
+        count: s.length,
+        meta: last.meta
+      };
+    }
+    return out;
+  }
+
+  function memorySnapshot() {
+    const v = (typeof state !== 'undefined') ? state.vIndex : null;
+    const vault = (typeof state !== 'undefined' && state.vault) ? state.vault.length : 0;
+    const played = (typeof state !== 'undefined' && state.played) ? state.played.length : 0;
+    const trigrams = (v && v.trigrams) ? v.trigrams.size : 0;
+    const tokens = (v && v.tokens) ? v.tokens.size : 0;
+    const indexedItems = (v && v.items) ? v.items.length : 0;
+    // Rough estimate per spec: items*200 + vIndex.trigrams*50 (vIndex only)
+    const estimatedBytes = (vault + played) * 200 + trigrams * 50;
+    return {
+      vault, played,
+      'vIndex.items': indexedItems,
+      'vIndex.trigrams': trigrams,
+      'vIndex.tokens': tokens,
+      estimatedBytes
+    };
+  }
+
+  return { record, summary, memorySnapshot };
+})();
+window.Profiler = Profiler;
+
 /* ─── Storage layer ───────────────────────────────────────── */
 const Storage = (() => {
   // Tier 1: Anthropic artifact storage (works inside Claude.ai)
   const HAS_API = typeof window.storage !== 'undefined';
 
-  // Tier 2: localStorage (works when downloaded as standalone HTML)
-  let HAS_LS = false;
-  try {
-    const k = '__gv_test__';
-    localStorage.setItem(k, '1');
-    localStorage.removeItem(k);
-    HAS_LS = true;
-  } catch (e) { HAS_LS = false; }
+  // Tier 2: IndexedDB via Dexie (works when downloaded as standalone HTML)
+  const HAS_IDB = !HAS_API
+    && typeof indexedDB !== 'undefined'
+    && typeof window.Dexie !== 'undefined';
 
   // Tier 3: in-memory (last resort)
   const memCache = {};
 
   const PREFIX = 'gv:';
+  const MIGRATION_FLAG = '__migrated_from_ls';
 
   let backend, label;
   if (HAS_API) { backend = 'api'; label = 'artifact storage (persistent)'; }
-  else if (HAS_LS) { backend = 'ls'; label = 'localStorage (persistent)'; }
+  else if (HAS_IDB) { backend = 'idb'; label = 'IndexedDB (persistent)'; }
   else { backend = 'mem'; label = 'in-memory (session only)'; }
 
+  let db = null;
+  let _ready;
+
+  if (backend === 'idb') {
+    _ready = (async () => {
+      try {
+        db = new Dexie('gameVault');
+        db.version(1).stores({ kv: 'key' });
+        await db.open();
+        // One-shot migration: copy any gv:* keys from localStorage into IDB.
+        // Keeps localStorage intact as a safety net for one release.
+        const flag = await db.kv.get(MIGRATION_FLAG);
+        if (!flag) {
+          const rows = [];
+          try {
+            for (let i = 0; i < localStorage.length; i++) {
+              const fullKey = localStorage.key(i);
+              if (fullKey && fullKey.startsWith(PREFIX)) {
+                const value = localStorage.getItem(fullKey);
+                if (value !== null) {
+                  rows.push({ key: fullKey.slice(PREFIX.length), value });
+                }
+              }
+            }
+          } catch (e) { /* localStorage blocked → nothing to migrate */ }
+          if (rows.length) await db.kv.bulkPut(rows);
+          await db.kv.put({ key: MIGRATION_FLAG, value: '1' });
+        }
+      } catch (e) {
+        console.error('IndexedDB open failed, falling back to memory:', e);
+        backend = 'mem';
+        label = 'in-memory (session only)';
+        db = null;
+      }
+    })();
+  } else {
+    _ready = Promise.resolve();
+  }
+
   return {
-    available: backend !== 'mem',
-    backend,
-    label,
+    get available() { return backend !== 'mem'; },
+    get backend() { return backend; },
+    get label() { return label; },
+    ready: _ready,
 
     async get(key) {
       if (backend === 'api') {
@@ -965,9 +1129,14 @@ const Storage = (() => {
           return r ? r.value : null;
         } catch (e) { return null; }
       }
-      if (backend === 'ls') {
-        try { return localStorage.getItem(PREFIX + key); }
-        catch (e) { return null; }
+      if (backend === 'idb') {
+        await _ready;
+        if (db) {
+          try {
+            const row = await db.kv.get(key);
+            return row ? row.value : null;
+          } catch (e) { return null; }
+        }
       }
       return memCache[key] ?? null;
     },
@@ -977,11 +1146,11 @@ const Storage = (() => {
         try { await window.storage.set(key, value); return true; }
         catch (e) { console.error('storage.set fail:', e); return false; }
       }
-      if (backend === 'ls') {
-        try { localStorage.setItem(PREFIX + key, value); return true; }
-        catch (e) {
-          console.error('localStorage quota or error:', e);
-          return false;
+      if (backend === 'idb') {
+        await _ready;
+        if (db) {
+          try { await db.kv.put({ key, value }); return true; }
+          catch (e) { console.error('IDB write error:', e); return false; }
         }
       }
       memCache[key] = value;
@@ -991,8 +1160,11 @@ const Storage = (() => {
     async del(key) {
       if (backend === 'api') {
         try { await window.storage.delete(key); } catch (e) {}
-      } else if (backend === 'ls') {
-        try { localStorage.removeItem(PREFIX + key); } catch (e) {}
+      } else if (backend === 'idb') {
+        await _ready;
+        if (db) {
+          try { await db.kv.delete(key); } catch (e) {}
+        }
       }
       delete memCache[key];
     }
@@ -1002,6 +1174,7 @@ const Storage = (() => {
 const CHUNK_SIZE = 25000;
 
 async function saveList(name, items) {
+  const _tProf = performance.now();
   const chunks = Math.max(1, Math.ceil(items.length / CHUNK_SIZE));
   // Read previous chunk count to clean up if shrinking
   let oldChunks = 0;
@@ -1023,13 +1196,21 @@ async function saveList(name, items) {
   for (let i = chunks; i < oldChunks; i++) {
     await Storage.del(`${name}-chunk-${i}`);
   }
+  Profiler.record('save.' + name, performance.now() - _tProf, { n: items.length });
 }
 
 async function loadList(name) {
+  const _tProf = performance.now();
   const metaRaw = await Storage.get(`${name}-meta`);
-  if (!metaRaw) return [];
+  if (!metaRaw) {
+    Profiler.record('load.' + name, performance.now() - _tProf, { n: 0 });
+    return [];
+  }
   let meta;
-  try { meta = JSON.parse(metaRaw); } catch (e) { return []; }
+  try { meta = JSON.parse(metaRaw); } catch (e) {
+    Profiler.record('load.' + name, performance.now() - _tProf, { n: 0 });
+    return [];
+  }
   const tasks = [];
   for (let i = 0; i < meta.chunks; i++) {
     tasks.push(Storage.get(`${name}-chunk-${i}`));
@@ -1039,6 +1220,7 @@ async function loadList(name) {
   for (const r of results) {
     if (r) { try { items.push(...JSON.parse(r)); } catch (e) {} }
   }
+  Profiler.record('load.' + name, performance.now() - _tProf, { n: items.length });
   return items;
 }
 
@@ -1815,6 +1997,7 @@ function addItem(name, target = 'vault', { allowDup = false } = {}) {
 }
 
 function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
+  const _tProf = performance.now();
   const idx = target === 'vault' ? state.vIndex : state.pIndex;
   const seenDedup = new Map();   // dedupNorm → first item seen this batch
   const addedItems = [];
@@ -1877,6 +2060,7 @@ function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
   }
 
   scheduleSave(target);
+  Profiler.record('bulkAdd', performance.now() - _tProf, { n: names.length });
   return { added: addedItems.length, addedItems, skipped, flagged };
 }
 
@@ -1971,6 +2155,7 @@ function moveToVault(item) {
 
 /* ─── Bulk check engine ──────────────────────────────────── */
 async function runBulkCheck(inputText, target, useFuzzy, onProgress) {
+  const _tProf = performance.now();
   const lines = inputText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   if (lines.length === 0) return null;
 
@@ -2018,6 +2203,7 @@ async function runBulkCheck(inputText, target, useFuzzy, onProgress) {
   const extras = [];
   for (const it of items) if (!matchedItemIds.has(it.id)) extras.push(it);
 
+  Profiler.record('bulkCheck', performance.now() - _tProf, { n: lines.length });
   return {
     target,
     found,
@@ -2123,7 +2309,11 @@ let _vaultSearchTimer = 0;
 $('#vault-search').addEventListener('input', e => {
   state.vaultFilter = e.target.value;
   clearTimeout(_vaultSearchTimer);
-  _vaultSearchTimer = setTimeout(() => renderVault(), adaptiveDelay('vault'));
+  _vaultSearchTimer = setTimeout(() => {
+    const _t0 = performance.now();
+    renderVault();
+    Profiler.record('search.vault', performance.now() - _t0);
+  }, adaptiveDelay('vault'));
 });
 $('#vault-sort').addEventListener('change', e => {
   state.vaultSort = e.target.value;
@@ -2157,7 +2347,11 @@ let _playedSearchTimer = 0;
 $('#played-search').addEventListener('input', e => {
   state.playedFilter = e.target.value;
   clearTimeout(_playedSearchTimer);
-  _playedSearchTimer = setTimeout(() => renderPlayed(), adaptiveDelay('played'));
+  _playedSearchTimer = setTimeout(() => {
+    const _t0 = performance.now();
+    renderPlayed();
+    Profiler.record('search.played', performance.now() - _t0);
+  }, adaptiveDelay('played'));
 });
 $('#played-sort').addEventListener('change', e => {
   state.playedSort = e.target.value;
@@ -2984,6 +3178,112 @@ $('#clear-all').addEventListener('click', () => {
 });
 
 /* ─── Init ───────────────────────────────────────────────── */
+/* ─── Debug panel ────────────────────────────────────────── */
+const DBG_LABELS = {
+  'indexBuild':    'Index build',
+  'search.vault':  'Search vault',
+  'search.played': 'Search played',
+  'bulkAdd':       'Bulk add',
+  'bulkCheck':     'Bulk check',
+  'save.vault':    'Save vault',
+  'save.played':   'Save played',
+  'load.vault':    'Load vault',
+  'load.played':   'Load played',
+};
+const DBG_ORDER = ['indexBuild','search.vault','search.played','bulkAdd','bulkCheck','save.vault','save.played','load.vault','load.played'];
+let _debugTimer = null;
+
+function renderDebugPanel() {
+  const body = $('#debug-panel-body');
+  if (!body) return;
+  const sum = Profiler.summary();
+  const mem = Profiler.memorySnapshot();
+
+  const rows = [];
+  rows.push('<div class="debug-panel-section"><h5>Timings</h5>');
+  for (const k of DBG_ORDER) {
+    const s = sum[k];
+    const label = DBG_LABELS[k] || k;
+    let val;
+    if (!s) {
+      val = '<span class="val">—</span>';
+    } else {
+      let str = 'last ' + s.last.toFixed(1) + 'ms';
+      if (k === 'search.vault' || k === 'search.played') {
+        str += ' · avg ' + s.avg.toFixed(1) + 'ms (n=' + s.count + ')';
+      }
+      if (s.meta && typeof s.meta.n === 'number') {
+        str += ' · ' + s.meta.n.toLocaleString() + ' items';
+      }
+      val = '<span class="val">' + str + '</span>';
+    }
+    rows.push('<div class="debug-panel-row"><span class="label">' + label + '</span>' + val + '</div>');
+  }
+  rows.push('</div>');
+
+  rows.push('<div class="debug-panel-section"><h5>Memory</h5>');
+  const memRows = [
+    ['Vault items',     mem.vault.toLocaleString()],
+    ['Played items',    mem.played.toLocaleString()],
+    ['vIndex.items',    mem['vIndex.items'].toLocaleString()],
+    ['vIndex.trigrams', mem['vIndex.trigrams'].toLocaleString()],
+    ['vIndex.tokens',   mem['vIndex.tokens'].toLocaleString()],
+    ['~Memory (est)',   '~' + (mem.estimatedBytes / 1024).toFixed(1) + ' KB'],
+  ];
+  for (const [l, v] of memRows) {
+    rows.push('<div class="debug-panel-row"><span class="label">' + l + '</span><span class="val">' + v + '</span></div>');
+  }
+  rows.push('</div>');
+  rows.push('<div class="debug-panel-foot">vault index only — pIndex not counted · refresh 1s</div>');
+
+  body.innerHTML = rows.join('');
+}
+
+function showDebugPanel() {
+  $('#debug-panel').classList.add('show');
+  $('#toggle-debug-panel').textContent = 'Hide debug panel';
+  renderDebugPanel();
+  if (_debugTimer) clearInterval(_debugTimer);
+  _debugTimer = setInterval(renderDebugPanel, 1000);
+  Storage.set('debug-panel', '1');
+}
+
+function hideDebugPanel() {
+  $('#debug-panel').classList.remove('show');
+  $('#toggle-debug-panel').textContent = 'Show debug panel';
+  if (_debugTimer) { clearInterval(_debugTimer); _debugTimer = null; }
+  Storage.set('debug-panel', '0');
+}
+
+$('#toggle-debug-panel').addEventListener('click', () => {
+  if ($('#debug-panel').classList.contains('show')) hideDebugPanel();
+  else showDebugPanel();
+});
+$('#debug-panel-close').addEventListener('click', hideDebugPanel);
+$('#debug-copy-stats').addEventListener('click', async () => {
+  const blob = {
+    ts: new Date().toISOString(),
+    timings: Profiler.summary(),
+    memory: Profiler.memorySnapshot()
+  };
+  const text = JSON.stringify(blob, null, 2);
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    toast('Stats copied', 'success');
+  } catch (e) {
+    toast('Copy failed', 'error');
+  }
+});
+
 async function init() {
   $('#storage-info').textContent = Storage.label;
   $('#vault-status').textContent = 'loading vault…';
@@ -3005,6 +3305,7 @@ async function init() {
     state.played = p;
     const totalItems = v.length + p.length;
 
+    const _tIdx = performance.now();
     if (totalItems > 10000) {
       $('#vault-status').textContent = 'building index for ' + totalItems.toLocaleString() + ' items…';
       await rebuildIndexesAsync((done, total) => {
@@ -3015,6 +3316,7 @@ async function init() {
     } else {
       rebuildIndexes();
     }
+    Profiler.record('indexBuild', performance.now() - _tIdx, { n: totalItems });
 
     const dt = (performance.now() - t0).toFixed(0);
     $('#vault-status').textContent = 'ready · ' + state.vault.length + ' items · loaded in ' + dt + 'ms · storage: ' + Storage.label;
@@ -3032,6 +3334,10 @@ async function init() {
   if (!Storage.available) {
     toast('Note: persistent storage unavailable in this context, using in-memory', 'info', 5000);
   }
+
+  // Restore debug panel visibility
+  const dbg = await Storage.get('debug-panel');
+  if (dbg === '1') showDebugPanel();
 }
 
 init();
