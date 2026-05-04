@@ -956,6 +956,17 @@ body {
     </div>
   </div>
 
+  <div class="setting-card" id="worker-setting-card">
+    <h4>🧪 Worker mode (experimental — Part 1, plumbing only)</h4>
+    <p>Bulk check Web Worker-এ চালাও — main thread block হবে না। Part 1: scaffold only, এখনো wired না। <span id="worker-availability-hint" style="color:var(--muted);"></span></p>
+    <div class="setting-row">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="use-worker-toggle" style="accent-color:var(--accent);">
+        <span>Use Worker for bulk check</span>
+      </label>
+    </div>
+  </div>
+
   <div class="setting-card">
     <h4 style="color:var(--danger);">Danger zone</h4>
     <p>এই action revertible না। সাবধানে।</p>
@@ -1120,6 +1131,12 @@ const Storage = (() => {
     get available() { return backend !== 'mem'; },
     get backend() { return backend; },
     get label() { return label; },
+    get workerAvailable() {
+      return typeof Worker !== 'undefined'
+        && typeof URL !== 'undefined'
+        && typeof URL.createObjectURL === 'function'
+        && typeof Blob !== 'undefined';
+    },
     ready: _ready,
 
     async get(key) {
@@ -1170,6 +1187,64 @@ const Storage = (() => {
     }
   };
 })();
+
+/* ─── Worker plumbing (Part 1: scaffold only) ────────────── */
+// Message protocol — uppercase string types, all messages are { type, payload? }.
+const WORKER_MSG = Object.freeze({
+  START:    'START',     // main → worker: begin a bulk-check job; payload = { lines, items, useFuzzy, threshold }
+  CANCEL:   'CANCEL',    // main → worker: abort the in-flight job; payload = none
+  PROGRESS: 'PROGRESS',  // worker → main: periodic update; payload = { done, total }
+  DONE:     'DONE',      // worker → main: job finished; payload = { result }
+  ERROR:    'ERROR',     // worker → main: job failed; payload = { message, stack? }
+  READY:    'READY',     // worker → main: handshake/echo reply; payload = none
+});
+
+// Inline worker source. Part 1 = echo only: any incoming message → READY reply.
+// Part 2 will replace the body with real bulkCheck logic.
+const _WORKER_SRC = '(' + function () {
+  self.onmessage = function () {
+    self.postMessage({ type: 'READY' });
+  };
+} + ')();';
+
+function createBulkCheckWorker() {
+  const blob = new Blob([_WORKER_SRC], { type: 'application/javascript' });
+  const url = URL.createObjectURL(blob);
+  const w = new Worker(url);
+  w.__blobUrl = url; // stash for revocation in WorkerClient.terminate
+  return w;
+}
+
+class WorkerClient {
+  constructor() {
+    this._handlers = { PROGRESS: [], DONE: [], ERROR: [], READY: [] };
+    this._worker = createBulkCheckWorker();
+    this._worker.onmessage = (e) => {
+      const msg = e.data || {};
+      const list = this._handlers[msg.type];
+      if (list) for (const cb of list) { try { cb(msg.payload); } catch (err) { console.error('handler error:', err); } }
+    };
+    this._worker.onerror = (e) => {
+      const list = this._handlers.ERROR;
+      for (const cb of list) { try { cb({ message: e.message || 'worker error' }); } catch (err) { console.error(err); } }
+    };
+  }
+  send(type, payload) {
+    this._worker.postMessage({ type, payload: payload || null });
+  }
+  onProgress(cb) { this._handlers.PROGRESS.push(cb); return this; }
+  onDone(cb)     { this._handlers.DONE.push(cb);     return this; }
+  onError(cb)    { this._handlers.ERROR.push(cb);    return this; }
+  onReady(cb)    { this._handlers.READY.push(cb);    return this; }
+  cancel() { this.send(WORKER_MSG.CANCEL); }
+  terminate() {
+    try { this._worker.terminate(); } catch (e) {}
+    try { if (this._worker.__blobUrl) URL.revokeObjectURL(this._worker.__blobUrl); } catch (e) {}
+    this._handlers = { PROGRESS: [], DONE: [], ERROR: [], READY: [] };
+  }
+}
+window.WorkerClient = WorkerClient;
+window.WORKER_MSG = WORKER_MSG;
 
 const CHUNK_SIZE = 25000;
 
@@ -1698,7 +1773,8 @@ const state = {
   fuzzyThreshold: 0.82,
   bulkCheckResult: null,
   saveTimers: { vault: null, played: null },
-  loaded: false
+  loaded: false,
+  useWorker: false
 };
 
 function newId() { return 'g_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
@@ -3130,6 +3206,11 @@ $('#fuzzy-threshold').addEventListener('input', e => {
   Storage.set('fuzzy-threshold', String(state.fuzzyThreshold));
 });
 
+$('#use-worker-toggle').addEventListener('change', e => {
+  state.useWorker = e.target.checked;
+  Storage.set('use-worker', state.useWorker ? '1' : '0');
+});
+
 $('#clear-vault').addEventListener('click', () => {
   modal({
     title: 'Clear vault?',
@@ -3295,6 +3376,19 @@ async function init() {
     state.fuzzyThreshold = parseFloat(ft);
     $('#fuzzy-threshold').value = state.fuzzyThreshold;
     $('#fuzzy-threshold-val').textContent = state.fuzzyThreshold.toFixed(2);
+  }
+
+  // Worker toggle: feature-gate the UI, restore persisted preference
+  const workerToggle = $('#use-worker-toggle');
+  const workerHint = $('#worker-availability-hint');
+  if (Storage.workerAvailable) {
+    const uw = await Storage.get('use-worker');
+    state.useWorker = (uw === '1');
+    workerToggle.checked = state.useWorker;
+    workerHint.textContent = '';
+  } else {
+    workerToggle.disabled = true;
+    workerHint.textContent = '(এই browser-এ Worker support নেই)';
   }
 
   // Load lists
