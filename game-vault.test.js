@@ -379,7 +379,103 @@ function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
   return { added: addedItems.length, addedItems, skipped, flagged };
 }
 
+// ── PWA manifest builders (verbatim copies) ─────────────────────────────────
+function buildPwaIcon() {
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">'
+    + '<rect width="512" height="512" rx="80" fill="#f5a623"/>'
+    + '<text x="256" y="256" text-anchor="middle" dominant-baseline="central"'
+    + ' font-family="Georgia,&apos;Times New Roman&apos;,serif" font-style="italic"'
+    + ' font-size="280" fill="#ffffff">GV</text>'
+    + '</svg>';
+}
+function buildPwaManifest(startUrl) {
+  const iconData = 'data:image/svg+xml;base64,' + btoa(buildPwaIcon());
+  return {
+    name: 'Game Vault',
+    short_name: 'Vault',
+    start_url: startUrl || './',
+    display: 'standalone',
+    background_color: '#0a0a0b',
+    theme_color: '#0a0a0b',
+    icons: [{ src: iconData, sizes: 'any', type: 'image/svg+xml', purpose: 'any' }]
+  };
+}
+function pwaCanInstall(protocol) {
+  return protocol === 'http:' || protocol === 'https:';
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
+
+describe('buildPwaIcon()', () => {
+  test('returns a single <svg> root with viewBox 0 0 512 512', () => {
+    const svg = buildPwaIcon();
+    expect(svg.startsWith('<svg')).toBe(true);
+    expect(svg.endsWith('</svg>')).toBe(true);
+    expect(svg).toContain('viewBox="0 0 512 512"');
+  });
+
+  test('uses brand accent #f5a623 for background and white "GV" glyph', () => {
+    const svg = buildPwaIcon();
+    expect(svg).toContain('fill="#f5a623"');
+    expect(svg).toContain('>GV<');
+    expect(svg).toContain('fill="#ffffff"');
+  });
+
+  test('declares xmlns so manifest icons render outside a host doc', () => {
+    expect(buildPwaIcon()).toContain('xmlns="http://www.w3.org/2000/svg"');
+  });
+});
+
+describe('buildPwaManifest()', () => {
+  test('has Game Vault / Vault names and standalone display', () => {
+    const m = buildPwaManifest('./');
+    expect(m.name).toBe('Game Vault');
+    expect(m.short_name).toBe('Vault');
+    expect(m.display).toBe('standalone');
+  });
+
+  test('theme_color and background_color match --bg', () => {
+    const m = buildPwaManifest('./');
+    expect(m.theme_color).toBe('#0a0a0b');
+    expect(m.background_color).toBe('#0a0a0b');
+  });
+
+  test('start_url defaults to "./" when not given', () => {
+    expect(buildPwaManifest().start_url).toBe('./');
+    expect(buildPwaManifest('').start_url).toBe('./');
+  });
+
+  test('icon is an SVG data URI with sizes "any" and purpose "any"', () => {
+    const icon = buildPwaManifest('./').icons[0];
+    expect(icon.src.startsWith('data:image/svg+xml;base64,')).toBe(true);
+    expect(icon.type).toBe('image/svg+xml');
+    expect(icon.sizes).toBe('any');
+    expect(icon.purpose).toBe('any');
+  });
+
+  test('manifest serializes to valid JSON', () => {
+    const json = JSON.stringify(buildPwaManifest('./'));
+    expect(() => JSON.parse(json)).not.toThrow();
+    expect(JSON.parse(json).name).toBe('Game Vault');
+  });
+});
+
+describe('pwaCanInstall()', () => {
+  test('disables install on file:// protocol', () => {
+    expect(pwaCanInstall('file:')).toBe(false);
+  });
+
+  test('enables on http and https', () => {
+    expect(pwaCanInstall('http:')).toBe(true);
+    expect(pwaCanInstall('https:')).toBe(true);
+  });
+
+  test('disables on unknown protocols (chrome-extension, blob, data)', () => {
+    expect(pwaCanInstall('chrome-extension:')).toBe(false);
+    expect(pwaCanInstall('blob:')).toBe(false);
+    expect(pwaCanInstall('data:')).toBe(false);
+  });
+});
 
 describe('normalize()', () => {
   test('strips year and edition: "Max Payne" equals "Max: Payne 2013 Definitive Edition"', () => {

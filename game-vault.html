@@ -922,6 +922,15 @@ body {
     <div id="export-html-info" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:10px;"></div>
   </div>
 
+  <div class="setting-card" id="install-card">
+    <h4>Install as app</h4>
+    <p>Phone বা desktop-এ install করো — app drawer থেকে launch হবে, browser chrome ছাড়াই খুলবে।</p>
+    <div class="setting-row" style="align-items:center;gap:12px;flex-wrap:wrap;">
+      <button class="btn btn-primary" id="install-btn" disabled>Install</button>
+      <span id="install-hint" style="font-family:var(--mono);font-size:11px;color:var(--muted);"></span>
+    </div>
+  </div>
+
   <div class="setting-card">
     <h4>Import from file</h4>
     <p>PC বা Android থেকে file নাও — <span style="font-family:var(--mono);">.txt</span> (এক লাইনে এক গেম), <span style="font-family:var(--mono);">.csv</span>, অথবা <span style="font-family:var(--mono);">.json</span>। existing data-র সাথে merge হবে, fuzzy duplicate skip।</p>
@@ -1011,6 +1020,64 @@ body {
    Storage: Anthropic artifact persistent storage (window.storage)
    Falls back to in-memory if unavailable.
    ════════════════════════════════════════════════════════════════ */
+
+/* ─── PWA manifest (inline data URI, no SW) ─────────────── */
+function buildPwaIcon() {
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">'
+    + '<rect width="512" height="512" rx="80" fill="#f5a623"/>'
+    + '<text x="256" y="256" text-anchor="middle" dominant-baseline="central"'
+    + ' font-family="Georgia,&apos;Times New Roman&apos;,serif" font-style="italic"'
+    + ' font-size="280" fill="#ffffff">GV</text>'
+    + '</svg>';
+}
+function buildPwaManifest(startUrl) {
+  const iconData = 'data:image/svg+xml;base64,' + btoa(buildPwaIcon());
+  return {
+    name: 'Game Vault',
+    short_name: 'Vault',
+    start_url: startUrl || './',
+    display: 'standalone',
+    background_color: '#0a0a0b',
+    theme_color: '#0a0a0b',
+    icons: [{ src: iconData, sizes: 'any', type: 'image/svg+xml', purpose: 'any' }]
+  };
+}
+function pwaCanInstall(protocol) {
+  return protocol === 'http:' || protocol === 'https:';
+}
+
+let _deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  _deferredInstallPrompt = e;
+  const btn = document.getElementById('install-btn');
+  const hint = document.getElementById('install-hint');
+  if (btn) { btn.disabled = false; btn.textContent = 'Install'; }
+  if (hint) hint.textContent = '';
+});
+window.addEventListener('appinstalled', () => {
+  _deferredInstallPrompt = null;
+  const btn = document.getElementById('install-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '✓ Installed'; }
+  const hint = document.getElementById('install-hint');
+  if (hint) hint.textContent = '';
+});
+
+(function injectManifest() {
+  if (!pwaCanInstall(location.protocol)) return;
+  try {
+    const json = JSON.stringify(buildPwaManifest('./'));
+    const href = 'data:application/manifest+json;base64,' + btoa(json);
+    const link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = href;
+    document.head.appendChild(link);
+    const meta = document.createElement('meta');
+    meta.name = 'theme-color';
+    meta.content = '#0a0a0b';
+    document.head.appendChild(meta);
+  } catch (_) { /* graceful: skip if btoa/DOM not ready */ }
+})();
 
 /* ─── Profiler ──────────────────────────────────────────── */
 const Profiler = (() => {
@@ -3562,6 +3629,34 @@ async function exportHtml({ embedData }) {
 
 $('#export-html-with-data').addEventListener('click', () => exportHtml({ embedData: true }));
 $('#export-html-blank').addEventListener('click', () => exportHtml({ embedData: false }));
+
+/* ─── Install button (PWA) ─────────────────────────────── */
+(function wireInstallBtn() {
+  const btn = $('#install-btn');
+  const hint = $('#install-hint');
+  if (!btn) return;
+  if (!pwaCanInstall(location.protocol)) {
+    btn.disabled = true;
+    if (hint) hint.textContent = 'file:// theke install possible na, http(s):// dorkar';
+    return;
+  }
+  if (_deferredInstallPrompt) {
+    btn.disabled = false;
+  } else {
+    setTimeout(() => {
+      if (!_deferredInstallPrompt && hint && !hint.textContent) {
+        hint.textContent = 'browser-এর menu / address bar থেকে install option দেখো';
+      }
+    }, 2500);
+  }
+  btn.addEventListener('click', async () => {
+    if (!_deferredInstallPrompt) return;
+    _deferredInstallPrompt.prompt();
+    try { await _deferredInstallPrompt.userChoice; } catch (_) {}
+    _deferredInstallPrompt = null;
+    btn.disabled = true;
+  });
+})();
 
 /* Like bulkAdd but accepts items with optional preserved dateAdded.
    Used for restoring backups so original timestamps survive. */
