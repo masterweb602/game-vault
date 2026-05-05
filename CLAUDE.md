@@ -6,6 +6,7 @@
 - Bengali UI (keep all Bengali text)
 - No frameworks, no build step
 - Persistent storage (localStorage / artifact storage)
+- PWA: Manifest + install button only. No service worker by design — single-file constraint takes precedence (browsers reject blob:/data: SW scripts, so SW would require a second file).
 
 ## Rules — NEVER BREAK THESE
 1. Single file থাকবে HTML হিসেবে
