@@ -379,6 +379,38 @@ function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
   return { added: addedItems.length, addedItems, skipped, flagged };
 }
 
+// ── Duplicate-review helpers (verbatim copies) ──────────────────────────────
+function findDuplicateGroups(arr) {
+  const map = new Map();
+  for (const it of arr) {
+    const n = it._norm || normalize(it.name);
+    if (!n) continue;
+    let g = map.get(n);
+    if (!g) { g = { norm: n, items: [] }; map.set(n, g); }
+    g.items.push(it);
+  }
+  const out = [];
+  for (const g of map.values()) if (g.items.length >= 2) out.push(g);
+  return out;
+}
+function applyDupReview(arr, decisions) {
+  const removeIds = new Set();
+  const seenMerge = new Set();
+  for (const it of arr) {
+    const n = it._norm || normalize(it.name);
+    if (!n) continue;
+    if (decisions.get(n) !== 'merge') continue;
+    if (seenMerge.has(n)) { removeIds.add(it); }
+    else { seenMerge.add(n); }
+  }
+  const kept = [];
+  const removed = [];
+  for (const it of arr) {
+    if (removeIds.has(it)) removed.push(it); else kept.push(it);
+  }
+  return { kept, removed };
+}
+
 // ── PWA manifest builders (verbatim copies) ─────────────────────────────────
 function buildPwaIcon() {
   return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">'
@@ -541,5 +573,146 @@ describe('bulkAdd()', () => {
     expect(result.flagged).toHaveLength(1);
     expect(result.flagged[0].item.name).toBe('Max Payne: Definitive Edition');
     expect(result.skipped).toHaveLength(0);
+  });
+});
+
+describe('findDuplicateGroups()', () => {
+  test('empty array returns []', () => {
+    expect(findDuplicateGroups([])).toEqual([]);
+  });
+
+  test('no duplicates returns []', () => {
+    const arr = [
+      { id: '1', name: 'Max Payne' },
+      { id: '2', name: 'The Witcher 3' },
+    ];
+    expect(findDuplicateGroups(arr)).toEqual([]);
+  });
+
+  test('one group of two items', () => {
+    const arr = [
+      { id: '1', name: 'Max Payne' },
+      { id: '2', name: 'MAX PAYNE (2001)' },
+    ];
+    const groups = findDuplicateGroups(arr);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].items).toHaveLength(2);
+    expect(groups[0].items[0].id).toBe('1');
+    expect(groups[0].items[1].id).toBe('2');
+  });
+
+  test('two separate groups, singletons excluded', () => {
+    const arr = [
+      { id: '1', name: 'Max Payne' },
+      { id: '2', name: 'The Witcher 3' },
+      { id: '3', name: 'Max Payne 2001' },
+      { id: '4', name: 'The Witcher III' },
+      { id: '5', name: 'Hades' },
+    ];
+    const groups = findDuplicateGroups(arr);
+    expect(groups).toHaveLength(2);
+    const sizes = groups.map(g => g.items.length).sort();
+    expect(sizes).toEqual([2, 2]);
+  });
+
+  test('items with empty norm are skipped (never grouped)', () => {
+    const arr = [
+      { id: '1', name: '' },
+      { id: '2', name: '   ' },
+      { id: '3', name: '!!!' },
+      { id: '4', name: 'Max Payne' },
+      { id: '5', name: 'Max Payne' },
+    ];
+    const groups = findDuplicateGroups(arr);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].items.map(i => i.id)).toEqual(['4', '5']);
+  });
+
+  test('preserves insertion order within a group', () => {
+    const arr = [
+      { id: 'a', name: 'Max Payne (2001)' },
+      { id: 'b', name: 'Max Payne' },
+      { id: 'c', name: 'MAX PAYNE Definitive Edition' },
+    ];
+    const groups = findDuplicateGroups(arr);
+    expect(groups[0].items.map(i => i.id)).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('applyDupReview()', () => {
+  test('all groups marked keep — array unchanged, removed empty', () => {
+    const arr = [
+      { id: '1', name: 'Max Payne' },
+      { id: '2', name: 'Max Payne 2001' },
+    ];
+    const decisions = new Map([['max payne', 'keep']]);
+    const { kept, removed } = applyDupReview(arr, decisions);
+    expect(kept).toHaveLength(2);
+    expect(removed).toHaveLength(0);
+  });
+
+  test('all groups marked merge — first kept, rest removed', () => {
+    const arr = [
+      { id: '1', name: 'Max Payne' },
+      { id: '2', name: 'Max Payne 2001' },
+      { id: '3', name: 'MAX PAYNE Definitive Edition' },
+    ];
+    const decisions = new Map([['max payne', 'merge']]);
+    const { kept, removed } = applyDupReview(arr, decisions);
+    expect(kept.map(i => i.id)).toEqual(['1']);
+    expect(removed.map(i => i.id)).toEqual(['2', '3']);
+  });
+
+  test('mixed marks — only merge groups affected', () => {
+    const arr = [
+      { id: 'a1', name: 'Max Payne' },
+      { id: 'a2', name: 'Max Payne (2001)' },
+      { id: 'b1', name: 'Hades' },
+      { id: 'b2', name: 'HADES' },
+    ];
+    const decisions = new Map([
+      ['max payne', 'keep'],
+      ['hades', 'merge'],
+    ]);
+    const { kept, removed } = applyDupReview(arr, decisions);
+    expect(kept.map(i => i.id)).toEqual(['a1', 'a2', 'b1']);
+    expect(removed.map(i => i.id)).toEqual(['b2']);
+  });
+
+  test('unmarked groups are treated as keep', () => {
+    const arr = [
+      { id: '1', name: 'Max Payne' },
+      { id: '2', name: 'Max Payne 2001' },
+    ];
+    const { kept, removed } = applyDupReview(arr, new Map());
+    expect(kept).toHaveLength(2);
+    expect(removed).toHaveLength(0);
+  });
+
+  test('non-grouped items always preserved', () => {
+    const arr = [
+      { id: '1', name: 'Max Payne' },
+      { id: '2', name: 'Max Payne 2001' },
+      { id: '3', name: 'Hades' },
+    ];
+    const decisions = new Map([['max payne', 'merge']]);
+    const { kept, removed } = applyDupReview(arr, decisions);
+    expect(kept.map(i => i.id)).toEqual(['1', '3']);
+    expect(removed.map(i => i.id)).toEqual(['2']);
+  });
+
+  test('preserves overall order of survivors', () => {
+    const arr = [
+      { id: 'a', name: 'Max Payne' },
+      { id: 'b', name: 'Hades' },
+      { id: 'c', name: 'Max Payne 2001' },
+      { id: 'd', name: 'HADES (2020)' },
+    ];
+    const decisions = new Map([
+      ['max payne', 'merge'],
+      ['hades', 'merge'],
+    ]);
+    const { kept } = applyDupReview(arr, decisions);
+    expect(kept.map(i => i.id)).toEqual(['a', 'b']);
   });
 });

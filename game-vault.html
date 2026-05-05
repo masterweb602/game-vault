@@ -479,6 +479,137 @@ body {
   background: var(--bg-soft);
 }
 
+/* ─── Duplicate review panel (vault/played) ───────────── */
+.dup-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--danger);
+  border-radius: 8px;
+  margin-top: 14px;
+  margin-bottom: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.dup-panel-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.dup-panel-title {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 4px;
+}
+.dup-panel-counts {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 22px;
+  line-height: 1.1;
+  color: var(--text);
+}
+.dup-panel-counts .merge-count { color: var(--danger); }
+.dup-panel-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.dup-panel-bulk {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.dup-groups {
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.dup-group {
+  padding: 12px 18px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dup-group:last-child { border-bottom: none; }
+.dup-group.mark-merge { background: rgba(239,68,68,0.04); }
+.dup-group.mark-keep { background: rgba(74,222,128,0.04); }
+.dup-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.dup-group-norm {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dup-group-size {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.dup-group-items {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.dup-group-items li {
+  padding: 4px 0 4px 14px;
+  font-size: 13px;
+  color: var(--text);
+  border-left: 2px solid var(--border);
+  margin-left: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dup-group-items li.first { border-left-color: var(--accent); }
+.dup-group-items li.first::after {
+  content: ' · keep';
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent);
+  letter-spacing: 0.05em;
+}
+.dup-group-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.dup-group-actions .btn-sm { font-size: 11px; padding: 4px 12px; }
+.dup-group-actions .btn-sm.active.merge {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.dup-group-actions .btn-sm.active.keep {
+  background: var(--success);
+  border-color: var(--success);
+  color: #0a0a0b;
+}
+.dup-panel-actions {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  background: var(--bg-soft);
+}
+
 /* ─── Toast ──────────────────────────────────────────────── */
 .toast {
   position: fixed;
@@ -700,7 +831,26 @@ body {
         <option value="za">Z → A</option>
       </select>
       <button class="btn btn-sm" id="vault-dup-toggle" title="Show duplicates only">Duplicates</button>
-      <button class="btn btn-sm btn-danger" id="vault-dup-remove" title="Remove duplicate entries (keep first)">Remove dups</button>
+      <button class="btn btn-sm btn-danger" id="vault-dup-remove" title="Review duplicate groups">Remove dups</button>
+    </div>
+  </div>
+
+  <div class="dup-panel" id="vault-dup-panel" hidden>
+    <div class="dup-panel-header">
+      <div>
+        <span class="dup-panel-title">duplicate review</span>
+        <div class="dup-panel-counts" id="vault-dup-counts"></div>
+        <div class="dup-panel-hint">প্রত্যেক group review করো — Merge করলে first item রাখবে, বাকি delete হবে। Keep / unmarked = কিছু হবে না।</div>
+      </div>
+      <div class="dup-panel-bulk">
+        <button class="btn btn-sm" data-dup-bulk="merge" data-source="vault">Mark all Merge</button>
+        <button class="btn btn-sm" data-dup-bulk="keep" data-source="vault">Mark all Keep</button>
+      </div>
+    </div>
+    <div class="dup-groups" id="vault-dup-groups"></div>
+    <div class="dup-panel-actions">
+      <button class="btn btn-danger" data-dup-apply="vault">Apply</button>
+      <button class="btn" data-dup-cancel="vault">Cancel</button>
     </div>
   </div>
 
@@ -742,7 +892,26 @@ body {
         <option value="za">Z → A</option>
       </select>
       <button class="btn btn-sm" id="played-dup-toggle">Duplicates</button>
-      <button class="btn btn-sm btn-danger" id="played-dup-remove" title="Remove duplicate entries (keep first)">Remove dups</button>
+      <button class="btn btn-sm btn-danger" id="played-dup-remove" title="Review duplicate groups">Remove dups</button>
+    </div>
+  </div>
+
+  <div class="dup-panel" id="played-dup-panel" hidden>
+    <div class="dup-panel-header">
+      <div>
+        <span class="dup-panel-title">duplicate review</span>
+        <div class="dup-panel-counts" id="played-dup-counts"></div>
+        <div class="dup-panel-hint">প্রত্যেক group review করো — Merge করলে first item রাখবে, বাকি delete হবে। Keep / unmarked = কিছু হবে না।</div>
+      </div>
+      <div class="dup-panel-bulk">
+        <button class="btn btn-sm" data-dup-bulk="merge" data-source="played">Mark all Merge</button>
+        <button class="btn btn-sm" data-dup-bulk="keep" data-source="played">Mark all Keep</button>
+      </div>
+    </div>
+    <div class="dup-groups" id="played-dup-groups"></div>
+    <div class="dup-panel-actions">
+      <button class="btn btn-danger" data-dup-apply="played">Apply</button>
+      <button class="btn" data-dup-cancel="played">Cancel</button>
     </div>
   </div>
 
@@ -2391,6 +2560,8 @@ const state = {
   playedSort: 'recent',
   vaultDupOnly: false,
   playedDupOnly: false,
+  vaultDupReview: null,
+  playedDupReview: null,
   fuzzyThreshold: 0.82,
   bulkCheckResult: null,
   saveTimers: { vault: null, played: null },
@@ -3144,41 +3315,177 @@ $('#played-dup-toggle').addEventListener('click', () => {
   renderPlayed();
 });
 
-function removeDuplicates(source) {
-  const arr = state[source];
-  const idx = source === 'vault' ? state.vIndex : state.pIndex;
-  const seen = new Set();
-  const kept = [];
-  const toRemove = [];
+/* ─── Duplicate review (pure helpers) ────────────────────
+   findDuplicateGroups: scan an array for groups of items sharing
+   the same normalized name. Items with empty/null norm are skipped
+   (never grouped). Insertion order preserved.
+   applyDupReview: given decisions per norm ('merge' | 'keep' | null),
+   return { kept, removed }. 'merge' keeps first item per group and
+   removes the rest. 'keep' or null leaves the group intact. */
+function findDuplicateGroups(arr) {
+  const map = new Map();
   for (const it of arr) {
     const n = it._norm || normalize(it.name);
-    if (n && seen.has(n)) { toRemove.push(it); continue; }
-    if (n) seen.add(n);
-    kept.push(it);
+    if (!n) continue;
+    let g = map.get(n);
+    if (!g) { g = { norm: n, items: [] }; map.set(n, g); }
+    g.items.push(it);
   }
-  if (toRemove.length === 0) {
+  const out = [];
+  for (const g of map.values()) if (g.items.length >= 2) out.push(g);
+  return out;
+}
+function applyDupReview(arr, decisions) {
+  const removeIds = new Set();
+  const seenMerge = new Set();
+  for (const it of arr) {
+    const n = it._norm || normalize(it.name);
+    if (!n) continue;
+    if (decisions.get(n) !== 'merge') continue;
+    if (seenMerge.has(n)) { removeIds.add(it); }
+    else { seenMerge.add(n); }
+  }
+  const kept = [];
+  const removed = [];
+  for (const it of arr) {
+    if (removeIds.has(it)) removed.push(it); else kept.push(it);
+  }
+  return { kept, removed };
+}
+
+/* ─── Duplicate review (UI glue) ─────────────────────── */
+function openDupReview(source) {
+  const arr = state[source];
+  const groups = findDuplicateGroups(arr);
+  if (groups.length === 0) {
     toast('কোনো duplicate পাওয়া যায়নি', 'info');
     return;
   }
-  modal({
-    title: 'Remove ' + toRemove.length + ' duplicate(s)?',
-    body: 'প্রত্যেক group থেকে first entry রাখা হবে, বাকিগুলো delete হবে। এটা revertible না।',
-    confirmLabel: 'Remove duplicates',
-    confirmKind: 'btn-danger',
-    onConfirm: () => {
-      state[source] = kept;
-      // Incremental: remove only the duplicates from index
-      for (const it of toRemove) idx.remove(it);
-      scheduleSave(source);
-      if (source === 'vault') renderVault(); else renderPlayed();
-      updateStats();
-      toast('Removed ' + toRemove.length + ' duplicate(s)', 'success');
-    }
-  });
+  state[source + 'DupReview'] = {
+    groups,
+    marks: new Map() // norm -> 'merge' | 'keep'
+  };
+  renderDupPanel(source);
+  $('#' + source + '-dup-panel').hidden = false;
+}
+function closeDupReview(source) {
+  state[source + 'DupReview'] = null;
+  $('#' + source + '-dup-panel').hidden = true;
+}
+function renderDupPanel(source) {
+  const review = state[source + 'DupReview'];
+  if (!review) return;
+  const { groups, marks } = review;
+  let mergeItemCount = 0;
+  for (const g of groups) {
+    if (marks.get(g.norm) === 'merge') mergeItemCount += g.items.length - 1;
+  }
+  $('#' + source + '-dup-counts').innerHTML =
+    groups.length + ' groups · '
+    + '<span class="merge-count">' + mergeItemCount + '</span>'
+    + ' items will merge';
+
+  const host = $('#' + source + '-dup-groups');
+  host.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  for (const g of groups) {
+    const mark = marks.get(g.norm) || null;
+    const div = document.createElement('div');
+    div.className = 'dup-group' + (mark === 'merge' ? ' mark-merge' : mark === 'keep' ? ' mark-keep' : '');
+    div.dataset.norm = g.norm;
+
+    const head = document.createElement('div');
+    head.className = 'dup-group-head';
+    const normSpan = document.createElement('div');
+    normSpan.className = 'dup-group-norm';
+    normSpan.textContent = '"' + g.norm + '"';
+    const sizeSpan = document.createElement('div');
+    sizeSpan.className = 'dup-group-size';
+    sizeSpan.textContent = g.items.length + ' items';
+    head.appendChild(normSpan);
+    head.appendChild(sizeSpan);
+
+    const ul = document.createElement('ul');
+    ul.className = 'dup-group-items';
+    g.items.forEach((it, i) => {
+      const li = document.createElement('li');
+      if (i === 0) li.className = 'first';
+      li.textContent = it.name;
+      ul.appendChild(li);
+    });
+
+    const actions = document.createElement('div');
+    actions.className = 'dup-group-actions';
+    const keepBtn = document.createElement('button');
+    keepBtn.className = 'btn btn-sm keep' + (mark === 'keep' ? ' active' : '');
+    keepBtn.textContent = 'Keep';
+    keepBtn.dataset.dupMark = 'keep';
+    keepBtn.dataset.norm = g.norm;
+    keepBtn.dataset.source = source;
+    const mergeBtn = document.createElement('button');
+    mergeBtn.className = 'btn btn-sm merge' + (mark === 'merge' ? ' active' : '');
+    mergeBtn.textContent = 'Merge';
+    mergeBtn.dataset.dupMark = 'merge';
+    mergeBtn.dataset.norm = g.norm;
+    mergeBtn.dataset.source = source;
+    actions.appendChild(keepBtn);
+    actions.appendChild(mergeBtn);
+
+    div.appendChild(head);
+    div.appendChild(ul);
+    div.appendChild(actions);
+    frag.appendChild(div);
+  }
+  host.appendChild(frag);
+}
+function setDupMark(source, norm, mark) {
+  const review = state[source + 'DupReview'];
+  if (!review) return;
+  if (review.marks.get(norm) === mark) review.marks.delete(norm);
+  else review.marks.set(norm, mark);
+  renderDupPanel(source);
+}
+function setDupMarkAll(source, mark) {
+  const review = state[source + 'DupReview'];
+  if (!review) return;
+  for (const g of review.groups) review.marks.set(g.norm, mark);
+  renderDupPanel(source);
+}
+function applyDupReviewAction(source) {
+  const review = state[source + 'DupReview'];
+  if (!review) return;
+  const { kept, removed } = applyDupReview(state[source], review.marks);
+  if (removed.length === 0) {
+    toast('কোনো group merge mark করা হয়নি', 'info');
+    closeDupReview(source);
+    return;
+  }
+  const idx = source === 'vault' ? state.vIndex : state.pIndex;
+  state[source] = kept;
+  for (const it of removed) idx.remove(it);
+  scheduleSave(source);
+  if (source === 'vault') renderVault(); else renderPlayed();
+  updateStats();
+  closeDupReview(source);
+  toast('Removed ' + removed.length + ' duplicate(s)', 'success');
 }
 
-$('#vault-dup-remove').addEventListener('click', () => removeDuplicates('vault'));
-$('#played-dup-remove').addEventListener('click', () => removeDuplicates('played'));
+$('#vault-dup-remove').addEventListener('click', () => openDupReview('vault'));
+$('#played-dup-remove').addEventListener('click', () => openDupReview('played'));
+
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLElement)) return;
+  if (t.dataset.dupMark) {
+    setDupMark(t.dataset.source, t.dataset.norm, t.dataset.dupMark);
+  } else if (t.dataset.dupBulk) {
+    setDupMarkAll(t.dataset.source, t.dataset.dupBulk);
+  } else if (t.dataset.dupApply) {
+    applyDupReviewAction(t.dataset.dupApply);
+  } else if (t.dataset.dupCancel) {
+    closeDupReview(t.dataset.dupCancel);
+  }
+});
 
 function debounce(fn, ms) {
   let t;
