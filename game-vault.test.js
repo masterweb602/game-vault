@@ -379,6 +379,37 @@ function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
   return { added: addedItems.length, addedItems, skipped, flagged };
 }
 
+// ── Bulk-check input duplicate helpers (verbatim copies) ────────────────────
+function extractInputDupGroups(lines) {
+  const map = new Map();
+  for (let i = 0; i < lines.length; i++) {
+    const n = normalize(lines[i]);
+    if (!n) continue;
+    let g = map.get(n);
+    if (!g) { g = { norm: n, lines: [], indices: [] }; map.set(n, g); }
+    g.lines.push(lines[i]);
+    g.indices.push(i);
+  }
+  const out = [];
+  for (const g of map.values()) if (g.lines.length >= 2) out.push(g);
+  return out;
+}
+function applyInputDups(lines, decisions) {
+  const groups = extractInputDupGroups(lines);
+  const removeIdx = new Set();
+  for (const g of groups) {
+    if (decisions.get(g.norm) !== 'merge') continue;
+    for (let i = 1; i < g.indices.length; i++) removeIdx.add(g.indices[i]);
+  }
+  const kept = [];
+  const removed = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (removeIdx.has(i)) removed.push(lines[i]);
+    else kept.push(lines[i]);
+  }
+  return { kept, removed };
+}
+
 // ── Duplicate-review helpers (verbatim copies) ──────────────────────────────
 function findDuplicateGroups(arr) {
   const map = new Map();
@@ -714,5 +745,103 @@ describe('applyDupReview()', () => {
     ]);
     const { kept } = applyDupReview(arr, decisions);
     expect(kept.map(i => i.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('extractInputDupGroups()', () => {
+  test('empty array returns []', () => {
+    expect(extractInputDupGroups([])).toEqual([]);
+  });
+
+  test('no duplicates returns []', () => {
+    const lines = ['Max Payne', 'Hades', 'The Witcher 3'];
+    expect(extractInputDupGroups(lines)).toEqual([]);
+  });
+
+  test('one group of three with normalized variants', () => {
+    const lines = ['Max Payne', 'MAX PAYNE (2001)', 'max payne: definitive edition'];
+    const groups = extractInputDupGroups(lines);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].lines).toHaveLength(3);
+    expect(groups[0].indices).toEqual([0, 1, 2]);
+  });
+
+  test('multiple groups, insertion order preserved', () => {
+    const lines = [
+      'Max Payne',     // 0
+      'Hades',         // 1
+      'Max Payne 2001',// 2
+      'Aron',          // 3 (singleton, ignored)
+      'HADES',         // 4
+    ];
+    const groups = extractInputDupGroups(lines);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].indices).toEqual([0, 2]);
+    expect(groups[1].indices).toEqual([1, 4]);
+  });
+
+  test('lines with empty norm are excluded', () => {
+    const lines = ['', '   ', '!!!', 'Max Payne', 'Max Payne 2001'];
+    const groups = extractInputDupGroups(lines);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].indices).toEqual([3, 4]);
+  });
+
+  test('indices reference original positions exactly', () => {
+    const lines = ['a', 'Max Payne', 'b', 'MAX PAYNE', 'c'];
+    const groups = extractInputDupGroups(lines);
+    expect(groups[0].indices).toEqual([1, 3]);
+    expect(groups[0].lines).toEqual(['Max Payne', 'MAX PAYNE']);
+  });
+});
+
+describe('applyInputDups()', () => {
+  test('all keep — input unchanged', () => {
+    const lines = ['Max Payne', 'Max Payne 2001'];
+    const decisions = new Map([['max payne', 'keep']]);
+    const { kept, removed } = applyInputDups(lines, decisions);
+    expect(kept).toEqual(['Max Payne', 'Max Payne 2001']);
+    expect(removed).toEqual([]);
+  });
+
+  test('all merge — first kept per group, rest removed', () => {
+    const lines = ['Max Payne', 'MAX PAYNE (2001)', 'max payne: definitive'];
+    const decisions = new Map([['max payne', 'merge']]);
+    const { kept, removed } = applyInputDups(lines, decisions);
+    expect(kept).toEqual(['Max Payne']);
+    expect(removed).toEqual(['MAX PAYNE (2001)', 'max payne: definitive']);
+  });
+
+  test('unmarked groups default to keep', () => {
+    const lines = ['Max Payne', 'Max Payne 2001'];
+    const { kept, removed } = applyInputDups(lines, new Map());
+    expect(kept).toEqual(['Max Payne', 'Max Payne 2001']);
+    expect(removed).toEqual([]);
+  });
+
+  test('mixed marks — only merge groups affected', () => {
+    const lines = ['Max Payne', 'Max Payne 2001', 'Hades', 'HADES (2020)'];
+    const decisions = new Map([
+      ['max payne', 'keep'],
+      ['hades', 'merge'],
+    ]);
+    const { kept, removed } = applyInputDups(lines, decisions);
+    expect(kept).toEqual(['Max Payne', 'Max Payne 2001', 'Hades']);
+    expect(removed).toEqual(['HADES (2020)']);
+  });
+
+  test('non-grouped lines preserved at their original positions', () => {
+    const lines = ['intro', 'Max Payne', 'middle', 'Max Payne 2001', 'outro'];
+    const decisions = new Map([['max payne', 'merge']]);
+    const { kept, removed } = applyInputDups(lines, decisions);
+    expect(kept).toEqual(['intro', 'Max Payne', 'middle', 'outro']);
+    expect(removed).toEqual(['Max Payne 2001']);
+  });
+
+  test('empty/whitespace lines preserved (never removed)', () => {
+    const lines = ['', 'Max Payne', '   ', 'Max Payne 2001', ''];
+    const decisions = new Map([['max payne', 'merge']]);
+    const { kept } = applyInputDups(lines, decisions);
+    expect(kept).toEqual(['', 'Max Payne', '   ', '']);
   });
 });

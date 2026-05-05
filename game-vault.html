@@ -1064,6 +1064,26 @@ body {
         </div>
       </div>
     </div>
+
+    <!-- INPUT DUPLICATES (4th section, full width) -->
+    <div class="dup-panel" id="bc-input-dups-panel" hidden style="margin-top:24px;">
+      <div class="dup-panel-header">
+        <div>
+          <span class="dup-panel-title">input duplicates</span>
+          <div class="dup-panel-counts" id="bc-input-dups-counts"></div>
+          <div class="dup-panel-hint">তোমার input list-এ duplicate lines আছে (same normalized name)। Merge করলে textarea থেকে duplicate line গুলো remove হবে — first occurrence থাকবে। Keep / unmarked = কিছু হবে না, সব line আগের মতোই থাকবে।</div>
+        </div>
+        <div class="dup-panel-bulk">
+          <button class="btn btn-sm" data-bcdup-bulk="merge">Mark all Merge</button>
+          <button class="btn btn-sm" data-bcdup-bulk="keep">Mark all Keep</button>
+        </div>
+      </div>
+      <div class="dup-groups" id="bc-input-dups-groups"></div>
+      <div class="dup-panel-actions">
+        <button class="btn btn-danger" data-bcdup-apply>Apply (rewrites textarea)</button>
+        <button class="btn" data-bcdup-cancel>Cancel</button>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -2564,6 +2584,7 @@ const state = {
   playedDupReview: null,
   fuzzyThreshold: 0.82,
   bulkCheckResult: null,
+  bulkCheckInputDups: null,
   saveTimers: { vault: null, played: null },
   loaded: false,
   useWorker: false,
@@ -3038,29 +3059,33 @@ async function runBulkCheck(inputText, target, useFuzzy, onProgress) {
   const items = state[target];
   const idx = target === 'vault' ? state.vIndex : state.pIndex;
 
-  // Dedupe input for matching purposes (track originals)
-  const inputMap = new Map();
-  const inputOrder = [];
+  // Build line list with norms; matching is cached per unique norm but
+  // every input line gets its own Found/Missing row (no auto-dedup of output).
+  const lineNorms = [];
   for (const line of lines) {
     const n = normalize(line);
     if (!n) continue;
-    if (!inputMap.has(n)) {
-      inputMap.set(n, line);
-      inputOrder.push(line);
-    }
+    lineNorms.push({ line, norm: n });
   }
 
+  const matchCache = new Map();
   const found = [];
   const missing = [];
   const matchedItemIds = new Set();
+  const total = lineNorms.length;
 
-  // Chunked processing: yield to UI every CHUNK lines so it doesn't freeze
   const CHUNK = 500;
-  for (let i = 0; i < inputOrder.length; i += CHUNK) {
-    const end = Math.min(i + CHUNK, inputOrder.length);
+  for (let i = 0; i < lineNorms.length; i += CHUNK) {
+    const end = Math.min(i + CHUNK, lineNorms.length);
     for (let j = i; j < end; j++) {
-      const line = inputOrder[j];
-      const m = idx.matchOne(line, useFuzzy, state.fuzzyThreshold);
+      const { line, norm } = lineNorms[j];
+      let m;
+      if (matchCache.has(norm)) {
+        m = matchCache.get(norm);
+      } else {
+        m = idx.matchOne(line, useFuzzy, state.fuzzyThreshold);
+        matchCache.set(norm, m);
+      }
       if (m) {
         found.push({ input: line, match: m });
         matchedItemIds.add(m.item.id);
@@ -3068,16 +3093,16 @@ async function runBulkCheck(inputText, target, useFuzzy, onProgress) {
         missing.push(line);
       }
     }
-    if (onProgress) onProgress(end, inputOrder.length);
-    // Yield only between chunks, not after every item
-    if (end < inputOrder.length) {
+    if (onProgress) onProgress(end, total);
+    if (end < total) {
       await new Promise(r => setTimeout(r, 0));
     }
   }
 
-  // Extras: items in vault not matched to any input
   const extras = [];
   for (const it of items) if (!matchedItemIds.has(it.id)) extras.push(it);
+
+  const inputDupGroups = extractInputDupGroups(lines);
 
   Profiler.record('bulkCheck', performance.now() - _tProf, { n: lines.length, mode: 'main' });
   return {
@@ -3086,26 +3111,26 @@ async function runBulkCheck(inputText, target, useFuzzy, onProgress) {
     missing,
     extras,
     totalInput: lines.length,
-    uniqueInput: inputOrder.length,
-    duplicateInputCount: lines.length - inputOrder.length
+    uniqueInput: matchCache.size,
+    inputDupGroups
   };
 }
 
 async function _runBulkCheckWorker(lines, target, useFuzzy, onProgress, _tProf) {
   const items = state[target];
 
-  // Dedupe input on the main thread — uses the same normalize() the worker uses,
-  // and avoids round-tripping unique-detection messages.
-  const inputMap = new Map();
-  const inputOrder = [];
+  // Build line list with norms. Worker matches once per unique norm
+  // (perf), but per-line output is preserved (no auto-dedup).
+  const lineNorms = [];
+  const uniqueNorms = new Map(); // norm -> firstLine (representative for matching)
   for (const line of lines) {
     const n = normalize(line);
     if (!n) continue;
-    if (!inputMap.has(n)) {
-      inputMap.set(n, line);
-      inputOrder.push(line);
-    }
+    lineNorms.push({ line, norm: n });
+    if (!uniqueNorms.has(n)) uniqueNorms.set(n, line);
   }
+  const uniqueLines = [...uniqueNorms.values()];
+  const uniqueNormKeys = [...uniqueNorms.keys()];
 
   // Output-identity: ensure found[].match.item points at the real main-thread
   // object, not the slim {id, name} clone the worker indexed.
@@ -3116,9 +3141,7 @@ async function _runBulkCheckWorker(lines, target, useFuzzy, onProgress, _tProf) 
   state.bulkCheckWorker = wc;
   state.bulkCheckAborted = false;
 
-  const found = [];
-  const missing = [];
-  const matchedItemIds = new Set();
+  const matchByNorm = new Map(); // norm -> match | null
 
   try {
     const initT0 = performance.now();
@@ -3127,33 +3150,48 @@ async function _runBulkCheckWorker(lines, target, useFuzzy, onProgress, _tProf) 
 
     const BATCH = 500;
     const threshold = state.fuzzyThreshold;
-    for (let i = 0; i < inputOrder.length; i += BATCH) {
+    for (let i = 0; i < uniqueLines.length; i += BATCH) {
       if (state.bulkCheckAborted) throw new Error('cancelled');
-      const end = Math.min(i + BATCH, inputOrder.length);
-      const slice = inputOrder.slice(i, end);
+      const end = Math.min(i + BATCH, uniqueLines.length);
+      const slice = uniqueLines.slice(i, end);
       const results = await Promise.all(
         slice.map(line => wc.matchOne(line, { useFuzzy, threshold }))
       );
       for (let j = 0; j < slice.length; j++) {
-        const line = slice[j];
+        const norm = uniqueNormKeys[i + j];
         const m = results[j];
         if (m) {
           const realItem = byId.get(m.item.id) || m.item;
-          found.push({ input: line, match: { item: realItem, score: m.score, type: m.type } });
-          matchedItemIds.add(realItem.id);
+          matchByNorm.set(norm, { item: realItem, score: m.score, type: m.type });
         } else {
-          missing.push(line);
+          matchByNorm.set(norm, null);
         }
       }
-      if (onProgress) onProgress(end, inputOrder.length);
+      if (onProgress) onProgress(end, uniqueLines.length);
     }
   } finally {
     try { wc.terminate(); } catch (e) {}
     state.bulkCheckWorker = null;
   }
 
+  // Expand to per-line Found/Missing using the cached matches by norm.
+  const found = [];
+  const missing = [];
+  const matchedItemIds = new Set();
+  for (const { line, norm } of lineNorms) {
+    const m = matchByNorm.get(norm);
+    if (m) {
+      found.push({ input: line, match: m });
+      matchedItemIds.add(m.item.id);
+    } else {
+      missing.push(line);
+    }
+  }
+
   const extras = [];
   for (const it of items) if (!matchedItemIds.has(it.id)) extras.push(it);
+
+  const inputDupGroups = extractInputDupGroups(lines);
 
   Profiler.record('bulkCheck', performance.now() - _tProf, { n: lines.length, mode: 'worker' });
   return {
@@ -3162,8 +3200,8 @@ async function _runBulkCheckWorker(lines, target, useFuzzy, onProgress, _tProf) 
     missing,
     extras,
     totalInput: lines.length,
-    uniqueInput: inputOrder.length,
-    duplicateInputCount: lines.length - inputOrder.length
+    uniqueInput: uniqueLines.length,
+    inputDupGroups
   };
 }
 
@@ -3211,12 +3249,143 @@ function renderBulkCheckResult(r) {
 
   $('#bulk-check-result').style.display = 'block';
 
+  // Input duplicates: 4th section (panel below the 3-card grid).
+  renderBcInputDupsPanel(r);
+
+  const dupLineCount = (r.inputDupGroups || []).reduce((s, g) => s + (g.lines.length - 1), 0);
   $('#bulk-check-status').style.display = 'block';
   $('#bulk-check-status').textContent =
     'input: ' + r.totalInput + ' lines · unique: ' + r.uniqueInput +
     ' · target: ' + r.target + ' (' + state[r.target].length + ' items)' +
-    (r.duplicateInputCount > 0 ? ' · ' + r.duplicateInputCount + ' duplicate input lines ignored' : '');
+    (dupLineCount > 0 ? ' · ' + dupLineCount + ' duplicate lines — see Input duplicates' : '');
 }
+
+function renderBcInputDupsPanel(r) {
+  const groups = r.inputDupGroups || [];
+  const panel = $('#bc-input-dups-panel');
+  if (groups.length === 0) {
+    panel.hidden = true;
+    state.bulkCheckInputDups = null;
+    return;
+  }
+  state.bulkCheckInputDups = { groups, marks: new Map() };
+  panel.hidden = false;
+  renderBcInputDupsBody();
+}
+
+function renderBcInputDupsBody() {
+  const review = state.bulkCheckInputDups;
+  if (!review) return;
+  const { groups, marks } = review;
+  let mergeLineCount = 0;
+  for (const g of groups) {
+    if (marks.get(g.norm) === 'merge') mergeLineCount += g.lines.length - 1;
+  }
+  $('#bc-input-dups-counts').innerHTML =
+    groups.length + ' groups · '
+    + '<span class="merge-count">' + mergeLineCount + '</span>'
+    + ' lines will be removed';
+
+  const host = $('#bc-input-dups-groups');
+  host.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  for (const g of groups) {
+    const mark = marks.get(g.norm) || null;
+    const div = document.createElement('div');
+    div.className = 'dup-group' + (mark === 'merge' ? ' mark-merge' : mark === 'keep' ? ' mark-keep' : '');
+
+    const head = document.createElement('div');
+    head.className = 'dup-group-head';
+    const normSpan = document.createElement('div');
+    normSpan.className = 'dup-group-norm';
+    normSpan.textContent = '"' + g.norm + '"';
+    const sizeSpan = document.createElement('div');
+    sizeSpan.className = 'dup-group-size';
+    sizeSpan.textContent = g.lines.length + ' lines';
+    head.appendChild(normSpan);
+    head.appendChild(sizeSpan);
+
+    const ul = document.createElement('ul');
+    ul.className = 'dup-group-items';
+    g.lines.forEach((line, i) => {
+      const li = document.createElement('li');
+      if (i === 0) li.className = 'first';
+      li.textContent = line;
+      ul.appendChild(li);
+    });
+
+    const actions = document.createElement('div');
+    actions.className = 'dup-group-actions';
+    const keepBtn = document.createElement('button');
+    keepBtn.className = 'btn btn-sm keep' + (mark === 'keep' ? ' active' : '');
+    keepBtn.textContent = 'Keep';
+    keepBtn.dataset.bcdupMark = 'keep';
+    keepBtn.dataset.norm = g.norm;
+    const mergeBtn = document.createElement('button');
+    mergeBtn.className = 'btn btn-sm merge' + (mark === 'merge' ? ' active' : '');
+    mergeBtn.textContent = 'Merge';
+    mergeBtn.dataset.bcdupMark = 'merge';
+    mergeBtn.dataset.norm = g.norm;
+    actions.appendChild(keepBtn);
+    actions.appendChild(mergeBtn);
+
+    div.appendChild(head);
+    div.appendChild(ul);
+    div.appendChild(actions);
+    frag.appendChild(div);
+  }
+  host.appendChild(frag);
+}
+
+function setBcDupMark(norm, mark) {
+  const review = state.bulkCheckInputDups;
+  if (!review) return;
+  if (review.marks.get(norm) === mark) review.marks.delete(norm);
+  else review.marks.set(norm, mark);
+  renderBcInputDupsBody();
+}
+function setBcDupMarkAll(mark) {
+  const review = state.bulkCheckInputDups;
+  if (!review) return;
+  for (const g of review.groups) review.marks.set(g.norm, mark);
+  renderBcInputDupsBody();
+}
+function applyBcInputDups() {
+  const review = state.bulkCheckInputDups;
+  if (!review) return;
+  const ta = $('#bulk-check-text');
+  const lines = ta.value.split(/\r?\n/);
+  const { kept, removed } = applyInputDups(lines, review.marks);
+  if (removed.length === 0) {
+    toast('কোনো group merge mark করা হয়নি', 'info');
+    closeBcInputDups();
+    return;
+  }
+  ta.value = kept.join('\n');
+  // Result panel is now stale relative to the new textarea; hide it.
+  $('#bulk-check-result').style.display = 'none';
+  $('#bulk-check-status').style.display = 'none';
+  closeBcInputDups();
+  toast('Removed ' + removed.length + ' duplicate line(s) — Run Check আবার চালাও', 'success', 3500);
+}
+function closeBcInputDups() {
+  state.bulkCheckInputDups = null;
+  $('#bc-input-dups-panel').hidden = true;
+}
+
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLElement)) return;
+  if (t.dataset.bcdupMark) {
+    setBcDupMark(t.dataset.norm, t.dataset.bcdupMark);
+  } else if (t.dataset.bcdupBulk) {
+    setBcDupMarkAll(t.dataset.bcdupBulk);
+  } else if (t.hasAttribute('data-bcdup-apply')) {
+    applyBcInputDups();
+  } else if (t.hasAttribute('data-bcdup-cancel')) {
+    closeBcInputDups();
+  }
+});
 
 /* ─── Tab switching ──────────────────────────────────────── */
 function switchTab(name) {
@@ -3321,7 +3490,40 @@ $('#played-dup-toggle').addEventListener('click', () => {
    (never grouped). Insertion order preserved.
    applyDupReview: given decisions per norm ('merge' | 'keep' | null),
    return { kept, removed }. 'merge' keeps first item per group and
-   removes the rest. 'keep' or null leaves the group intact. */
+   removes the rest. 'keep' or null leaves the group intact.
+   extractInputDupGroups / applyInputDups: same idea but for raw
+   strings (bulk-check input lines) instead of vault items. Tracks
+   line indices so apply can remove the exact original positions. */
+function extractInputDupGroups(lines) {
+  const map = new Map();
+  for (let i = 0; i < lines.length; i++) {
+    const n = normalize(lines[i]);
+    if (!n) continue;
+    let g = map.get(n);
+    if (!g) { g = { norm: n, lines: [], indices: [] }; map.set(n, g); }
+    g.lines.push(lines[i]);
+    g.indices.push(i);
+  }
+  const out = [];
+  for (const g of map.values()) if (g.lines.length >= 2) out.push(g);
+  return out;
+}
+function applyInputDups(lines, decisions) {
+  const groups = extractInputDupGroups(lines);
+  const removeIdx = new Set();
+  for (const g of groups) {
+    if (decisions.get(g.norm) !== 'merge') continue;
+    for (let i = 1; i < g.indices.length; i++) removeIdx.add(g.indices[i]);
+  }
+  const kept = [];
+  const removed = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (removeIdx.has(i)) removed.push(lines[i]);
+    else kept.push(lines[i]);
+  }
+  return { kept, removed };
+}
+
 function findDuplicateGroups(arr) {
   const map = new Map();
   for (const it of arr) {
