@@ -3484,6 +3484,21 @@ $('#played-dup-toggle').addEventListener('click', () => {
   renderPlayed();
 });
 
+/* ─── Startup data cleanup (pure helper) ────────────────
+   Replaces broken apostrophe stand-ins (U+FFFD replacement, U+25C7
+   white diamond) with ASCII '. Mutates items in place; returns the
+   count of items that changed. Must run BEFORE the index is built
+   (loaded items have no _norm yet, so the index will compute fresh
+   keys from the cleaned names). */
+function cleanItemNamesInPlace(arr) {
+  let n = 0;
+  for (const it of arr) {
+    const cleaned = it.name.replace(/[�◇]/g, "'");
+    if (cleaned !== it.name) { it.name = cleaned; n++; }
+  }
+  return n;
+}
+
 /* ─── Duplicate review (pure helpers) ────────────────────
    findDuplicateGroups: scan an array for groups of items sharing
    the same normalized name. Items with empty/null norm are skipped

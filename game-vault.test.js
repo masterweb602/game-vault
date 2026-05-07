@@ -379,6 +379,16 @@ function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
   return { added: addedItems.length, addedItems, skipped, flagged };
 }
 
+// ── Startup cleanup helper (verbatim copy) ─────────────────────────────────
+function cleanItemNamesInPlace(arr) {
+  let n = 0;
+  for (const it of arr) {
+    const cleaned = it.name.replace(/[�◇]/g, "'");
+    if (cleaned !== it.name) { it.name = cleaned; n++; }
+  }
+  return n;
+}
+
 // ── Bulk-check input duplicate helpers (verbatim copies) ────────────────────
 function extractInputDupGroups(lines) {
   const map = new Map();
@@ -745,6 +755,57 @@ describe('applyDupReview()', () => {
     ]);
     const { kept } = applyDupReview(arr, decisions);
     expect(kept.map(i => i.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('cleanItemNamesInPlace()', () => {
+  test('empty array returns 0', () => {
+    expect(cleanItemNamesInPlace([])).toBe(0);
+  });
+
+  test('no broken chars returns 0 and does not mutate', () => {
+    const arr = [{ name: "Aron's" }, { name: "Don't Starve" }, { name: 'Hades' }];
+    const before = arr.map(x => x.name);
+    expect(cleanItemNamesInPlace(arr)).toBe(0);
+    expect(arr.map(x => x.name)).toEqual(before);
+  });
+
+  test('U+FFFD replacement char becomes apostrophe', () => {
+    const arr = [{ name: 'Aron�s' }];
+    expect(cleanItemNamesInPlace(arr)).toBe(1);
+    expect(arr[0].name).toBe("Aron's");
+  });
+
+  test('U+25C7 white diamond becomes apostrophe', () => {
+    const arr = [{ name: 'Don◇t' }];
+    expect(cleanItemNamesInPlace(arr)).toBe(1);
+    expect(arr[0].name).toBe("Don't");
+  });
+
+  test('mixed broken and clean items — count matches changed only', () => {
+    const arr = [
+      { name: "Aron's" },          // clean
+      { name: 'Don�t' },      // broken
+      { name: 'Hades' },           // clean
+      { name: 'Foo◇s Bar' },  // broken
+    ];
+    expect(cleanItemNamesInPlace(arr)).toBe(2);
+    expect(arr[0].name).toBe("Aron's");
+    expect(arr[1].name).toBe("Don't");
+    expect(arr[2].name).toBe('Hades');
+    expect(arr[3].name).toBe("Foo's Bar");
+  });
+
+  test('both broken chars in same name are replaced in one pass', () => {
+    const arr = [{ name: 'It�s the dev◇s game' }];
+    expect(cleanItemNamesInPlace(arr)).toBe(1);
+    expect(arr[0].name).toBe("It's the dev's game");
+  });
+
+  test('idempotent — second run on cleaned array returns 0', () => {
+    const arr = [{ name: 'Aron�s' }, { name: 'Hades' }];
+    cleanItemNamesInPlace(arr);
+    expect(cleanItemNamesInPlace(arr)).toBe(0);
   });
 });
 
