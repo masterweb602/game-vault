@@ -33,6 +33,7 @@
   --display: 'Instrument Serif', Georgia, serif;
   --body: 'Bricolage Grotesque', system-ui, sans-serif;
   --mono: 'JetBrains Mono', monospace;
+  --row-h: 48px;
 }
 
 html, body {
@@ -774,6 +775,24 @@ body {
   .list-scroll { height: 520px; }
   .stats { width: 100%; }
   .stat { flex: 1; text-align: center; }
+}
+
+/* ─── Desktop breathing room ─────────────────────────────── */
+@media (min-width: 768px) {
+  :root { --row-h: 60px; }
+  html, body { font-size: 15px; }
+  .row { height: 60px; padding: 0 20px; }
+  .row .name { font-size: 15px; }
+  .input.textarea { min-height: 360px; }
+  .result-count { font-size: 48px; }
+  .result-header { padding: 22px 24px; }
+  .result-item { padding: 12px 22px; font-size: 14px; }
+  .setting-card { padding: 28px; margin-bottom: 16px; }
+  .setting-card p { margin-bottom: 16px; }
+}
+
+@media (min-width: 1400px) {
+  .app { max-width: 1400px; }
 }
 
 /* Scrollbar */
@@ -2662,14 +2681,22 @@ $('#modal').addEventListener('click', (e) => {
 
 /* ─── Virtual scrolling list ─────────────────────────────── */
 class VList {
-  constructor(scrollEl, spacerEl, rowHeight = 48) {
+  constructor(scrollEl, spacerEl) {
     this.scroll = scrollEl;
     this.spacer = spacerEl;
-    this.rowH = rowHeight;
+    this.rowH = this.readRowH();
     this.items = [];
     this.renderRow = null;
     this.scroll.addEventListener('scroll', () => this.render(), { passive: true });
     new ResizeObserver(() => this.render()).observe(this.scroll);
+    matchMedia('(min-width: 768px)').addEventListener('change', () => {
+      this.rowH = this.readRowH();
+      this.spacer.style.height = (this.items.length * this.rowH) + 'px';
+      this.render();
+    });
+  }
+  readRowH() {
+    return parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-h')) || 48;
   }
   setItems(items) {
     this.items = items;
