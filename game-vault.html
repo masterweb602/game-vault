@@ -310,9 +310,11 @@ body {
 .row:hover { background: var(--bg-soft); }
 .row .serial {
   font-family: var(--mono);
-  font-size: 11px;
-  color: var(--dim);
-  min-width: 56px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  min-width: 64px;
   flex-shrink: 0;
 }
 .row .name {
@@ -833,13 +835,6 @@ body {
   <div class="toolbar">
     <div class="toolbar-row">
       <div class="input-group">
-        <span class="input-icon">+</span>
-        <input class="input" id="vault-add-input" placeholder="নতুন গেম যোগ করো..." autocomplete="off">
-      </div>
-      <button class="btn btn-primary" id="vault-add-btn">Add</button>
-    </div>
-    <div class="toolbar-row">
-      <div class="input-group">
         <span class="input-icon">⌕</span>
         <input class="input" id="vault-search" placeholder="search ভল্ট (fuzzy)..." autocomplete="off">
       </div>
@@ -892,13 +887,6 @@ body {
   <p class="section-desc">যেগুলো ইতিমধ্যে খেলেছ। আলাদা list, আলাদা search।</p>
 
   <div class="toolbar">
-    <div class="toolbar-row">
-      <div class="input-group">
-        <span class="input-icon">+</span>
-        <input class="input" id="played-add-input" placeholder="খেলেছো এমন গেম যোগ করো..." autocomplete="off">
-      </div>
-      <button class="btn btn-primary" id="played-add-btn">Add</button>
-    </div>
     <div class="toolbar-row">
       <div class="input-group">
         <span class="input-icon">⌕</span>
@@ -2608,7 +2596,11 @@ const state = {
   loaded: false,
   useWorker: false,
   bulkCheckWorker: null,
-  bulkCheckAborted: false
+  bulkCheckAborted: false,
+  // Stable serial maps — id → position in raw state.vault / state.played array.
+  // Rebuilt at the top of renderVault/renderPlayed so filtering/sorting never renumbers.
+  vaultSerialMap: new Map(),
+  playedSerialMap: new Map()
 };
 
 function newId() { return 'g_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
@@ -2737,7 +2729,10 @@ function highlight(text, query) {
 
 function makeRow(item, idx, source) {
   const row = el('div', { class: 'row' });
-  row.appendChild(el('span', { class: 'serial' }, '#' + String(idx + 1).padStart(4, '0')));
+  const serialMap = source === 'vault' ? state.vaultSerialMap : state.playedSerialMap;
+  const origIdx = serialMap.get(item.id);
+  const serialText = origIdx === undefined ? '#----' : '#' + String(origIdx + 1).padStart(4, '0');
+  row.appendChild(el('span', { class: 'serial' }, serialText));
 
   const name = el('span', { class: 'name' });
   const query = source === 'vault' ? state.vaultFilter : state.playedFilter;
@@ -2827,7 +2822,15 @@ const pList = new VList($('#played-list-scroll'), $('#played-spacer'));
 vList.renderRow = (it, i) => makeRow(it, i, 'vault');
 pList.renderRow = (it, i) => makeRow(it, i, 'played');
 
+function rebuildSerialMap(source) {
+  const map = source === 'vault' ? state.vaultSerialMap : state.playedSerialMap;
+  map.clear();
+  const arr = state[source];
+  for (let i = 0; i < arr.length; i++) map.set(arr[i].id, i);
+}
+
 function renderVault() {
+  rebuildSerialMap('vault');
   const items = getFilteredItems('vault');
   vList.setItems(items);
   $('#vault-list-info').textContent = items.length + ' / ' + state.vault.length + ' items';
@@ -2835,10 +2838,11 @@ function renderVault() {
   if (state.vaultFilter) filterText.push('search: "' + state.vaultFilter + '"');
   if (state.vaultDupOnly) filterText.push('duplicates only');
   $('#vault-filter-info').textContent = filterText.join(' · ');
-  if (items.length === 0) showEmpty('vault-spacer', state.vault.length === 0 ? 'কোনো item নাই — উপরে add করো' : 'কোনো match পাওয়া যায়নি');
+  if (items.length === 0) showEmpty('vault-spacer', state.vault.length === 0 ? 'কোনো item নাই — Bulk Add tab দিয়ে যোগ করো' : 'কোনো match পাওয়া যায়নি');
 }
 
 function renderPlayed() {
+  rebuildSerialMap('played');
   const items = getFilteredItems('played');
   pList.setItems(items);
   $('#played-list-info').textContent = items.length + ' / ' + state.played.length + ' items';
@@ -3427,23 +3431,6 @@ function switchTab(name) {
 $$('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
 
 /* ─── Wire vault controls ────────────────────────────────── */
-$('#vault-add-btn').addEventListener('click', () => {
-  const v = $('#vault-add-input').value.trim();
-  if (!v) return;
-  const r = addItem(v, 'vault');
-  if (r.dup) {
-    toast('আগে থেকেই আছে: "' + r.existing.name + '"', 'error');
-  } else if (r.added) {
-    $('#vault-add-input').value = '';
-    renderVault();
-    updateStats();
-    toast('Added', 'success');
-  }
-});
-$('#vault-add-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') $('#vault-add-btn').click();
-});
-
 // Adaptive debounce — fast for small lists, longer for huge ones (avoid stutter)
 function adaptiveDelay(source) {
   const n = state[source].length;
@@ -3474,23 +3461,6 @@ $('#vault-dup-toggle').addEventListener('click', () => {
 });
 
 /* ─── Wire played controls ───────────────────────────────── */
-$('#played-add-btn').addEventListener('click', () => {
-  const v = $('#played-add-input').value.trim();
-  if (!v) return;
-  const r = addItem(v, 'played');
-  if (r.dup) {
-    toast('আগে থেকেই আছে: "' + r.existing.name + '"', 'error');
-  } else if (r.added) {
-    $('#played-add-input').value = '';
-    renderPlayed();
-    updateStats();
-    toast('Added', 'success');
-  }
-});
-$('#played-add-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') $('#played-add-btn').click();
-});
-
 let _playedSearchTimer = 0;
 $('#played-search').addEventListener('input', e => {
   state.playedFilter = e.target.value;
