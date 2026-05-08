@@ -1197,3 +1197,147 @@ describe('filterByTagsAND', () => {
     expect(r.map(x => x.name)).toEqual(['a', 'c']);
   });
 });
+
+// ── Custom databases — id derivation + name validation ──────────────────────
+// Verbatim copy from game-vault.html <script>.
+
+const RESERVED_DB_IDS = new Set(['vault', 'played', 'settings', 'bulk-add', 'bulk-check']);
+const CUSTOM_DB_NAME_MAX = 40;
+
+function deriveCustomId(name) {
+  if (typeof name !== 'string') return '';
+  return name.trim().toLowerCase().normalize('NFC')
+    .replace(/\s+/g, '-')
+    .replace(/[\\\/:*?"<>|#]/g, '');
+}
+
+function validateCustomDbName(name, existingIds) {
+  if (typeof name !== 'string') return { ok: false, error: 'নাম দাও।' };
+  const trimmed = name.trim();
+  if (!trimmed) return { ok: false, error: 'নাম empty।' };
+  if (trimmed.length > CUSTOM_DB_NAME_MAX) {
+    return { ok: false, error: 'নাম ' + CUSTOM_DB_NAME_MAX + ' char-এর বেশি।' };
+  }
+  const id = deriveCustomId(trimmed);
+  if (!id) return { ok: false, error: 'এই নাম থেকে valid id বানানো গেল না।' };
+  if (RESERVED_DB_IDS.has(id)) {
+    return { ok: false, error: '"' + trimmed + '" reserved নাম — অন্যটা দাও।' };
+  }
+  const existing = existingIds instanceof Set ? existingIds : new Set(existingIds || []);
+  if (existing.has(id)) return { ok: false, error: 'এই নামের database আগেই আছে।' };
+  return { ok: true, id, name: trimmed };
+}
+
+describe('deriveCustomId', () => {
+  test('lowercases ASCII', () => {
+    expect(deriveCustomId('PS5')).toBe('ps5');
+    expect(deriveCustomId('Xbox')).toBe('xbox');
+  });
+  test('trims surrounding whitespace', () => {
+    expect(deriveCustomId('  Wishlist  ')).toBe('wishlist');
+  });
+  test('replaces internal whitespace with single dash', () => {
+    expect(deriveCustomId('Switch Lite')).toBe('switch-lite');
+    expect(deriveCustomId('A   B   C')).toBe('a-b-c');
+  });
+  test('preserves Bengali script (non-ASCII letters)', () => {
+    const id = deriveCustomId('প্লে স্টেশন');
+    expect(id).toBe('প্লে-স্টেশন');
+    expect(id.length).toBeGreaterThan(0);
+  });
+  test('strips storage-unsafe punctuation', () => {
+    expect(deriveCustomId('a/b\\c:d*e?f"g<h>i|j#k')).toBe('abcdefghijk');
+  });
+  test('keeps safe ASCII punctuation like dashes and underscores', () => {
+    expect(deriveCustomId('my-list_2025')).toBe('my-list_2025');
+  });
+  test('non-string returns empty', () => {
+    expect(deriveCustomId(null)).toBe('');
+    expect(deriveCustomId(undefined)).toBe('');
+    expect(deriveCustomId(42)).toBe('');
+  });
+  test('whitespace-only returns empty', () => {
+    expect(deriveCustomId('   ')).toBe('');
+  });
+});
+
+describe('validateCustomDbName', () => {
+  test('accepts a fresh ASCII name', () => {
+    const r = validateCustomDbName('PS5', new Set());
+    expect(r.ok).toBe(true);
+    expect(r.id).toBe('ps5');
+    expect(r.name).toBe('PS5');
+  });
+  test('preserves user casing in returned name', () => {
+    const r = validateCustomDbName('  My Wishlist  ', new Set());
+    expect(r.ok).toBe(true);
+    expect(r.id).toBe('my-wishlist');
+    expect(r.name).toBe('My Wishlist');
+  });
+  test('rejects empty string', () => {
+    const r = validateCustomDbName('', new Set());
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/empty/);
+  });
+  test('rejects whitespace-only', () => {
+    const r = validateCustomDbName('   ', new Set());
+    expect(r.ok).toBe(false);
+  });
+  test('rejects non-string input', () => {
+    expect(validateCustomDbName(null).ok).toBe(false);
+    expect(validateCustomDbName(undefined).ok).toBe(false);
+    expect(validateCustomDbName(123).ok).toBe(false);
+  });
+  test('rejects names exceeding max length', () => {
+    const long = 'a'.repeat(CUSTOM_DB_NAME_MAX + 1);
+    const r = validateCustomDbName(long, new Set());
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/40/);
+  });
+  test('accepts exactly max-length name', () => {
+    const ok = 'a'.repeat(CUSTOM_DB_NAME_MAX);
+    expect(validateCustomDbName(ok, new Set()).ok).toBe(true);
+  });
+  test('rejects each reserved id', () => {
+    for (const r of ['vault', 'played', 'settings', 'bulk-add', 'bulk-check']) {
+      expect(validateCustomDbName(r, new Set()).ok).toBe(false);
+    }
+  });
+  test('reserved check is case-insensitive', () => {
+    expect(validateCustomDbName('Vault', new Set()).ok).toBe(false);
+    expect(validateCustomDbName('Bulk-Add', new Set()).ok).toBe(false);
+  });
+  test('rejects name that collides with existing id (case-insensitive)', () => {
+    const existing = new Set(['ps5']);
+    expect(validateCustomDbName('PS5', existing).ok).toBe(false);
+    expect(validateCustomDbName('Ps5', existing).ok).toBe(false);
+    expect(validateCustomDbName('ps5', existing).ok).toBe(false);
+  });
+  test('accepts when existing set has different ids', () => {
+    const existing = new Set(['xbox', 'wishlist']);
+    const r = validateCustomDbName('PS5', existing);
+    expect(r.ok).toBe(true);
+  });
+  test('accepts existingIds as plain array', () => {
+    const r = validateCustomDbName('Steam', ['xbox', 'ps5']);
+    expect(r.ok).toBe(true);
+    expect(r.id).toBe('steam');
+  });
+  test('rejects name that sanitizes to empty id', () => {
+    // Only chars that get stripped: \ / : * ? " < > | #
+    const r = validateCustomDbName('///***', new Set());
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/valid id/);
+  });
+  test('accepts Bengali name', () => {
+    const r = validateCustomDbName('প্লে স্টেশন', new Set());
+    expect(r.ok).toBe(true);
+    expect(r.id).toBe('প্লে-স্টেশন');
+    expect(r.name).toBe('প্লে স্টেশন');
+  });
+  test('Bengali uniqueness is case/normalize-aware', () => {
+    const existing = new Set(['প্লে-স্টেশন']);
+    const r = validateCustomDbName('প্লে স্টেশন', existing);
+    expect(r.ok).toBe(false);
+  });
+});

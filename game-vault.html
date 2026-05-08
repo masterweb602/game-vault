@@ -140,6 +140,78 @@ body {
   opacity: 0.7;
 }
 
+/* ─── Custom databases ──────────────────────────────────── */
+.custom-db-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.custom-db-row .name { font-weight: 500; }
+.custom-db-row .count { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.custom-db-empty {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+  padding: 8px 0 12px;
+}
+
+/* ─── Modal ──────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 20px;
+}
+.modal-overlay.show { display: flex; }
+.modal {
+  background: var(--card);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 24px;
+  max-width: 460px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.7);
+}
+.modal h3 { font-size: 16px; margin-bottom: 4px; }
+.modal .modal-desc { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+.modal .modal-field { margin-bottom: 12px; }
+.modal .modal-field label {
+  display: block;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--muted);
+  margin-bottom: 4px;
+  letter-spacing: 0.04em;
+}
+.modal .modal-preview {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 6px;
+  min-height: 14px;
+}
+.modal .modal-error {
+  color: var(--danger);
+  font-size: 12px;
+  margin-top: 8px;
+  min-height: 16px;
+}
+.modal .modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
 /* ─── Views ──────────────────────────────────────────────── */
 .view { display: none; animation: fadeIn 0.25s ease; }
 .view.active { display: block; }
@@ -1396,6 +1468,15 @@ body {
     </div>
   </div>
 
+  <div class="setting-card" id="custom-dbs-card">
+    <h4>Custom databases</h4>
+    <p>নিজের list বানাও — PS5, Xbox, Wishlist, যেকোনো নাম। প্রতিটা আলাদা search/add/bulk পাবে।</p>
+    <div id="custom-dbs-list"></div>
+    <div class="setting-row">
+      <button class="btn btn-primary" id="custom-dbs-create">+ Create new database</button>
+    </div>
+  </div>
+
   <div class="setting-card">
     <h4 style="color:var(--danger);">Danger zone</h4>
     <p>এই action revertible না। সাবধানে।</p>
@@ -1416,6 +1497,23 @@ body {
   </div>
 </section>
 
+</div>
+
+<div class="modal-overlay" id="custom-db-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="custom-db-modal-title">
+    <h3 id="custom-db-modal-title">Create custom database</h3>
+    <p class="modal-desc">এই database আলাদা list — Vault / Played-এর মতো independent। 40 char-এর মধ্যে নাম দাও।</p>
+    <div class="modal-field">
+      <label for="custom-db-name">Name</label>
+      <input class="input" id="custom-db-name" maxlength="40" autocomplete="off" placeholder="e.g. PS5, Wishlist, প্লে স্টেশন">
+      <div class="modal-preview" id="custom-db-preview"></div>
+    </div>
+    <div class="modal-error" id="custom-db-error"></div>
+    <div class="modal-actions">
+      <button class="btn" id="custom-db-cancel">Cancel</button>
+      <button class="btn btn-primary" id="custom-db-confirm" disabled>Create</button>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -2346,6 +2444,20 @@ async function loadList(name) {
   return items;
 }
 
+async function loadCustomListsRegistry() {
+  const raw = await Storage.get('customLists-registry');
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) { return []; }
+}
+
+async function saveCustomListsRegistry(entries) {
+  // entries: array of { id, name, createdAt }
+  await Storage.set('customLists-registry', JSON.stringify(entries));
+}
+
 /* ─── Fuzzy matching engine ──────────────────────────────── */
 
 const ROMAN = {
@@ -2942,10 +3054,40 @@ const state = {
   bulkMode: false,               // toggled per Vault tab
   vaultBulkSelection: new Set(), // selected item ids in vault tab
   tagCounts: new Map(),          // tag → count across vault+played
-  tagLabels: new Map()           // lowercase tag → first-seen display casing
+  tagLabels: new Map(),          // lowercase tag → first-seen display casing
+  // Custom databases (Step 1: foundation only — no item ops yet)
+  customLists: {},               // id → { id, name, items, index, createdAt }
+  customListsOrder: []           // ordered ids — preserves creation order for tab/list rendering
 };
 
 function newId() { return 'g_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+const RESERVED_DB_IDS = new Set(['vault', 'played', 'settings', 'bulk-add', 'bulk-check']);
+const CUSTOM_DB_NAME_MAX = 40;
+
+function deriveCustomId(name) {
+  if (typeof name !== 'string') return '';
+  return name.trim().toLowerCase().normalize('NFC')
+    .replace(/\s+/g, '-')
+    .replace(/[\\\/:*?"<>|#]/g, '');
+}
+
+function validateCustomDbName(name, existingIds) {
+  if (typeof name !== 'string') return { ok: false, error: 'নাম দাও।' };
+  const trimmed = name.trim();
+  if (!trimmed) return { ok: false, error: 'নাম empty।' };
+  if (trimmed.length > CUSTOM_DB_NAME_MAX) {
+    return { ok: false, error: 'নাম ' + CUSTOM_DB_NAME_MAX + ' char-এর বেশি।' };
+  }
+  const id = deriveCustomId(trimmed);
+  if (!id) return { ok: false, error: 'এই নাম থেকে valid id বানানো গেল না।' };
+  if (RESERVED_DB_IDS.has(id)) {
+    return { ok: false, error: '"' + trimmed + '" reserved নাম — অন্যটা দাও।' };
+  }
+  const existing = existingIds instanceof Set ? existingIds : new Set(existingIds || []);
+  if (existing.has(id)) return { ok: false, error: 'এই নামের database আগেই আছে।' };
+  return { ok: true, id, name: trimmed };
+}
 
 /* ─── Persistence with debounce ───────────────────────────── */
 function scheduleSave(name) {
@@ -4276,6 +4418,150 @@ function switchTab(name) {
 
 $$('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
 
+/* ─── Custom databases (Step 1: foundation + create UI) ─── */
+function renderCustomTabs() {
+  const nav = document.querySelector('.tabs');
+  if (!nav) return;
+  // Remove previously rendered custom tabs
+  nav.querySelectorAll('.tab[data-custom-id]').forEach(n => n.remove());
+  const anchor = nav.querySelector('.tab[data-tab="bulk-add"]');
+  for (const id of state.customListsOrder) {
+    const list = state.customLists[id];
+    if (!list) continue;
+    const btn = document.createElement('button');
+    btn.className = 'tab';
+    btn.dataset.tab = 'cl-' + id;
+    btn.dataset.customId = id;
+    btn.innerHTML = '';
+    btn.appendChild(document.createTextNode(list.name + ' '));
+    const span = document.createElement('span');
+    span.className = 'tab-count';
+    span.textContent = '(' + list.items.length + ')';
+    btn.appendChild(span);
+    btn.addEventListener('click', () => {
+      toast('Step 2-এ active হবে', 'info');
+    });
+    nav.insertBefore(btn, anchor);
+  }
+}
+
+function renderCustomDbsSettings() {
+  const host = $('#custom-dbs-list');
+  if (!host) return;
+  host.innerHTML = '';
+  if (!state.customListsOrder.length) {
+    const empty = document.createElement('div');
+    empty.className = 'custom-db-empty';
+    empty.textContent = 'এখনো কোনো custom database নেই।';
+    host.appendChild(empty);
+    return;
+  }
+  for (const id of state.customListsOrder) {
+    const list = state.customLists[id];
+    if (!list) continue;
+    const row = document.createElement('div');
+    row.className = 'custom-db-row';
+    const left = document.createElement('span');
+    left.className = 'name';
+    left.textContent = list.name;
+    const right = document.createElement('span');
+    right.className = 'count';
+    right.textContent = list.items.length + ' items';
+    row.appendChild(left);
+    row.appendChild(right);
+    host.appendChild(row);
+  }
+}
+
+function openCreateCustomDbDialog() {
+  const overlay = $('#custom-db-modal');
+  const input = $('#custom-db-name');
+  const preview = $('#custom-db-preview');
+  const errEl = $('#custom-db-error');
+  const confirmBtn = $('#custom-db-confirm');
+  input.value = '';
+  preview.textContent = '';
+  errEl.textContent = '';
+  confirmBtn.disabled = true;
+  overlay.classList.add('show');
+  setTimeout(() => input.focus(), 0);
+}
+
+function closeCreateCustomDbDialog() {
+  $('#custom-db-modal').classList.remove('show');
+}
+
+function refreshCreateDialogState() {
+  const input = $('#custom-db-name');
+  const preview = $('#custom-db-preview');
+  const errEl = $('#custom-db-error');
+  const confirmBtn = $('#custom-db-confirm');
+  const existing = new Set(state.customListsOrder);
+  const result = validateCustomDbName(input.value, existing);
+  if (result.ok) {
+    preview.textContent = 'Tab will appear as: ' + result.name;
+    errEl.textContent = '';
+    confirmBtn.disabled = false;
+  } else {
+    preview.textContent = '';
+    // Don't show error while user is still typing nothing — only after first non-empty input
+    errEl.textContent = input.value.trim() ? result.error : '';
+    confirmBtn.disabled = true;
+  }
+}
+
+async function createCustomDb() {
+  const input = $('#custom-db-name');
+  const existing = new Set(state.customListsOrder);
+  const result = validateCustomDbName(input.value, existing);
+  if (!result.ok) {
+    $('#custom-db-error').textContent = result.error;
+    return;
+  }
+  const entry = { id: result.id, name: result.name, createdAt: Date.now() };
+  state.customLists[entry.id] = {
+    id: entry.id,
+    name: entry.name,
+    items: [],
+    index: new SearchIndex(),
+    createdAt: entry.createdAt
+  };
+  state.customListsOrder.push(entry.id);
+  // Persist registry. Items list starts empty — no chunk write needed.
+  const registry = state.customListsOrder.map(id => {
+    const l = state.customLists[id];
+    return { id: l.id, name: l.name, createdAt: l.createdAt };
+  });
+  try {
+    await saveCustomListsRegistry(registry);
+  } catch (e) {
+    toast('Save failed: ' + e.message, 'error');
+    // Roll back in-memory state on persistence failure
+    delete state.customLists[entry.id];
+    state.customListsOrder.pop();
+    return;
+  }
+  closeCreateCustomDbDialog();
+  renderCustomTabs();
+  renderCustomDbsSettings();
+  toast('✓ ' + entry.name + ' তৈরি হয়েছে', 'success');
+}
+
+$('#custom-dbs-create').addEventListener('click', openCreateCustomDbDialog);
+$('#custom-db-cancel').addEventListener('click', closeCreateCustomDbDialog);
+$('#custom-db-confirm').addEventListener('click', createCustomDb);
+$('#custom-db-name').addEventListener('input', refreshCreateDialogState);
+$('#custom-db-name').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    if (!$('#custom-db-confirm').disabled) createCustomDb();
+  } else if (e.key === 'Escape') {
+    closeCreateCustomDbDialog();
+  }
+});
+$('#custom-db-modal').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeCreateCustomDbDialog();
+});
+
 /* ─── Wire vault controls ────────────────────────────────── */
 // Adaptive debounce — fast for small lists, longer for huge ones (avoid stutter)
 function adaptiveDelay(source) {
@@ -5536,6 +5822,33 @@ async function init() {
     workerToggle.disabled = true;
     workerHint.textContent = '(এই browser-এ Worker support নেই)';
   }
+
+  // Load custom databases registry (Step 1: list metadata + per-list items)
+  try {
+    const registry = await loadCustomListsRegistry();
+    if (registry.length) {
+      const itemArrays = await Promise.all(
+        registry.map(r => loadList('cl-' + r.id))
+      );
+      registry.forEach((r, i) => {
+        const items = itemArrays[i] || [];
+        const idx = new SearchIndex();
+        idx.rebuild(items);
+        state.customLists[r.id] = {
+          id: r.id,
+          name: r.name,
+          items,
+          index: idx,
+          createdAt: r.createdAt || Date.now()
+        };
+        state.customListsOrder.push(r.id);
+      });
+    }
+  } catch (e) {
+    console.error('Custom DB registry load failed:', e);
+  }
+  renderCustomTabs();
+  renderCustomDbsSettings();
 
   // Load lists
   try {
