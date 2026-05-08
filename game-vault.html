@@ -165,7 +165,22 @@ body {
   font-size: 13px;
 }
 .custom-db-row .name { font-weight: 500; }
-.custom-db-row .count { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.custom-db-row .count { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: 12px; }
+.custom-db-actions { display: flex; gap: 4px; margin-left: auto; }
+.custom-db-btn {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.custom-db-btn:hover:not(:disabled) { background: var(--card-hover); border-color: var(--border-strong); }
+.custom-db-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.custom-db-btn.danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
 .custom-db-empty {
   font-size: 12px;
   color: var(--muted);
@@ -4798,19 +4813,36 @@ function renderCustomDbsSettings() {
     host.appendChild(empty);
     return;
   }
-  for (const id of state.customListsOrder) {
+  const order = state.customListsOrder;
+  for (let i = 0; i < order.length; i++) {
+    const id = order[i];
     const list = state.customLists[id];
     if (!list) continue;
-    const row = document.createElement('div');
-    row.className = 'custom-db-row';
-    const left = document.createElement('span');
-    left.className = 'name';
-    left.textContent = list.name;
-    const right = document.createElement('span');
-    right.className = 'count';
-    right.textContent = list.items.length + ' items';
-    row.appendChild(left);
-    row.appendChild(right);
+    const row = el('div', { class: 'custom-db-row' });
+    row.appendChild(el('span', { class: 'name' }, list.name));
+    row.appendChild(el('span', { class: 'count' }, list.items.length + ' items'));
+    const actions = el('div', { class: 'custom-db-actions' });
+    const upBtn = el('button', {
+      class: 'custom-db-btn', title: 'Move up',
+      onClick: () => moveCustomDb(id, -1)
+    }, '↑');
+    if (i === 0) upBtn.disabled = true;
+    const downBtn = el('button', {
+      class: 'custom-db-btn', title: 'Move down',
+      onClick: () => moveCustomDb(id, 1)
+    }, '↓');
+    if (i === order.length - 1) downBtn.disabled = true;
+    const renameBtn = el('button', {
+      class: 'custom-db-btn', onClick: () => promptRenameCustomDb(id)
+    }, 'Rename');
+    const delBtn = el('button', {
+      class: 'custom-db-btn danger', onClick: () => promptDeleteCustomDb(id)
+    }, 'Delete');
+    actions.appendChild(upBtn);
+    actions.appendChild(downBtn);
+    actions.appendChild(renameBtn);
+    actions.appendChild(delBtn);
+    row.appendChild(actions);
     host.appendChild(row);
   }
 }
@@ -4888,6 +4920,106 @@ async function createCustomDb() {
   renderCustomDbsSettings();
   refreshTargetDropdowns();
   toast('✓ ' + entry.name + ' তৈরি হয়েছে', 'success');
+}
+
+function persistCustomListsRegistry() {
+  const registry = state.customListsOrder.map(id => {
+    const l = state.customLists[id];
+    return { id: l.id, name: l.name, createdAt: l.createdAt };
+  });
+  return saveCustomListsRegistry(registry);
+}
+
+function promptRenameCustomDb(id) {
+  const list = state.customLists[id];
+  if (!list) return;
+  const input = el('input', { class: 'input', value: list.name, autocomplete: 'off', maxlength: '40' });
+  const errEl = el('div', { class: 'modal-error', style: 'min-height:18px; font-size:12px; color:var(--danger);' });
+  setTimeout(() => { input.focus(); input.select(); }, 50);
+  const body = el('div', { style: 'display:flex; flex-direction:column; gap:10px;' });
+  body.appendChild(el('p', {}, 'Rename "' + list.name + '" to:'));
+  body.appendChild(input);
+  body.appendChild(errEl);
+  modal({
+    title: 'Rename custom database',
+    body,
+    confirmLabel: 'Rename',
+    onConfirm: async () => {
+      const existing = new Set(state.customListsOrder.filter(x => x !== id));
+      const result = validateCustomDbName(input.value, existing);
+      if (!result.ok) { toast(result.error, 'error'); return; }
+      const oldName = list.name;
+      list.name = result.name;
+      try {
+        await persistCustomListsRegistry();
+      } catch (e) {
+        list.name = oldName;
+        toast('Save failed: ' + e.message, 'error');
+        return;
+      }
+      renderCustomTabs();
+      renderCustomDbsSettings();
+      refreshTargetDropdowns();
+      toast('✓ Renamed to ' + result.name, 'success');
+    }
+  });
+}
+
+function promptDeleteCustomDb(id) {
+  const list = state.customLists[id];
+  if (!list) return;
+  const n = list.items.length;
+  modal({
+    title: 'Delete custom database',
+    body: list.name + ' database delete করবে? এতে ' + n + ' items এর data চলে যাবে।',
+    confirmLabel: 'Delete',
+    confirmKind: 'btn-danger',
+    onConfirm: () => deleteCustomDb(id)
+  });
+}
+
+async function deleteCustomDb(id) {
+  const list = state.customLists[id];
+  if (!list) return;
+  const name = list.name;
+  if (state.activeCustomId === id) switchTab('vault');
+  // Read meta to know exact chunk count, fall back to a small scan if missing
+  const metaKey = 'cl-' + id + '-meta';
+  let chunks = 0;
+  const metaRaw = await Storage.get(metaKey);
+  if (metaRaw) { try { chunks = JSON.parse(metaRaw).chunks || 0; } catch (e) {} }
+  const limit = chunks > 0 ? chunks : 50;
+  const tasks = [Storage.del(metaKey)];
+  for (let i = 0; i < limit; i++) tasks.push(Storage.del('cl-' + id + '-chunk-' + i));
+  try { await Promise.all(tasks); } catch (e) {}
+  delete state.customLists[id];
+  const idx = state.customListsOrder.indexOf(id);
+  if (idx !== -1) state.customListsOrder.splice(idx, 1);
+  try { await persistCustomListsRegistry(); } catch (e) {
+    toast('Registry save failed: ' + e.message, 'error');
+  }
+  renderCustomTabs();
+  renderCustomDbsSettings();
+  refreshTargetDropdowns();
+  toast(name + ' removed', 'info');
+}
+
+async function moveCustomDb(id, dir) {
+  const order = state.customListsOrder;
+  const i = order.indexOf(id);
+  if (i === -1) return;
+  const j = i + dir;
+  if (j < 0 || j >= order.length) return;
+  [order[i], order[j]] = [order[j], order[i]];
+  try {
+    await persistCustomListsRegistry();
+  } catch (e) {
+    [order[i], order[j]] = [order[j], order[i]];
+    toast('Save failed: ' + e.message, 'error');
+    return;
+  }
+  renderCustomTabs();
+  renderCustomDbsSettings();
 }
 
 function refreshTargetDropdowns() {
