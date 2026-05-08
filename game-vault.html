@@ -348,6 +348,221 @@ body {
 .badge-dup { background: var(--accent-soft); color: var(--accent); }
 .badge-played { background: var(--success-soft); color: var(--success); }
 
+/* ─── Tag system ─────────────────────────────────────────── */
+.tag-filter-bar {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
+  padding: 8px 0 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+.tag-filter-bar::-webkit-scrollbar { height: 4px; }
+.tag-filter-bar::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
+.tag-filter-bar:empty { display: none; }
+.tag-filter-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.tag-filter-btn:hover { background: var(--card-hover); border-color: var(--border-strong); }
+.tag-filter-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0a0a0b;
+}
+.tag-filter-btn.active .tag-filter-count { color: #0a0a0b; opacity: 0.65; }
+.tag-filter-name { font-weight: 500; }
+.tag-filter-count { color: var(--muted); font-size: 10px; }
+.tag-filter-action { color: var(--muted); border-style: dashed; }
+
+.bulk-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+}
+.bulk-toolbar .bulk-count {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.bulk-checkbox {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.row-tags {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+  max-width: 240px;
+  overflow: hidden;
+}
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.tag-chip-row {
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+  background: none;
+}
+.tag-chip-row:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tag-chip-more { color: var(--muted); border-style: dashed; }
+.tag-chip-removable { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.tag-chip-x {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 0 0 2px;
+  opacity: 0.7;
+}
+.tag-chip-x:hover { opacity: 1; }
+.tag-chip-empty {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Tag editor */
+.tag-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tag-edit-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.tag-editor-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 24px;
+  padding: 4px 0;
+}
+.tag-input-wrap {
+  position: relative;
+}
+.tag-edit-input { width: 100%; }
+.tag-suggest {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+  z-index: 10;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.tag-suggest-static {
+  position: relative;
+  top: 0;
+  box-shadow: none;
+  max-height: 180px;
+}
+.tag-suggest-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 8px 12px;
+  font-family: var(--body);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+.tag-suggest-item:hover { background: var(--bg-soft); }
+.tag-suggest-name { color: var(--text); }
+.tag-suggest-count { color: var(--muted); font-family: var(--mono); font-size: 10px; }
+
+/* Manage tags dialog */
+.manage-tags-body { display: flex; flex-direction: column; gap: 14px; max-height: 60vh; }
+.manage-tag-new { display: flex; gap: 8px; }
+.manage-tag-new .input { flex: 1; }
+.manage-tag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  max-height: 50vh;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+}
+.manage-tag-empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.manage-tag-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--bg-soft);
+}
+.manage-tag-row:hover { background: var(--card-hover); }
+.manage-tag-name { flex: 1; font-size: 13px; font-weight: 500; }
+.manage-tag-count { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-right: 4px; }
+
 .empty {
   padding: 80px 24px;
   text-align: center;
@@ -774,6 +989,9 @@ body {
   .row { padding: 0 12px; gap: 10px; }
   .row .actions { opacity: 1; }
   .row .name { font-size: 13px; }
+  .row-tags { max-width: 140px; }
+  .row-tags .tag-chip:nth-child(n+3) { display: none; }
+  .tag-filter-bar { padding: 6px 0 8px; }
   .list-scroll { height: 520px; }
   .stats { width: 100%; }
   .stat { flex: 1; text-align: center; }
@@ -832,6 +1050,10 @@ body {
   <h2 class="section-title">main vault</h2>
   <p class="section-desc">তোমার পুরো collection। search fuzzy, এতে special character, year, edition keyword match করে।</p>
 
+  <div class="tag-filter-bar" id="vault-tag-filter-bar" title="একাধিক tag select করলে — সব tag আছে এমন games দেখাবে (AND)"></div>
+
+  <div class="bulk-toolbar" id="vault-bulk-toolbar" hidden></div>
+
   <div class="toolbar">
     <div class="toolbar-row">
       <div class="input-group">
@@ -846,6 +1068,7 @@ body {
       </select>
       <button class="btn btn-sm" id="vault-dup-toggle" title="Show duplicates only">Duplicates</button>
       <button class="btn btn-sm btn-danger" id="vault-dup-remove" title="Review duplicate groups">Remove dups</button>
+      <button class="btn btn-sm" id="vault-bulk-toggle" title="Select multiple to tag">☐ Bulk select</button>
     </div>
   </div>
 
@@ -2074,7 +2297,12 @@ async function saveList(name, items) {
   if (oldMeta) { try { oldChunks = JSON.parse(oldMeta).chunks || 0; } catch(e){} }
 
   // Strip computed fields before save
-  const lean = items.map(it => ({ id: it.id, name: it.name, dateAdded: it.dateAdded }));
+  const lean = items.map(it => ({
+    id: it.id,
+    name: it.name,
+    dateAdded: it.dateAdded,
+    tags: Array.isArray(it.tags) ? it.tags.slice() : []
+  }));
 
   const tasks = [];
   for (let i = 0; i < chunks; i++) {
@@ -2112,6 +2340,8 @@ async function loadList(name) {
   for (const r of results) {
     if (r) { try { items.push(...JSON.parse(r)); } catch (e) {} }
   }
+  // Tag migration: pre-tag-feature items have no tags field. Default to [].
+  for (const it of items) if (!Array.isArray(it.tags)) it.tags = [];
   Profiler.record('load.' + name, performance.now() - _tProf, { n: items.length });
   return items;
 }
@@ -2190,6 +2420,111 @@ function tokenSort(str) {
   const n = normalize(str);
   if (!n) return '';
   return n.split(' ').filter(Boolean).sort().join(' ');
+}
+
+/* ─── Tag helpers (pure) ──────────────────────────────────
+   Tags are stored lowercase on items; display casing lives in
+   state.tagLabels so "PS5" and "ps5" don't duplicate. */
+const TAG_MAX_LEN = 24;
+const TAG_RESERVED = new Set(['all']);
+const TAG_ALLOWED_RX = /^[a-z0-9 _\-+]+$/;
+
+function sanitizeTag(raw) {
+  if (raw == null) return null;
+  const trimmed = String(raw).trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!trimmed) return null;
+  if (trimmed.length > TAG_MAX_LEN) return null;
+  if (TAG_RESERVED.has(trimmed)) return null;
+  if (!TAG_ALLOWED_RX.test(trimmed)) return null;
+  return trimmed;
+}
+
+function addTagToItem(item, tag) {
+  const t = sanitizeTag(tag);
+  if (!t) return false;
+  if (!Array.isArray(item.tags)) item.tags = [];
+  if (item.tags.indexOf(t) !== -1) return false;
+  item.tags.push(t);
+  return true;
+}
+
+function removeTagFromItem(item, tag) {
+  const t = sanitizeTag(tag);
+  if (!t || !Array.isArray(item.tags)) return false;
+  const i = item.tags.indexOf(t);
+  if (i === -1) return false;
+  item.tags.splice(i, 1);
+  return true;
+}
+
+function renameTagInItems(items, oldName, newName) {
+  const o = sanitizeTag(oldName);
+  const n = sanitizeTag(newName);
+  if (!o || !n || o === n) return 0;
+  let changed = 0;
+  for (const it of items) {
+    if (!Array.isArray(it.tags)) continue;
+    const i = it.tags.indexOf(o);
+    if (i === -1) continue;
+    if (it.tags.indexOf(n) !== -1) it.tags.splice(i, 1);
+    else it.tags[i] = n;
+    changed++;
+  }
+  return changed;
+}
+
+function mergeTagsInItems(items, source, target) {
+  const s = sanitizeTag(source);
+  const t = sanitizeTag(target);
+  if (!s || !t || s === t) return 0;
+  let changed = 0;
+  for (const it of items) {
+    if (!Array.isArray(it.tags)) continue;
+    const si = it.tags.indexOf(s);
+    if (si === -1) continue;
+    if (it.tags.indexOf(t) === -1) it.tags[si] = t;
+    else it.tags.splice(si, 1);
+    changed++;
+  }
+  return changed;
+}
+
+function deleteTagFromItems(items, tag) {
+  const t = sanitizeTag(tag);
+  if (!t) return 0;
+  let changed = 0;
+  for (const it of items) {
+    if (!Array.isArray(it.tags)) continue;
+    const i = it.tags.indexOf(t);
+    if (i === -1) continue;
+    it.tags.splice(i, 1);
+    changed++;
+  }
+  return changed;
+}
+
+function computeTagCounts(...lists) {
+  const counts = new Map();
+  for (const list of lists) {
+    if (!list) continue;
+    for (const it of list) {
+      if (!Array.isArray(it.tags)) continue;
+      for (const t of it.tags) {
+        counts.set(t, (counts.get(t) || 0) + 1);
+      }
+    }
+  }
+  return counts;
+}
+
+function filterByTagsAND(items, tagSet) {
+  if (!tagSet || tagSet.size === 0) return items;
+  const filters = [...tagSet];
+  return items.filter(it => {
+    if (!Array.isArray(it.tags) || it.tags.length === 0) return false;
+    for (const t of filters) if (it.tags.indexOf(t) === -1) return false;
+    return true;
+  });
 }
 
 /* ─── Levenshtein with buffer reuse + early termination ─── */
@@ -2600,7 +2935,14 @@ const state = {
   // Stable serial maps — id → position in raw state.vault / state.played array.
   // Rebuilt at the top of renderVault/renderPlayed so filtering/sorting never renumbers.
   vaultSerialMap: new Map(),
-  playedSerialMap: new Map()
+  playedSerialMap: new Map(),
+  // Tag system
+  vaultTagFilter: new Set(),     // active AND filters in vault tab
+  playedTagFilter: new Set(),
+  bulkMode: false,               // toggled per Vault tab
+  vaultBulkSelection: new Set(), // selected item ids in vault tab
+  tagCounts: new Map(),          // tag → count across vault+played
+  tagLabels: new Map()           // lowercase tag → first-seen display casing
 };
 
 function newId() { return 'g_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
@@ -2732,12 +3074,46 @@ function makeRow(item, idx, source) {
   const serialMap = source === 'vault' ? state.vaultSerialMap : state.playedSerialMap;
   const origIdx = serialMap.get(item.id);
   const serialText = origIdx === undefined ? '#----' : '#' + String(origIdx + 1).padStart(4, '0');
+
+  // Bulk-mode checkbox replaces the leading visual slot when active in vault tab.
+  if (source === 'vault' && state.bulkMode) {
+    const checked = state.vaultBulkSelection.has(item.id);
+    const cb = el('input', {
+      type: 'checkbox', class: 'bulk-checkbox',
+      onClick: (e) => {
+        if (e.target.checked) state.vaultBulkSelection.add(item.id);
+        else state.vaultBulkSelection.delete(item.id);
+        renderBulkToolbar();
+      }
+    });
+    if (checked) cb.checked = true;
+    row.appendChild(cb);
+  }
+
   row.appendChild(el('span', { class: 'serial' }, serialText));
 
   const name = el('span', { class: 'name' });
   const query = source === 'vault' ? state.vaultFilter : state.playedFilter;
   name.innerHTML = highlight(escapeHtml(item.name), query);
   row.appendChild(name);
+
+  // Inline tag chips — up to 3, then "+N"
+  if (Array.isArray(item.tags) && item.tags.length > 0) {
+    const tagWrap = el('span', { class: 'row-tags' });
+    const visible = item.tags.slice(0, 3);
+    for (const t of visible) {
+      const chip = el('button', {
+        class: 'tag-chip tag-chip-row', type: 'button',
+        title: 'Filter by ' + tagDisplay(t),
+        onClick: (e) => { e.stopPropagation(); toggleTagFilterFromRow(t, source); }
+      }, tagDisplay(t));
+      tagWrap.appendChild(chip);
+    }
+    if (item.tags.length > 3) {
+      tagWrap.appendChild(el('span', { class: 'tag-chip tag-chip-more' }, '+' + (item.tags.length - 3)));
+    }
+    row.appendChild(tagWrap);
+  }
 
   // duplicate badge
   const idx2 = source === 'vault' ? state.vIndex : state.pIndex;
@@ -2779,6 +3155,7 @@ function getFilteredItems(source) {
   const filter = (source === 'vault' ? state.vaultFilter : state.playedFilter).trim();
   const sort = source === 'vault' ? state.vaultSort : state.playedSort;
   const dupOnly = source === 'vault' ? state.vaultDupOnly : state.playedDupOnly;
+  const tagFilter = source === 'vault' ? state.vaultTagFilter : state.playedTagFilter;
   const idx = source === 'vault' ? state.vIndex : state.pIndex;
 
   let result;
@@ -2790,6 +3167,9 @@ function getFilteredItems(source) {
 
     if (dupOnly) {
       result = result.filter(it => (idx.dups.get(it._norm) || []).length > 1);
+    }
+    if (tagFilter && tagFilter.size > 0) {
+      result = filterByTagsAND(result, tagFilter);
     }
 
     // If user explicitly chose a sort, override score order;
@@ -2806,6 +3186,9 @@ function getFilteredItems(source) {
 
   if (dupOnly && idx) {
     result = result.filter(it => (idx.dups.get(it._norm) || []).length > 1);
+  }
+  if (tagFilter && tagFilter.size > 0) {
+    result = filterByTagsAND(result, tagFilter);
   }
 
   if (sort === 'az') result.sort((a, b) => a.name.localeCompare(b.name));
@@ -2837,6 +3220,7 @@ function renderVault() {
   const filterText = [];
   if (state.vaultFilter) filterText.push('search: "' + state.vaultFilter + '"');
   if (state.vaultDupOnly) filterText.push('duplicates only');
+  if (state.vaultTagFilter.size > 0) filterText.push('tags: ' + [...state.vaultTagFilter].map(tagDisplay).join(' + '));
   $('#vault-filter-info').textContent = filterText.join(' · ');
   if (items.length === 0) showEmpty('vault-spacer', state.vault.length === 0 ? 'কোনো item নাই — Bulk Add tab দিয়ে যোগ করো' : 'কোনো match পাওয়া যায়নি');
 }
@@ -2849,6 +3233,7 @@ function renderPlayed() {
   const filterText = [];
   if (state.playedFilter) filterText.push('search: "' + state.playedFilter + '"');
   if (state.playedDupOnly) filterText.push('duplicates only');
+  if (state.playedTagFilter.size > 0) filterText.push('tags: ' + [...state.playedTagFilter].map(tagDisplay).join(' + '));
   $('#played-filter-info').textContent = filterText.join(' · ');
   if (items.length === 0) showEmpty('played-spacer', state.played.length === 0 ? 'এখনো কোনো played গেম নাই' : 'কোনো match পাওয়া যায়নি');
 }
@@ -2864,6 +3249,355 @@ function updateStats() {
   $('#stat-played').textContent = state.played.length.toLocaleString();
   $('#tc-vault').textContent = '(' + state.vault.length + ')';
   $('#tc-played').textContent = '(' + state.played.length + ')';
+  // Tag counts/labels follow item-set changes; called from every add/delete path.
+  if (state.loaded) refreshTagState();
+}
+
+function refreshTagState() {
+  state.tagCounts = computeTagCounts(state.vault, state.played);
+  // Drop any active filters that no longer have items (e.g. after tag deletion)
+  for (const t of [...state.vaultTagFilter]) if (!state.tagCounts.has(t)) state.vaultTagFilter.delete(t);
+  for (const t of [...state.playedTagFilter]) if (!state.tagCounts.has(t)) state.playedTagFilter.delete(t);
+  renderTagFilterBar();
+}
+
+function renderTagFilterBar() {
+  const bar = $('#vault-tag-filter-bar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  const total = state.vault.length;
+  const allBtn = el('button', {
+    class: 'tag-filter-btn' + (state.vaultTagFilter.size === 0 ? ' active' : ''),
+    type: 'button',
+    onClick: () => { state.vaultTagFilter.clear(); renderTagFilterBar(); renderVault(); }
+  });
+  allBtn.appendChild(el('span', { class: 'tag-filter-name' }, 'All'));
+  allBtn.appendChild(el('span', { class: 'tag-filter-count' }, String(total)));
+  bar.appendChild(allBtn);
+
+  const entries = [...state.tagCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  for (const [tag, count] of entries) {
+    if (count === 0) continue;
+    const btn = el('button', {
+      class: 'tag-filter-btn' + (state.vaultTagFilter.has(tag) ? ' active' : ''),
+      type: 'button',
+      onClick: () => toggleTagFilter(tag, 'vault')
+    });
+    btn.appendChild(el('span', { class: 'tag-filter-name' }, tagDisplay(tag)));
+    btn.appendChild(el('span', { class: 'tag-filter-count' }, String(count)));
+    bar.appendChild(btn);
+  }
+
+  // trailing actions
+  bar.appendChild(el('button', {
+    class: 'tag-filter-btn tag-filter-action', type: 'button',
+    onClick: () => openManageTagsDialog()
+  }, '+ New tag'));
+  bar.appendChild(el('button', {
+    class: 'tag-filter-btn tag-filter-action', type: 'button',
+    onClick: () => openManageTagsDialog()
+  }, '⚙ Manage'));
+}
+
+function toggleTagFilter(tag, source) {
+  const set = source === 'vault' ? state.vaultTagFilter : state.playedTagFilter;
+  if (set.has(tag)) set.delete(tag); else set.add(tag);
+  if (source === 'vault') {
+    renderTagFilterBar();
+    renderVault();
+  } else {
+    renderPlayed();
+  }
+}
+
+// Click on a row chip — vault chips toggle vault filter; played chips switch
+// to vault tab and toggle there (master vault is the source of truth).
+function toggleTagFilterFromRow(tag, source) {
+  if (source === 'played') {
+    state.vaultTagFilter.add(tag);
+    switchTab('vault');
+    renderTagFilterBar();
+    renderVault();
+  } else {
+    toggleTagFilter(tag, 'vault');
+  }
+}
+
+function renderBulkToolbar() {
+  const bar = $('#vault-bulk-toolbar');
+  if (!bar) return;
+  const n = state.vaultBulkSelection.size;
+  if (!state.bulkMode || n === 0) { bar.hidden = true; bar.innerHTML = ''; return; }
+  bar.hidden = false;
+  bar.innerHTML = '';
+  bar.appendChild(el('span', { class: 'bulk-count' }, n + ' selected'));
+  bar.appendChild(el('button', {
+    class: 'btn btn-sm', type: 'button',
+    onClick: () => openBulkTagDialog('add')
+  }, 'Add tag…'));
+  bar.appendChild(el('button', {
+    class: 'btn btn-sm', type: 'button',
+    onClick: () => openBulkTagDialog('remove')
+  }, 'Remove tag…'));
+  bar.appendChild(el('button', {
+    class: 'btn btn-sm btn-ghost', type: 'button',
+    onClick: () => { state.vaultBulkSelection.clear(); renderBulkToolbar(); renderVault(); }
+  }, 'Clear selection'));
+}
+
+function openManageTagsDialog() {
+  const body = el('div', { class: 'manage-tags-body' });
+
+  const newRow = el('div', { class: 'manage-tag-new' });
+  const newInput = el('input', { class: 'input', autocomplete: 'off', placeholder: 'নতুন tag name' });
+  const newBtn = el('button', { class: 'btn btn-primary btn-sm', type: 'button' }, '+ Add');
+  newRow.appendChild(newInput);
+  newRow.appendChild(newBtn);
+  body.appendChild(newRow);
+
+  const list = el('div', { class: 'manage-tag-list' });
+  body.appendChild(list);
+
+  function rebuildList() {
+    list.innerHTML = '';
+    const entries = [...state.tagCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    // Include known labels with zero items so user can rename/delete them
+    const known = new Set(entries.map(e => e[0]));
+    for (const t of state.tagLabels.keys()) {
+      if (!known.has(t)) entries.push([t, 0]);
+    }
+    if (entries.length === 0) {
+      list.appendChild(el('p', { class: 'manage-tag-empty' }, 'কোনো tag নাই — উপরে নতুন tag যোগ করো'));
+      return;
+    }
+    for (const [tag, count] of entries) {
+      const row = el('div', { class: 'manage-tag-row' });
+      row.appendChild(el('span', { class: 'manage-tag-name' }, tagDisplay(tag)));
+      row.appendChild(el('span', { class: 'manage-tag-count' }, count + ' items'));
+
+      const renameBtn = el('button', {
+        class: 'btn btn-ghost btn-sm', type: 'button',
+        onClick: () => promptRename(tag, rebuildList)
+      }, 'rename');
+      const mergeBtn = el('button', {
+        class: 'btn btn-ghost btn-sm', type: 'button',
+        onClick: () => promptMerge(tag, rebuildList)
+      }, 'merge');
+      const deleteBtn = el('button', {
+        class: 'btn btn-ghost btn-sm', type: 'button', style: 'color:var(--danger);',
+        onClick: () => promptDelete(tag, rebuildList)
+      }, 'delete');
+      row.appendChild(renameBtn);
+      row.appendChild(mergeBtn);
+      row.appendChild(deleteBtn);
+      list.appendChild(row);
+    }
+  }
+
+  function commitNew() {
+    const raw = newInput.value;
+    const canonical = sanitizeTag(raw);
+    if (!canonical) {
+      toast('Invalid tag — 1–' + TAG_MAX_LEN + ' chars, letters/numbers/_-+ only', 'error');
+      return;
+    }
+    if (state.tagCounts.has(canonical) || state.tagLabels.has(canonical)) {
+      toast('Tag already exists', 'info');
+      return;
+    }
+    registerTagLabel(raw, canonical);
+    // Tag exists in registry but is unassigned — count = 0; will appear in manage list only.
+    newInput.value = '';
+    rebuildList();
+    toast('Tag created (assign to items via edit or bulk)', 'success');
+  }
+  newBtn.addEventListener('click', commitNew);
+  newInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitNew(); }});
+
+  rebuildList();
+
+  modal({
+    title: 'Manage tags',
+    body,
+    confirmLabel: 'Done',
+    showCancel: false,
+    onConfirm: () => {
+      refreshTagState();
+      renderVault();
+      renderPlayed();
+    }
+  });
+}
+
+function promptRename(oldTag, onDone) {
+  const input = el('input', { class: 'input', value: tagDisplay(oldTag), autocomplete: 'off' });
+  setTimeout(() => { input.focus(); input.select(); }, 50);
+  const body = el('div', { style: 'display:flex; flex-direction:column; gap:10px;' });
+  body.appendChild(el('p', {}, 'Rename "' + tagDisplay(oldTag) + '" to:'));
+  body.appendChild(input);
+  modal({
+    title: 'Rename tag',
+    body,
+    confirmLabel: 'Rename',
+    onConfirm: () => {
+      const newCanonical = sanitizeTag(input.value);
+      if (!newCanonical) { toast('Invalid tag', 'error'); return; }
+      if (newCanonical === oldTag) {
+        // Just update label casing
+        state.tagLabels.set(oldTag, input.value.trim());
+      } else {
+        const c1 = renameTagInItems(state.vault, oldTag, newCanonical);
+        const c2 = renameTagInItems(state.played, oldTag, newCanonical);
+        state.tagLabels.delete(oldTag);
+        registerTagLabel(input.value, newCanonical);
+        scheduleSave('vault');
+        scheduleSave('played');
+        toast('Renamed in ' + (c1 + c2) + ' items', 'success');
+      }
+      refreshTagState();
+      if (onDone) setTimeout(onDone, 0);
+      // Re-open manage dialog so user can continue
+      setTimeout(openManageTagsDialog, 0);
+    }
+  });
+}
+
+function promptMerge(sourceTag, onDone) {
+  const select = el('select', { class: 'select' });
+  const targets = [...state.tagCounts.keys()].filter(t => t !== sourceTag).sort();
+  for (const t of state.tagLabels.keys()) {
+    if (t !== sourceTag && !targets.includes(t)) targets.push(t);
+  }
+  if (targets.length === 0) {
+    toast('No other tags to merge into', 'info');
+    return;
+  }
+  for (const t of targets) {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = tagDisplay(t) + ' (' + (state.tagCounts.get(t) || 0) + ')';
+    select.appendChild(opt);
+  }
+  const body = el('div', { style: 'display:flex; flex-direction:column; gap:10px;' });
+  body.appendChild(el('p', {}, 'Merge "' + tagDisplay(sourceTag) + '" into:'));
+  body.appendChild(select);
+  modal({
+    title: 'Merge tag',
+    body,
+    confirmLabel: 'Merge',
+    confirmKind: 'btn-danger',
+    onConfirm: () => {
+      const target = select.value;
+      const c1 = mergeTagsInItems(state.vault, sourceTag, target);
+      const c2 = mergeTagsInItems(state.played, sourceTag, target);
+      state.tagLabels.delete(sourceTag);
+      scheduleSave('vault');
+      scheduleSave('played');
+      refreshTagState();
+      toast('Merged ' + (c1 + c2) + ' items into ' + tagDisplay(target), 'success');
+      if (onDone) setTimeout(onDone, 0);
+      setTimeout(openManageTagsDialog, 0);
+    }
+  });
+}
+
+function promptDelete(tag, onDone) {
+  const count = state.tagCounts.get(tag) || 0;
+  modal({
+    title: 'Delete tag?',
+    body: '"' + tagDisplay(tag) + '" — এই tag ' + count + ' items থেকে remove করবে। Items থাকবে।',
+    confirmLabel: 'Delete tag',
+    confirmKind: 'btn-danger',
+    onConfirm: () => {
+      const c1 = deleteTagFromItems(state.vault, tag);
+      const c2 = deleteTagFromItems(state.played, tag);
+      state.tagLabels.delete(tag);
+      if (c1 + c2 > 0) {
+        scheduleSave('vault');
+        scheduleSave('played');
+      }
+      refreshTagState();
+      toast('Removed from ' + (c1 + c2) + ' items', 'success');
+      if (onDone) setTimeout(onDone, 0);
+      setTimeout(openManageTagsDialog, 0);
+    }
+  });
+}
+
+function openBulkTagDialog(mode) {
+  const ids = [...state.vaultBulkSelection];
+  if (ids.length === 0) return;
+  const idSet = new Set(ids);
+  // Items in this selection
+  const items = state.vault.filter(it => idSet.has(it.id));
+  if (items.length === 0) return;
+
+  const input = el('input', {
+    class: 'input', autocomplete: 'off', placeholder: 'tag name'
+  });
+  setTimeout(() => input.focus(), 50);
+  const suggest = el('div', { class: 'tag-suggest tag-suggest-static' });
+  const candidates = mode === 'add'
+    ? [...state.tagCounts.keys()]
+    : [...new Set(items.flatMap(it => it.tags || []))];
+  candidates.sort((a, b) => (state.tagCounts.get(b) || 0) - (state.tagCounts.get(a) || 0));
+  for (const t of candidates.slice(0, 10)) {
+    const btn = el('button', {
+      class: 'tag-suggest-item', type: 'button',
+      onClick: () => { input.value = tagDisplay(t); }
+    });
+    btn.appendChild(el('span', { class: 'tag-suggest-name' }, tagDisplay(t)));
+    btn.appendChild(el('span', { class: 'tag-suggest-count' }, String(state.tagCounts.get(t) || 0)));
+    suggest.appendChild(btn);
+  }
+
+  const body = el('div', { style: 'display:flex; flex-direction:column; gap:10px;' });
+  body.appendChild(el('p', {}, mode === 'add'
+    ? 'Selected ' + ids.length + ' items এ tag যোগ করো'
+    : 'Selected ' + ids.length + ' items থেকে tag remove করো'));
+  body.appendChild(input);
+  if (candidates.length > 0) body.appendChild(suggest);
+
+  modal({
+    title: mode === 'add' ? 'Add tag to selected' : 'Remove tag from selected',
+    body,
+    confirmLabel: mode === 'add' ? 'Add' : 'Remove',
+    confirmKind: mode === 'add' ? 'btn-primary' : 'btn-danger',
+    onConfirm: () => {
+      const canonical = sanitizeTag(input.value);
+      if (!canonical) { toast('Invalid tag', 'error'); return; }
+      let changed = 0;
+      if (mode === 'add') {
+        registerTagLabel(input.value, canonical);
+        for (const it of items) if (addTagToItem(it, canonical)) changed++;
+      } else {
+        for (const it of items) if (removeTagFromItem(it, canonical)) changed++;
+      }
+      if (changed > 0) {
+        scheduleSave('vault');
+        refreshTagState();
+        renderVault();
+        toast(changed + ' items updated', 'success');
+      } else {
+        toast('No changes', 'info');
+      }
+    }
+  });
+}
+
+// Display-casing helper: lookup label, fall back to lowercase.
+function tagDisplay(t) {
+  return state.tagLabels.get(t) || t;
+}
+
+// Register a display label for a tag (first-seen wins). Pass the user's typed
+// casing; if it normalizes to a tag we already know with a different label,
+// keep the existing one so renames stay stable.
+function registerTagLabel(raw, canonical) {
+  if (!canonical) return;
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return;
+  if (!state.tagLabels.has(canonical)) state.tagLabels.set(canonical, trimmed);
 }
 
 function rebuildIndexes() {
@@ -2907,7 +3641,7 @@ function addItem(name, target = 'vault', { allowDup = false } = {}) {
     return { dup: true, existing: idx.byNorm.get(norm) };
   }
 
-  const item = { id: newId(), name: trimmed, dateAdded: Date.now() };
+  const item = { id: newId(), name: trimmed, dateAdded: Date.now(), tags: [] };
   item._norm = norm;
   item._ts = tokenSort(trimmed);
 
@@ -2959,7 +3693,7 @@ function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
     }
 
     // ── Add ──
-    const item = { id: newId(), name: trimmed, dateAdded: Date.now() + addedItems.length };
+    const item = { id: newId(), name: trimmed, dateAdded: Date.now() + addedItems.length, tags: [] };
     item._norm = n;
     item._ts = tokenSort(trimmed);
     state[target].push(item);
@@ -3021,9 +3755,21 @@ function editItem(item, source) {
     }
   });
 
+  // Working copy of tags so cancel doesn't mutate
+  const workTags = Array.isArray(item.tags) ? item.tags.slice() : [];
+  const tagEditor = buildTagEditor(workTags);
+
+  const body = el('div', { style: 'display:flex; flex-direction:column; gap:14px;' });
+  const nameLabel = el('label', { class: 'tag-edit-label' }, 'Name');
+  body.appendChild(nameLabel);
+  body.appendChild(inputBox);
+  const tagsLabel = el('label', { class: 'tag-edit-label' }, 'Tags');
+  body.appendChild(tagsLabel);
+  body.appendChild(tagEditor.root);
+
   modal({
     title: 'Edit item',
-    body: inputBox,
+    body,
     confirmLabel: 'Save',
     onConfirm: () => {
       const v = inputBox.value.trim();
@@ -3036,14 +3782,114 @@ function editItem(item, source) {
       item._norm = normalize(v);
       item._ts = tokenSort(v);
       item._lower = v.toLowerCase();
-      // Re-add (note: this appends to idx.items; for ordered list we keep state[source] as authoritative)
+      item.tags = tagEditor.getTags();
       idx.add(item);
 
       scheduleSave(source);
+      refreshTagState();
       if (source === 'vault') renderVault(); else renderPlayed();
       toast('Updated', 'success');
     }
   });
+}
+
+/* ─── Tag editor widget (chip strip + autocomplete input) ───
+   Returns { root, getTags } — getTags reads the current tag list. */
+function buildTagEditor(initialTags) {
+  const tags = initialTags.slice();
+  const root = el('div', { class: 'tag-editor' });
+  const chipRow = el('div', { class: 'tag-editor-chips' });
+  const inputWrap = el('div', { class: 'tag-input-wrap' });
+  const input = el('input', {
+    class: 'input tag-edit-input', autocomplete: 'off',
+    placeholder: 'tag যোগ করো — type then Enter'
+  });
+  const dropdown = el('div', { class: 'tag-suggest', hidden: '' });
+  inputWrap.appendChild(input);
+  inputWrap.appendChild(dropdown);
+  root.appendChild(chipRow);
+  root.appendChild(inputWrap);
+
+  function renderChips() {
+    chipRow.innerHTML = '';
+    if (tags.length === 0) {
+      chipRow.appendChild(el('span', { class: 'tag-chip-empty' }, 'no tags'));
+      return;
+    }
+    for (const t of tags) {
+      const chip = el('span', { class: 'tag-chip tag-chip-removable' });
+      chip.appendChild(document.createTextNode(tagDisplay(t)));
+      chip.appendChild(el('button', {
+        class: 'tag-chip-x', type: 'button', title: 'Remove tag',
+        onClick: () => {
+          const i = tags.indexOf(t);
+          if (i >= 0) { tags.splice(i, 1); renderChips(); renderSuggest(input.value); }
+        }
+      }, '×'));
+      chipRow.appendChild(chip);
+    }
+  }
+
+  function commitTag(rawDisplay) {
+    const canonical = sanitizeTag(rawDisplay);
+    if (!canonical) {
+      toast('Invalid tag — 1–' + TAG_MAX_LEN + ' chars, letters/numbers/_-+ only', 'error');
+      return false;
+    }
+    if (tags.indexOf(canonical) !== -1) return false;
+    registerTagLabel(rawDisplay, canonical);
+    tags.push(canonical);
+    renderChips();
+    return true;
+  }
+
+  function renderSuggest(query) {
+    const q = String(query || '').trim().toLowerCase();
+    const candidates = [];
+    for (const [t, count] of state.tagCounts) {
+      if (tags.indexOf(t) !== -1) continue;
+      if (q && t.indexOf(q) === -1) continue;
+      candidates.push({ tag: t, count });
+    }
+    candidates.sort((a, b) => b.count - a.count);
+    const top = candidates.slice(0, 8);
+    dropdown.innerHTML = '';
+    if (top.length === 0) { dropdown.hidden = true; return; }
+    dropdown.hidden = false;
+    for (const c of top) {
+      const item = el('button', {
+        class: 'tag-suggest-item', type: 'button',
+        onMousedown: (e) => { e.preventDefault(); commitTag(c.tag); input.value = ''; renderSuggest(''); input.focus(); }
+      });
+      item.appendChild(el('span', { class: 'tag-suggest-name' }, tagDisplay(c.tag)));
+      item.appendChild(el('span', { class: 'tag-suggest-count' }, String(c.count)));
+      dropdown.appendChild(item);
+    }
+  }
+
+  input.addEventListener('input', () => renderSuggest(input.value));
+  input.addEventListener('focus', () => renderSuggest(input.value));
+  input.addEventListener('blur', () => setTimeout(() => { dropdown.hidden = true; }, 120));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      const v = input.value.trim();
+      if (v) { if (commitTag(v)) { input.value = ''; renderSuggest(''); } }
+    } else if (e.key === 'Backspace' && !input.value && tags.length > 0) {
+      e.preventDefault();
+      tags.pop();
+      renderChips();
+      renderSuggest('');
+    } else if (e.key === ',') {
+      e.preventDefault();
+      const v = input.value.trim();
+      if (v && commitTag(v)) { input.value = ''; renderSuggest(''); }
+    }
+  });
+
+  renderChips();
+  return { root, getTags: () => tags.slice() };
 }
 
 function moveToPlayed(item) {
@@ -3457,6 +4303,15 @@ $('#vault-sort').addEventListener('change', e => {
 $('#vault-dup-toggle').addEventListener('click', () => {
   state.vaultDupOnly = !state.vaultDupOnly;
   $('#vault-dup-toggle').classList.toggle('btn-primary', state.vaultDupOnly);
+  renderVault();
+});
+$('#vault-bulk-toggle').addEventListener('click', () => {
+  state.bulkMode = !state.bulkMode;
+  if (!state.bulkMode) state.vaultBulkSelection.clear();
+  const btn = $('#vault-bulk-toggle');
+  btn.classList.toggle('btn-primary', state.bulkMode);
+  btn.textContent = state.bulkMode ? '☑ Bulk select' : '☐ Bulk select';
+  renderBulkToolbar();
   renderVault();
 });
 
@@ -4020,10 +4875,10 @@ $('#export-json').addEventListener('click', () => {
     return;
   }
   const data = {
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
-    vault: state.vault.map(it => ({ name: it.name, dateAdded: it.dateAdded })),
-    played: state.played.map(it => ({ name: it.name, dateAdded: it.dateAdded }))
+    vault: state.vault.map(it => ({ name: it.name, dateAdded: it.dateAdded, tags: Array.isArray(it.tags) ? it.tags.slice() : [] })),
+    played: state.played.map(it => ({ name: it.name, dateAdded: it.dateAdded, tags: Array.isArray(it.tags) ? it.tags.slice() : [] }))
   };
   const ok = downloadFile(
     JSON.stringify(data, null, 2),
@@ -4038,9 +4893,10 @@ $('#export-csv').addEventListener('click', () => {
     toast('Vault আর played দুটোই খালি, export করার মতো কিছু নাই', 'info');
     return;
   }
-  const rows = [['list','name','date_added']];
-  for (const it of state.vault) rows.push(['vault', it.name, new Date(it.dateAdded).toISOString()]);
-  for (const it of state.played) rows.push(['played', it.name, new Date(it.dateAdded).toISOString()]);
+  const tagsCell = (it) => Array.isArray(it.tags) ? it.tags.join(';') : '';
+  const rows = [['list','name','date_added','tags']];
+  for (const it of state.vault) rows.push(['vault', it.name, new Date(it.dateAdded).toISOString(), tagsCell(it)]);
+  for (const it of state.played) rows.push(['played', it.name, new Date(it.dateAdded).toISOString(), tagsCell(it)]);
   const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
   // BOM for Excel UTF-8 detection (Bengali names display correctly)
   const ok = downloadFile(
@@ -4190,7 +5046,7 @@ function bulkAddRich(richItems, target) {
   let counter = 0;
 
   for (const raw of richItems) {
-    let name, dateAdded;
+    let name, dateAdded, rawTags;
     if (typeof raw === 'string') {
       name = raw.trim();
       dateAdded = Date.now() + counter;
@@ -4198,6 +5054,7 @@ function bulkAddRich(richItems, target) {
       name = String(raw.name || raw.title || '').trim();
       const d = Number(raw.dateAdded);
       dateAdded = (Number.isFinite(d) && d > 0) ? d : Date.now() + counter;
+      rawTags = raw.tags;
     } else continue;
 
     if (!name) continue;
@@ -4226,7 +5083,15 @@ function bulkAddRich(richItems, target) {
       continue;
     }
 
-    const item = { id: newId(), name, dateAdded };
+    const tags = [];
+    if (Array.isArray(rawTags)) {
+      const seen = new Set();
+      for (const t of rawTags) {
+        const s = sanitizeTag(t);
+        if (s && !seen.has(s)) { seen.add(s); tags.push(s); }
+      }
+    }
+    const item = { id: newId(), name, dateAdded, tags };
     item._norm = n;
     item._ts = tokenSort(name);
 
@@ -4406,12 +5271,18 @@ function parseCsvSmart(text) {
 
   const firstCells = parseCsvRow(rows[0]);
   const lowered = firstCells.map(c => c.trim().toLowerCase());
-  const hasHeader = lowered.some(h => /^(name|title|game|list|category|date_added|added)$/i.test(h));
+  const hasHeader = lowered.some(h => /^(name|title|game|list|category|date_added|added|tags)$/i.test(h));
 
   if (hasHeader) {
     const nameIdx = lowered.findIndex(h => /^(name|title|game)$/i.test(h));
     const listIdx = lowered.findIndex(h => /^(list|category|type)$/i.test(h));
     const dateIdx = lowered.findIndex(h => /^(date_added|added|created|timestamp)$/i.test(h));
+    const tagsIdx = lowered.findIndex(h => /^tags$/i.test(h));
+
+    const parseTagsCell = (cell) => {
+      if (!cell) return [];
+      return String(cell).split(';').map(sanitizeTag).filter(Boolean);
+    };
 
     if (nameIdx >= 0 && listIdx >= 0) {
       // Routed import — split by list value
@@ -4422,7 +5293,8 @@ function parseCsvSmart(text) {
         if (!name) continue;
         const listVal = (cells[listIdx] || '').trim().toLowerCase();
         const date = dateIdx >= 0 ? Date.parse(cells[dateIdx]) : NaN;
-        const item = { name, dateAdded: Number.isFinite(date) ? date : undefined };
+        const tags = tagsIdx >= 0 ? parseTagsCell(cells[tagsIdx]) : [];
+        const item = { name, dateAdded: Number.isFinite(date) ? date : undefined, tags };
         if (listVal === 'played') played.push(item);
         else vault.push(item); // default to vault
       }
@@ -4430,14 +5302,15 @@ function parseCsvSmart(text) {
     }
 
     if (nameIdx >= 0) {
-      // Single-list import — extract name + optional date
+      // Single-list import — extract name + optional date + tags
       const lines = [];
       for (let i = 1; i < rows.length; i++) {
         const cells = parseCsvRow(rows[i]);
         const name = (cells[nameIdx] || '').trim();
         if (!name) continue;
         const date = dateIdx >= 0 ? Date.parse(cells[dateIdx]) : NaN;
-        lines.push({ name, dateAdded: Number.isFinite(date) ? date : undefined });
+        const tags = tagsIdx >= 0 ? parseTagsCell(cells[tagsIdx]) : [];
+        lines.push({ name, dateAdded: Number.isFinite(date) ? date : undefined, tags });
       }
       return { routed: false, lines };
     }
@@ -4694,6 +5567,14 @@ async function init() {
   }
 
   state.loaded = true;
+  // Seed tag display labels from loaded items (lowercase canonical → first-seen casing)
+  for (const list of [state.vault, state.played]) {
+    for (const it of list) {
+      if (!Array.isArray(it.tags)) continue;
+      for (const t of it.tags) if (!state.tagLabels.has(t)) state.tagLabels.set(t, t);
+    }
+  }
+  refreshTagState();
   renderVault();
   renderPlayed();
   updateStats();

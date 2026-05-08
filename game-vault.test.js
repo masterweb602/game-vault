@@ -906,3 +906,294 @@ describe('applyInputDups()', () => {
     expect(kept).toEqual(['', 'Max Payne', '   ', '']);
   });
 });
+
+// ── Tag system helpers (verbatim from game-vault.html) ───────────────────────
+const TAG_MAX_LEN = 24;
+const TAG_RESERVED = new Set(['all']);
+const TAG_ALLOWED_RX = /^[a-z0-9 _\-+]+$/;
+
+function sanitizeTag(raw) {
+  if (raw == null) return null;
+  const trimmed = String(raw).trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!trimmed) return null;
+  if (trimmed.length > TAG_MAX_LEN) return null;
+  if (TAG_RESERVED.has(trimmed)) return null;
+  if (!TAG_ALLOWED_RX.test(trimmed)) return null;
+  return trimmed;
+}
+
+function addTagToItem(item, tag) {
+  const t = sanitizeTag(tag);
+  if (!t) return false;
+  if (!Array.isArray(item.tags)) item.tags = [];
+  if (item.tags.indexOf(t) !== -1) return false;
+  item.tags.push(t);
+  return true;
+}
+
+function removeTagFromItem(item, tag) {
+  const t = sanitizeTag(tag);
+  if (!t || !Array.isArray(item.tags)) return false;
+  const i = item.tags.indexOf(t);
+  if (i === -1) return false;
+  item.tags.splice(i, 1);
+  return true;
+}
+
+function renameTagInItems(items, oldName, newName) {
+  const o = sanitizeTag(oldName);
+  const n = sanitizeTag(newName);
+  if (!o || !n || o === n) return 0;
+  let changed = 0;
+  for (const it of items) {
+    if (!Array.isArray(it.tags)) continue;
+    const i = it.tags.indexOf(o);
+    if (i === -1) continue;
+    if (it.tags.indexOf(n) !== -1) it.tags.splice(i, 1);
+    else it.tags[i] = n;
+    changed++;
+  }
+  return changed;
+}
+
+function mergeTagsInItems(items, source, target) {
+  const s = sanitizeTag(source);
+  const t = sanitizeTag(target);
+  if (!s || !t || s === t) return 0;
+  let changed = 0;
+  for (const it of items) {
+    if (!Array.isArray(it.tags)) continue;
+    const si = it.tags.indexOf(s);
+    if (si === -1) continue;
+    if (it.tags.indexOf(t) === -1) it.tags[si] = t;
+    else it.tags.splice(si, 1);
+    changed++;
+  }
+  return changed;
+}
+
+function deleteTagFromItems(items, tag) {
+  const t = sanitizeTag(tag);
+  if (!t) return 0;
+  let changed = 0;
+  for (const it of items) {
+    if (!Array.isArray(it.tags)) continue;
+    const i = it.tags.indexOf(t);
+    if (i === -1) continue;
+    it.tags.splice(i, 1);
+    changed++;
+  }
+  return changed;
+}
+
+function computeTagCounts(...lists) {
+  const counts = new Map();
+  for (const list of lists) {
+    if (!list) continue;
+    for (const it of list) {
+      if (!Array.isArray(it.tags)) continue;
+      for (const t of it.tags) {
+        counts.set(t, (counts.get(t) || 0) + 1);
+      }
+    }
+  }
+  return counts;
+}
+
+function filterByTagsAND(items, tagSet) {
+  if (!tagSet || tagSet.size === 0) return items;
+  const filters = [...tagSet];
+  return items.filter(it => {
+    if (!Array.isArray(it.tags) || it.tags.length === 0) return false;
+    for (const t of filters) if (it.tags.indexOf(t) === -1) return false;
+    return true;
+  });
+}
+
+describe('sanitizeTag', () => {
+  test('null/undefined/empty', () => {
+    expect(sanitizeTag(null)).toBe(null);
+    expect(sanitizeTag(undefined)).toBe(null);
+    expect(sanitizeTag('')).toBe(null);
+    expect(sanitizeTag('   ')).toBe(null);
+  });
+  test('lowercases', () => {
+    expect(sanitizeTag('PS5')).toBe('ps5');
+    expect(sanitizeTag('Single Player')).toBe('single player');
+  });
+  test('trims and collapses whitespace', () => {
+    expect(sanitizeTag('  retro   game  ')).toBe('retro game');
+  });
+  test('rejects reserved word "all"', () => {
+    expect(sanitizeTag('all')).toBe(null);
+    expect(sanitizeTag('All')).toBe(null);
+    expect(sanitizeTag('ALL ')).toBe(null);
+  });
+  test('rejects when over max length (24)', () => {
+    expect(sanitizeTag('a'.repeat(24))).toBe('a'.repeat(24));
+    expect(sanitizeTag('a'.repeat(25))).toBe(null);
+  });
+  test('rejects special chars', () => {
+    expect(sanitizeTag('rpg/action')).toBe(null);
+    expect(sanitizeTag('co-op!')).toBe(null);
+    expect(sanitizeTag('100%')).toBe(null);
+    expect(sanitizeTag('jrpg.classic')).toBe(null);
+  });
+  test('allows letters, digits, space, hyphen, underscore, plus', () => {
+    expect(sanitizeTag('co-op')).toBe('co-op');
+    expect(sanitizeTag('action_rpg')).toBe('action_rpg');
+    expect(sanitizeTag('a+b')).toBe('a+b');
+    expect(sanitizeTag('halo 4')).toBe('halo 4');
+  });
+});
+
+describe('addTagToItem / removeTagFromItem', () => {
+  test('adds tag, idempotent on dup', () => {
+    const it = { tags: [] };
+    expect(addTagToItem(it, 'PS5')).toBe(true);
+    expect(it.tags).toEqual(['ps5']);
+    expect(addTagToItem(it, 'ps5')).toBe(false);
+    expect(addTagToItem(it, 'PS5')).toBe(false);
+    expect(it.tags).toEqual(['ps5']);
+  });
+  test('initializes tags array if missing', () => {
+    const it = {};
+    addTagToItem(it, 'rpg');
+    expect(it.tags).toEqual(['rpg']);
+  });
+  test('rejects invalid tag', () => {
+    const it = { tags: [] };
+    expect(addTagToItem(it, '')).toBe(false);
+    expect(addTagToItem(it, 'all')).toBe(false);
+    expect(it.tags).toEqual([]);
+  });
+  test('removes tag', () => {
+    const it = { tags: ['ps5', 'rpg'] };
+    expect(removeTagFromItem(it, 'ps5')).toBe(true);
+    expect(it.tags).toEqual(['rpg']);
+    expect(removeTagFromItem(it, 'ps5')).toBe(false);
+  });
+  test('remove no-op when missing tags array', () => {
+    const it = {};
+    expect(removeTagFromItem(it, 'ps5')).toBe(false);
+  });
+});
+
+describe('renameTagInItems', () => {
+  test('renames in every item that has it', () => {
+    const items = [
+      { tags: ['ps5', 'rpg'] },
+      { tags: ['ps5'] },
+      { tags: ['rpg'] }
+    ];
+    expect(renameTagInItems(items, 'ps5', 'playstation')).toBe(2);
+    expect(items[0].tags).toEqual(['playstation', 'rpg']);
+    expect(items[1].tags).toEqual(['playstation']);
+    expect(items[2].tags).toEqual(['rpg']);
+  });
+  test('no-op when old equals new', () => {
+    const items = [{ tags: ['rpg'] }];
+    expect(renameTagInItems(items, 'rpg', 'rpg')).toBe(0);
+    expect(items[0].tags).toEqual(['rpg']);
+  });
+  test('drops duplicate when target already present', () => {
+    const items = [{ tags: ['ps5', 'playstation'] }];
+    expect(renameTagInItems(items, 'ps5', 'playstation')).toBe(1);
+    expect(items[0].tags).toEqual(['playstation']);
+  });
+  test('returns 0 on invalid input', () => {
+    expect(renameTagInItems([{ tags: ['a'] }], '', 'b')).toBe(0);
+    expect(renameTagInItems([{ tags: ['a'] }], 'a', '!!')).toBe(0);
+  });
+});
+
+describe('mergeTagsInItems', () => {
+  test('every source-tagged item gets target tag', () => {
+    const items = [
+      { tags: ['ps5'] },
+      { tags: ['ps5', 'rpg'] },
+      { tags: ['xbox'] }
+    ];
+    expect(mergeTagsInItems(items, 'ps5', 'playstation')).toBe(2);
+    expect(items[0].tags).toEqual(['playstation']);
+    expect(items[1].tags).toEqual(['playstation', 'rpg']);
+    expect(items[2].tags).toEqual(['xbox']);
+  });
+  test('no duplicates when item already has target', () => {
+    const items = [{ tags: ['ps5', 'playstation'] }];
+    expect(mergeTagsInItems(items, 'ps5', 'playstation')).toBe(1);
+    expect(items[0].tags).toEqual(['playstation']);
+  });
+  test('no-op when source equals target', () => {
+    const items = [{ tags: ['rpg'] }];
+    expect(mergeTagsInItems(items, 'rpg', 'rpg')).toBe(0);
+  });
+});
+
+describe('deleteTagFromItems', () => {
+  test('removes tag from all items, items remain', () => {
+    const items = [
+      { name: 'a', tags: ['ps5', 'rpg'] },
+      { name: 'b', tags: ['ps5'] },
+      { name: 'c', tags: ['rpg'] }
+    ];
+    expect(deleteTagFromItems(items, 'ps5')).toBe(2);
+    expect(items.length).toBe(3);
+    expect(items[0].tags).toEqual(['rpg']);
+    expect(items[1].tags).toEqual([]);
+    expect(items[2].tags).toEqual(['rpg']);
+  });
+  test('items without the tag are not affected', () => {
+    const items = [{ tags: ['rpg'] }, { tags: [] }];
+    expect(deleteTagFromItems(items, 'ps5')).toBe(0);
+  });
+});
+
+describe('computeTagCounts', () => {
+  test('combines counts across multiple lists', () => {
+    const vault = [{ tags: ['ps5', 'rpg'] }, { tags: ['ps5'] }];
+    const played = [{ tags: ['ps5', 'finished'] }];
+    const counts = computeTagCounts(vault, played);
+    expect(counts.get('ps5')).toBe(3);
+    expect(counts.get('rpg')).toBe(1);
+    expect(counts.get('finished')).toBe(1);
+  });
+  test('empty input yields empty map', () => {
+    expect(computeTagCounts([]).size).toBe(0);
+    expect(computeTagCounts([{ tags: [] }]).size).toBe(0);
+  });
+  test('skips items missing tags array', () => {
+    const counts = computeTagCounts([{}, { tags: ['rpg'] }]);
+    expect(counts.get('rpg')).toBe(1);
+    expect(counts.size).toBe(1);
+  });
+});
+
+describe('filterByTagsAND', () => {
+  const items = [
+    { name: 'a', tags: ['ps5', 'rpg'] },
+    { name: 'b', tags: ['ps5', 'shooter'] },
+    { name: 'c', tags: ['pc', 'rpg'] },
+    { name: 'd', tags: [] },
+    { name: 'e' }, // no tags array
+  ];
+  test('empty filter returns all items', () => {
+    expect(filterByTagsAND(items, new Set()).length).toBe(items.length);
+  });
+  test('single-tag filter', () => {
+    const r = filterByTagsAND(items, new Set(['ps5']));
+    expect(r.map(x => x.name)).toEqual(['a', 'b']);
+  });
+  test('multi-tag AND — must have all', () => {
+    const r = filterByTagsAND(items, new Set(['ps5', 'rpg']));
+    expect(r.map(x => x.name)).toEqual(['a']);
+  });
+  test('no matches when AND impossible', () => {
+    const r = filterByTagsAND(items, new Set(['ps5', 'pc']));
+    expect(r).toEqual([]);
+  });
+  test('items without tags excluded once filter is non-empty', () => {
+    const r = filterByTagsAND(items, new Set(['rpg']));
+    expect(r.map(x => x.name)).toEqual(['a', 'c']);
+  });
+});
