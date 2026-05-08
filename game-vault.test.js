@@ -309,6 +309,74 @@ class SearchIndex {
     }
     return best;
   }
+
+  search(query, opts) {
+    opts = opts || {};
+    const limit = opts.limit || 500;
+    const norm = normalize(query);
+    const lower = query.toLowerCase().trim();
+    if (!norm && !lower) return [];
+    const seen = new Set();
+    const out = [];
+    const push = (item, score, why) => {
+      if (seen.has(item.id)) return;
+      seen.add(item.id);
+      out.push({ item, score, why });
+    };
+    if (norm && this.byNorm.has(norm)) push(this.byNorm.get(norm), 1000, 'exact');
+    if (norm) {
+      const ts = tokenSort(query);
+      if (ts && this.byTokenSort.has(ts)) push(this.byTokenSort.get(ts), 950, 'reorder');
+    }
+    if (lower) {
+      for (let i = 0; i < this.items.length; i++) {
+        const it = this.items[i];
+        const idx = it._lower.indexOf(lower);
+        if (idx === 0) push(it, 900, 'starts-with');
+        else if (idx > 0) push(it, 700 - idx, 'contains');
+      }
+    }
+    if (norm && norm !== lower) {
+      for (let i = 0; i < this.items.length; i++) {
+        const it = this.items[i];
+        if (seen.has(it.id)) continue;
+        const idx = it._norm.indexOf(norm);
+        if (idx === 0) push(it, 600, 'norm-starts');
+        else if (idx > 0) push(it, 500 - idx, 'norm-contains');
+      }
+    }
+    if (norm && norm.length >= 2 && norm.length <= 8 && norm.indexOf(' ') === -1) {
+      const set = this.acronyms.get(norm);
+      if (set) {
+        for (const id of set) {
+          const it = this.byId.get(id);
+          if (it) push(it, 450, 'acronym');
+        }
+      }
+    }
+    if (norm && norm.indexOf(' ') === -1 && norm.length >= 2 && out.length < limit) {
+      for (const [tk, ids] of this.tokens) {
+        if (tk.length > norm.length && tk.startsWith(norm)) {
+          for (const id of ids) {
+            const it = this.byId.get(id);
+            if (it) push(it, 400, 'token-prefix');
+            if (out.length >= limit) break;
+          }
+          if (out.length >= limit) break;
+        }
+      }
+    }
+    if (out.length < 30 && norm && norm.length >= 3) {
+      const candidates = this.getCandidates(norm, 80);
+      for (const it of candidates) {
+        if (seen.has(it.id)) continue;
+        const sim = stringSim(norm, it._norm, 0.6);
+        if (sim >= 0.6) push(it, 100 + Math.floor(sim * 100), 'fuzzy');
+      }
+    }
+    out.sort((a, b) => b.score - a.score);
+    return out.slice(0, limit);
+  }
 }
 
 // ── Stubs for bulkAdd ────────────────────────────────────────────────────────
@@ -1339,5 +1407,140 @@ describe('validateCustomDbName', () => {
     const existing = new Set(['প্লে-স্টেশন']);
     const r = validateCustomDbName('প্লে স্টেশন', existing);
     expect(r.ok).toBe(false);
+  });
+});
+
+// ── filterCustomItems — pure search/sort for custom DB views ────────────────
+// Verbatim copy from game-vault.html <script>.
+
+function filterCustomItems(items, index, query, sort) {
+  const trimmed = (query || '').trim();
+  let result;
+  if (trimmed) {
+    if (items.length > 50 && index) {
+      result = index.search(trimmed, { limit: 1000 }).map(r => r.item);
+    } else {
+      const q = trimmed.toLowerCase();
+      result = items.filter(it => {
+        const lower = it._lower || (it.name || '').toLowerCase();
+        return lower.indexOf(q) !== -1;
+      });
+    }
+    if (sort === 'az') result.sort((a, b) => a.name.localeCompare(b.name));
+    else if (sort === 'za') result.sort((a, b) => b.name.localeCompare(a.name));
+    else if (sort === 'oldest') result.sort((a, b) => (a.dateAdded || 0) - (b.dateAdded || 0));
+    return result;
+  }
+  result = items.slice();
+  if (sort === 'az') result.sort((a, b) => a.name.localeCompare(b.name));
+  else if (sort === 'za') result.sort((a, b) => b.name.localeCompare(a.name));
+  else if (sort === 'recent') result.sort((a, b) => (b.dateAdded || 0) - (a.dateAdded || 0));
+  else if (sort === 'oldest') result.sort((a, b) => (a.dateAdded || 0) - (b.dateAdded || 0));
+  return result;
+}
+
+describe('filterCustomItems', () => {
+  // Build a small list that exercises substring path (≤50 items).
+  function smallList() {
+    const raw = [
+      { id: 'a', name: 'Mass Effect', dateAdded: 100 },
+      { id: 'b', name: 'Mass Effect 2', dateAdded: 300 },
+      { id: 'c', name: 'Half-Life', dateAdded: 200 },
+      { id: 'd', name: 'Portal 2', dateAdded: 400 }
+    ];
+    const idx = new SearchIndex();
+    for (const it of raw) idx.add(it);
+    return { items: raw, idx };
+  }
+
+  test('empty filter returns all items', () => {
+    const { items, idx } = smallList();
+    const r = filterCustomItems(items, idx, '', 'recent');
+    expect(r.length).toBe(items.length);
+  });
+
+  test('empty filter with az sort sorts alphabetically', () => {
+    const { items, idx } = smallList();
+    const r = filterCustomItems(items, idx, '', 'az');
+    expect(r.map(x => x.name)).toEqual(['Half-Life', 'Mass Effect', 'Mass Effect 2', 'Portal 2']);
+  });
+
+  test('empty filter with recent sort sorts newest-first', () => {
+    const { items, idx } = smallList();
+    const r = filterCustomItems(items, idx, '', 'recent');
+    expect(r.map(x => x.name)).toEqual(['Portal 2', 'Mass Effect 2', 'Half-Life', 'Mass Effect']);
+  });
+
+  test('empty filter with oldest sort sorts oldest-first', () => {
+    const { items, idx } = smallList();
+    const r = filterCustomItems(items, idx, '', 'oldest');
+    expect(r.map(x => x.name)).toEqual(['Mass Effect', 'Half-Life', 'Mass Effect 2', 'Portal 2']);
+  });
+
+  test('substring match on small list (case-insensitive)', () => {
+    const { items, idx } = smallList();
+    const r = filterCustomItems(items, idx, 'mass', 'recent');
+    expect(r.map(x => x.name).sort()).toEqual(['Mass Effect', 'Mass Effect 2']);
+  });
+
+  test('substring no-match returns empty', () => {
+    const { items, idx } = smallList();
+    expect(filterCustomItems(items, idx, 'zzzzz', 'recent')).toEqual([]);
+  });
+
+  test('substring uses _lower if present', () => {
+    // Item with a stale name capitalization but lowered _lower
+    const item = { id: 'x', name: 'WeIrD CaSe', _lower: 'weird case' };
+    const r = filterCustomItems([item], null, 'weird', 'recent');
+    expect(r.length).toBe(1);
+  });
+
+  test('explicit az sort overrides relevance when query is given', () => {
+    const { items, idx } = smallList();
+    const r = filterCustomItems(items, idx, 'mass', 'az');
+    expect(r.map(x => x.name)).toEqual(['Mass Effect', 'Mass Effect 2']);
+  });
+
+  test('explicit za sort overrides relevance when query is given', () => {
+    const { items, idx } = smallList();
+    const r = filterCustomItems(items, idx, 'mass', 'za');
+    expect(r.map(x => x.name)).toEqual(['Mass Effect 2', 'Mass Effect']);
+  });
+
+  test('null index with empty query still returns sorted copy', () => {
+    const items = [
+      { id: 'a', name: 'Bee', dateAdded: 1 },
+      { id: 'b', name: 'Apple', dateAdded: 2 }
+    ];
+    expect(filterCustomItems(items, null, '', 'az').map(x => x.name)).toEqual(['Apple', 'Bee']);
+  });
+
+  test('whitespace-only query treated as empty', () => {
+    const { items, idx } = smallList();
+    const r = filterCustomItems(items, idx, '   ', 'az');
+    expect(r.length).toBe(items.length);
+  });
+
+  test('large list (>50) routes through index.search ranked path', () => {
+    // Build 60 items where one is an exact match — index.search ranks it first.
+    const raw = [];
+    for (let i = 0; i < 59; i++) raw.push({ id: 'g' + i, name: 'Random Game ' + i, dateAdded: i });
+    raw.push({ id: 'target', name: 'Bloodborne', dateAdded: 500 });
+    const idx = new SearchIndex();
+    for (const it of raw) idx.add(it);
+    const r = filterCustomItems(raw, idx, 'bloodborne', 'recent');
+    expect(r.length).toBeGreaterThan(0);
+    expect(r[0].id).toBe('target');
+  });
+
+  test('sort=recent with active query preserves relevance order (does not re-sort)', () => {
+    // Build >50 items; ensure index search results are not re-sorted by date.
+    const raw = [];
+    for (let i = 0; i < 60; i++) raw.push({ id: 'g' + i, name: 'Some Game ' + i, dateAdded: i });
+    const idx = new SearchIndex();
+    for (const it of raw) idx.add(it);
+    const r = filterCustomItems(raw, idx, 'Some Game 0', 'recent');
+    // Top hit must be 'Some Game 0' (exact starts-with), not 'Some Game 59' (most recent)
+    expect(r[0].name).toBe('Some Game 0');
   });
 });

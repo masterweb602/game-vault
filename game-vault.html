@@ -1230,6 +1230,39 @@ body {
   </div>
 </section>
 
+<!-- ──── CUSTOM DATABASE VIEW (generic, swapped per active id) ── -->
+<section class="view" id="view-custom">
+  <h2 class="section-title" id="custom-section-title">database</h2>
+  <p class="section-desc" id="custom-section-desc"></p>
+
+  <div class="toolbar">
+    <div class="toolbar-row">
+      <div class="input-group">
+        <span class="input-icon">⌕</span>
+        <input class="input" id="custom-search" placeholder="search এই database (fuzzy)..." autocomplete="off">
+      </div>
+      <select class="select" id="custom-sort">
+        <option value="recent">Recent first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="az">A → Z</option>
+        <option value="za">Z → A</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="status-bar" id="custom-status">loading…</div>
+
+  <div class="list-wrap">
+    <div class="list-head">
+      <span id="custom-list-info">items</span>
+      <span class="filter-info" id="custom-filter-info"></span>
+    </div>
+    <div class="list-scroll" id="custom-list-scroll">
+      <div class="virtual-spacer" id="custom-spacer"></div>
+    </div>
+  </div>
+</section>
+
 <!-- ──── BULK ADD VIEW ───────────────────────────────────── -->
 <section class="view" id="view-bulk-add">
   <h2 class="section-title">bulk add</h2>
@@ -3055,9 +3088,13 @@ const state = {
   vaultBulkSelection: new Set(), // selected item ids in vault tab
   tagCounts: new Map(),          // tag → count across vault+played
   tagLabels: new Map(),          // lowercase tag → first-seen display casing
-  // Custom databases (Step 1: foundation only — no item ops yet)
+  // Custom databases
   customLists: {},               // id → { id, name, items, index, createdAt }
-  customListsOrder: []           // ordered ids — preserves creation order for tab/list rendering
+  customListsOrder: [],          // ordered ids — preserves creation order for tab/list rendering
+  activeCustomId: null,          // id of the currently visible custom DB (null when not on a custom view)
+  customSearches: {},            // id → search query string
+  customSorts: {},               // id → 'recent'|'oldest'|'az'|'za'
+  customSerialMaps: {}           // id → Map(itemId → original index in items array)
 };
 
 function newId() { return 'g_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
@@ -3341,6 +3378,35 @@ function getFilteredItems(source) {
   return result;
 }
 
+// Pure filter for custom databases — substring on small lists,
+// SearchIndex ranked search on lists >50 items.
+function filterCustomItems(items, index, query, sort) {
+  const trimmed = (query || '').trim();
+  let result;
+  if (trimmed) {
+    if (items.length > 50 && index) {
+      result = index.search(trimmed, { limit: 1000 }).map(r => r.item);
+    } else {
+      const q = trimmed.toLowerCase();
+      result = items.filter(it => {
+        const lower = it._lower || (it.name || '').toLowerCase();
+        return lower.indexOf(q) !== -1;
+      });
+    }
+    if (sort === 'az') result.sort((a, b) => a.name.localeCompare(b.name));
+    else if (sort === 'za') result.sort((a, b) => b.name.localeCompare(a.name));
+    else if (sort === 'oldest') result.sort((a, b) => (a.dateAdded || 0) - (b.dateAdded || 0));
+    // 'recent' with active query: preserve relevance order
+    return result;
+  }
+  result = items.slice();
+  if (sort === 'az') result.sort((a, b) => a.name.localeCompare(b.name));
+  else if (sort === 'za') result.sort((a, b) => b.name.localeCompare(a.name));
+  else if (sort === 'recent') result.sort((a, b) => (b.dateAdded || 0) - (a.dateAdded || 0));
+  else if (sort === 'oldest') result.sort((a, b) => (a.dateAdded || 0) - (b.dateAdded || 0));
+  return result;
+}
+
 /* ─── Render lists ──────────────────────────────────────── */
 const vList = new VList($('#vault-list-scroll'), $('#vault-spacer'));
 const pList = new VList($('#played-list-scroll'), $('#played-spacer'));
@@ -3379,6 +3445,199 @@ function renderPlayed() {
   $('#played-filter-info').textContent = filterText.join(' · ');
   if (items.length === 0) showEmpty('played-spacer', state.played.length === 0 ? 'এখনো কোনো played গেম নাই' : 'কোনো match পাওয়া যায়নি');
 }
+
+/* ─── Custom DB view (Step 2) ─────────────────────────── */
+const customVList = new VList($('#custom-list-scroll'), $('#custom-spacer'));
+customVList.renderRow = (it, i) => makeCustomRow(it, i, state.activeCustomId);
+
+function rebuildCustomSerialMap(id) {
+  let map = state.customSerialMaps[id];
+  if (!map) { map = new Map(); state.customSerialMaps[id] = map; }
+  map.clear();
+  const arr = state.customLists[id]?.items || [];
+  for (let i = 0; i < arr.length; i++) map.set(arr[i].id, i);
+}
+
+function makeCustomRow(item, idx, id) {
+  const row = el('div', { class: 'row' });
+  const serialMap = state.customSerialMaps[id];
+  const origIdx = serialMap ? serialMap.get(item.id) : undefined;
+  const serialText = origIdx === undefined ? '#----' : '#' + String(origIdx + 1).padStart(4, '0');
+  row.appendChild(el('span', { class: 'serial' }, serialText));
+
+  const name = el('span', { class: 'name' });
+  const query = state.customSearches[id] || '';
+  name.innerHTML = highlight(escapeHtml(item.name), query);
+  row.appendChild(name);
+
+  if (Array.isArray(item.tags) && item.tags.length > 0) {
+    const tagWrap = el('span', { class: 'row-tags' });
+    const visible = item.tags.slice(0, 3);
+    for (const t of visible) {
+      // Step 2: tag chips render but click is a no-op
+      const chip = el('span', { class: 'tag-chip tag-chip-row' }, tagDisplay(t));
+      tagWrap.appendChild(chip);
+    }
+    if (item.tags.length > 3) {
+      tagWrap.appendChild(el('span', { class: 'tag-chip tag-chip-more' }, '+' + (item.tags.length - 3)));
+    }
+    row.appendChild(tagWrap);
+  }
+
+  const cIdx = state.customLists[id]?.index;
+  if (cIdx && cIdx.dups.get(item._norm)?.length > 1) {
+    row.appendChild(el('span', { class: 'badge badge-dup' }, 'dup'));
+  }
+
+  const actions = el('div', { class: 'actions' });
+  actions.appendChild(el('button', {
+    class: 'btn btn-ghost btn-sm', title: 'Edit',
+    onClick: () => editCustomItem(item, id)
+  }, 'edit'));
+  actions.appendChild(el('button', {
+    class: 'btn btn-ghost btn-sm', title: 'Delete', style: 'color:var(--danger);',
+    onClick: () => deleteCustomItem(item, id)
+  }, '×'));
+  row.appendChild(actions);
+  return row;
+}
+
+function renderCustomDbView(id) {
+  const list = state.customLists[id];
+  if (!list) return;
+  rebuildCustomSerialMap(id);
+  const query = state.customSearches[id] || '';
+  const sort = state.customSorts[id] || 'recent';
+  const items = filterCustomItems(list.items, list.index, query, sort);
+  customVList.setItems(items);
+
+  $('#custom-section-title').textContent = list.name;
+  $('#custom-section-desc').textContent =
+    'এটা ' + list.name + ' database — আলাদা list, নিজস্ব search/add আছে।';
+  $('#custom-list-info').textContent = items.length + ' / ' + list.items.length + ' items';
+  const filterText = [];
+  if (query) filterText.push('search: "' + query + '"');
+  $('#custom-filter-info').textContent = filterText.join(' · ');
+  $('#custom-status').textContent = 'ready · ' + list.items.length + ' items · storage: ' + Storage.label;
+
+  // Sync input + select with stored per-id values
+  const searchEl = $('#custom-search');
+  if (searchEl.value !== query) searchEl.value = query;
+  $('#custom-sort').value = sort;
+
+  if (items.length === 0) {
+    showEmpty('custom-spacer',
+      list.items.length === 0
+        ? 'এখনো কোনো item নেই। Step 4 এ add option আসবে।'
+        : 'কোনো match পাওয়া যায়নি');
+  }
+
+  updateCustomTabCount(id);
+}
+
+function updateCustomTabCount(id) {
+  const list = state.customLists[id];
+  if (!list) return;
+  const tabBtn = document.querySelector('.tab[data-custom-id="' + CSS.escape(id) + '"] .tab-count');
+  if (tabBtn) tabBtn.textContent = '(' + list.items.length + ')';
+}
+
+function scheduleCustomSave(id) {
+  const key = 'cl-' + id;
+  clearTimeout(state.saveTimers[key]);
+  state.saveTimers[key] = setTimeout(async () => {
+    const list = state.customLists[id];
+    if (!list) return;
+    try { await saveList(key, list.items); }
+    catch (e) { toast('Save failed: ' + e.message, 'error'); }
+  }, 400);
+}
+
+function editCustomItem(item, id) {
+  const list = state.customLists[id];
+  if (!list) return;
+  const inputBox = el('input', {
+    class: 'input', value: item.name, autocomplete: 'off',
+    style: 'width:100%;'
+  });
+  setTimeout(() => { inputBox.focus(); inputBox.select(); }, 50);
+  inputBox.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      $('.modal-actions .btn-primary')?.click();
+    }
+  });
+
+  const workTags = Array.isArray(item.tags) ? item.tags.slice() : [];
+  const tagEditor = buildTagEditor(workTags);
+
+  const body = el('div', { style: 'display:flex; flex-direction:column; gap:14px;' });
+  body.appendChild(el('label', { class: 'tag-edit-label' }, 'Name'));
+  body.appendChild(inputBox);
+  body.appendChild(el('label', { class: 'tag-edit-label' }, 'Tags'));
+  body.appendChild(tagEditor.root);
+
+  modal({
+    title: 'Edit item',
+    body,
+    confirmLabel: 'Save',
+    onConfirm: () => {
+      const v = inputBox.value.trim();
+      if (!v) return;
+      list.index.remove(item);
+      item.name = v;
+      item._norm = normalize(v);
+      item._ts = tokenSort(v);
+      item._lower = v.toLowerCase();
+      item.tags = tagEditor.getTags();
+      list.index.add(item);
+      scheduleCustomSave(id);
+      refreshTagState();
+      renderCustomDbView(id);
+      toast('Updated', 'success');
+    }
+  });
+}
+
+function deleteCustomItem(item, id) {
+  const list = state.customLists[id];
+  if (!list) return;
+  modal({
+    title: 'Delete এই item?',
+    body: '"' + item.name + '" — এটা কি delete করবে?',
+    confirmLabel: 'Delete',
+    confirmKind: 'btn-danger',
+    onConfirm: () => {
+      const i = list.items.findIndex(x => x.id === item.id);
+      if (i >= 0) {
+        const removed = list.items.splice(i, 1)[0];
+        list.index.remove(removed);
+        scheduleCustomSave(id);
+        renderCustomDbView(id);
+        refreshTagState();
+        toast('Deleted', 'success');
+      }
+    }
+  });
+}
+
+// Wire search + sort (adaptive debounce mirrors vault/played)
+let _customSearchTimer = 0;
+$('#custom-search').addEventListener('input', e => {
+  const id = state.activeCustomId;
+  if (!id) return;
+  state.customSearches[id] = e.target.value;
+  const n = state.customLists[id]?.items.length || 0;
+  const delay = n < 1000 ? 60 : n < 10000 ? 100 : n < 50000 ? 150 : 220;
+  clearTimeout(_customSearchTimer);
+  _customSearchTimer = setTimeout(() => renderCustomDbView(id), delay);
+});
+$('#custom-sort').addEventListener('change', e => {
+  const id = state.activeCustomId;
+  if (!id) return;
+  state.customSorts[id] = e.target.value;
+  renderCustomDbView(id);
+});
 
 function showEmpty(spacerId, msg) {
   const sp = document.getElementById(spacerId);
@@ -4410,6 +4669,15 @@ document.addEventListener('click', (e) => {
 function switchTab(name) {
   state.currentTab = name;
   $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  if (name && name.startsWith('cl-')) {
+    const id = name.slice(3);
+    if (!state.customLists[id]) return;
+    state.activeCustomId = id;
+    $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-custom'));
+    renderCustomDbView(id);
+    return;
+  }
+  state.activeCustomId = null;
   $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
   // Re-render to ensure VList recomputes after display change
   if (name === 'vault') renderVault();
@@ -4438,9 +4706,7 @@ function renderCustomTabs() {
     span.className = 'tab-count';
     span.textContent = '(' + list.items.length + ')';
     btn.appendChild(span);
-    btn.addEventListener('click', () => {
-      toast('Step 2-এ active হবে', 'info');
-    });
+    btn.addEventListener('click', () => switchTab('cl-' + id));
     nav.insertBefore(btn, anchor);
   }
 }
