@@ -140,6 +140,19 @@ body {
   opacity: 0.7;
 }
 
+/* ─── Custom DB add bar ─────────────────────────────────── */
+.custom-add-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.custom-add-bar .input-group { flex: 1; }
+@media (max-width: 640px) {
+  .custom-add-bar { flex-direction: column; align-items: stretch; }
+  .custom-add-bar .btn { width: 100%; }
+}
+
 /* ─── Custom databases ──────────────────────────────────── */
 .custom-db-row {
   display: flex;
@@ -1250,6 +1263,14 @@ body {
     </div>
   </div>
 
+  <div class="custom-add-bar">
+    <div class="input-group">
+      <span class="input-icon">+</span>
+      <input class="input" id="custom-add-input" placeholder="নতুন গেম যোগ করো..." autocomplete="off">
+    </div>
+    <button class="btn btn-primary" id="custom-add-btn">Add</button>
+  </div>
+
   <div class="status-bar" id="custom-status">loading…</div>
 
   <div class="list-wrap">
@@ -1303,7 +1324,7 @@ body {
         <div class="result-header">
           <div>
             <span class="result-title">✗ skipped</span>
-            <span class="result-desc">exact duplicate — vault এ আগে থেকেই আছে</span>
+            <span class="result-desc">exact duplicate — list-এ আগে থেকেই আছে</span>
           </div>
           <div class="result-count" id="ba-skipped-count">0</div>
         </div>
@@ -3639,6 +3660,33 @@ $('#custom-sort').addEventListener('change', e => {
   renderCustomDbView(id);
 });
 
+function submitCustomAdd() {
+  const id = state.activeCustomId;
+  if (!id) return;
+  const list = state.customLists[id];
+  if (!list) return;
+  const input = $('#custom-add-input');
+  const v = input.value.trim();
+  if (!v) return;
+  const r = addItem(v, 'cl-' + id);
+  if (!r) return;
+  if (r.dup) {
+    toast('Duplicate — "' + r.existing.name + '" আগে থেকেই আছে', 'info');
+    return;
+  }
+  if (r.added) {
+    input.value = '';
+    input.focus();
+    refreshTagState();
+    renderCustomDbView(id);
+    toast('✓ Added', 'success');
+  }
+}
+$('#custom-add-btn').addEventListener('click', submitCustomAdd);
+$('#custom-add-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); submitCustomAdd(); }
+});
+
 function showEmpty(spacerId, msg) {
   const sp = document.getElementById(spacerId);
   sp.style.height = '320px';
@@ -4032,30 +4080,54 @@ async function rebuildIndexesAsync(onProgress) {
 }
 
 /* ─── CRUD ───────────────────────────────────────────────── */
+// Routes a target string ('vault' / 'played' / 'cl-<id>') to its items array,
+// search index, friendly name, and a save function. Returns null for unknown targets.
+function resolveTarget(target) {
+  if (target === 'vault') {
+    return { kind: 'vault', id: 'vault', name: 'Vault',
+             items: state.vault, idx: state.vIndex, save: () => scheduleSave('vault') };
+  }
+  if (target === 'played') {
+    return { kind: 'played', id: 'played', name: 'Played',
+             items: state.played, idx: state.pIndex, save: () => scheduleSave('played') };
+  }
+  if (typeof target === 'string' && target.startsWith('cl-')) {
+    const id = target.slice(3);
+    const list = state.customLists[id];
+    if (!list) return null;
+    return { kind: 'custom', id, name: list.name,
+             items: list.items, idx: list.index, save: () => scheduleCustomSave(id) };
+  }
+  return null;
+}
+
 function addItem(name, target = 'vault', { allowDup = false } = {}) {
   const trimmed = name.trim();
   if (!trimmed) return null;
-  const idx = target === 'vault' ? state.vIndex : state.pIndex;
+  const t = resolveTarget(target);
+  if (!t) return null;
   const norm = normalize(trimmed);
 
-  if (!allowDup && norm && idx && idx.byNorm.has(norm)) {
-    return { dup: true, existing: idx.byNorm.get(norm) };
+  if (!allowDup && norm && t.idx && t.idx.byNorm.has(norm)) {
+    return { dup: true, existing: t.idx.byNorm.get(norm) };
   }
 
   const item = { id: newId(), name: trimmed, dateAdded: Date.now(), tags: [] };
   item._norm = norm;
   item._ts = tokenSort(trimmed);
 
-  state[target].push(item);
-  idx.add(item);                  // O(1) incremental — updates trigrams, tokens, acronyms too
+  t.items.push(item);
+  t.idx.add(item);                // O(1) incremental — updates trigrams, tokens, acronyms too
 
-  scheduleSave(target);
+  t.save();
   return { added: true, item };
 }
 
 function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
   const _tProf = performance.now();
-  const idx = target === 'vault' ? state.vIndex : state.pIndex;
+  const t = resolveTarget(target);
+  if (!t) return { added: 0, addedItems: [], skipped: [], flagged: [] };
+  const idx = t.idx;
   const seenDedup = new Map();   // dedupNorm → first item seen this batch
   const addedItems = [];
   const skipped = [];            // {input: string, existing: Item}  — NOT added
@@ -4097,7 +4169,7 @@ function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
     const item = { id: newId(), name: trimmed, dateAdded: Date.now() + addedItems.length, tags: [] };
     item._norm = n;
     item._ts = tokenSort(trimmed);
-    state[target].push(item);
+    t.items.push(item);
     idx.add(item);
     if (nd) seenDedup.set(nd, item);
     addedItems.push(item);
@@ -4116,7 +4188,7 @@ function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
     }
   }
 
-  scheduleSave(target);
+  t.save();
   Profiler.record('bulkAdd', performance.now() - _tProf, { n: names.length });
   return { added: addedItems.length, addedItems, skipped, flagged };
 }
@@ -4334,8 +4406,10 @@ async function runBulkCheck(inputText, target, useFuzzy, onProgress) {
     return await _runBulkCheckWorker(lines, target, useFuzzy, onProgress, _tProf);
   }
 
-  const items = state[target];
-  const idx = target === 'vault' ? state.vIndex : state.pIndex;
+  const t = resolveTarget(target);
+  if (!t) return null;
+  const items = t.items;
+  const idx = t.idx;
 
   // Build line list with norms; matching is cached per unique norm but
   // every input line gets its own Found/Missing row (no auto-dedup of output).
@@ -4395,7 +4469,9 @@ async function runBulkCheck(inputText, target, useFuzzy, onProgress) {
 }
 
 async function _runBulkCheckWorker(lines, target, useFuzzy, onProgress, _tProf) {
-  const items = state[target];
+  const t = resolveTarget(target);
+  if (!t) return null;
+  const items = t.items;
 
   // Build line list with norms. Worker matches once per unique norm
   // (perf), but per-line output is preserved (no auto-dedup).
@@ -4810,7 +4886,48 @@ async function createCustomDb() {
   closeCreateCustomDbDialog();
   renderCustomTabs();
   renderCustomDbsSettings();
+  refreshTargetDropdowns();
   toast('✓ ' + entry.name + ' তৈরি হয়েছে', 'success');
+}
+
+function refreshTargetDropdowns() {
+  const baCfg = [
+    { value: 'vault',  label: '→ Add to Vault' },
+    { value: 'played', label: '→ Add to Played' }
+  ];
+  const bcCfg = [
+    { value: 'vault',  label: '⚙ Check against Vault' },
+    { value: 'played', label: '⚙ Check against Played' }
+  ];
+  for (const id of state.customListsOrder) {
+    const list = state.customLists[id];
+    if (!list) continue;
+    baCfg.push({ value: 'cl-' + id, label: '→ ' + list.name });
+    bcCfg.push({ value: 'cl-' + id, label: '⚙ Check against ' + list.name });
+  }
+  for (const [selId, cfg] of [['#bulk-add-target', baCfg], ['#bulk-check-target', bcCfg]]) {
+    const sel = document.querySelector(selId);
+    if (!sel) continue;
+    const prev = sel.value;
+    sel.innerHTML = '';
+    for (const opt of cfg) {
+      const o = document.createElement('option');
+      o.value = opt.value;
+      o.textContent = opt.label;
+      sel.appendChild(o);
+    }
+    sel.value = cfg.some(c => c.value === prev) ? prev : cfg[0].value;
+  }
+}
+
+function refreshAfterBulkChange(target) {
+  if (target === 'vault') { renderVault(); updateStats(); return; }
+  if (target === 'played') { renderPlayed(); updateStats(); return; }
+  if (typeof target === 'string' && target.startsWith('cl-')) {
+    const id = target.slice(3);
+    if (state.activeCustomId === id) renderCustomDbView(id);
+    updateCustomTabCount(id);
+  }
 }
 
 $('#custom-dbs-create').addEventListener('click', openCreateCustomDbDialog);
@@ -5128,7 +5245,8 @@ $('#bulk-add-go').addEventListener('click', () => {
   state.lastBulkAddResult = { result, target };
 
   renderBulkAddResult(state.lastBulkAddResult);
-  renderVault(); renderPlayed(); updateStats();
+  refreshAfterBulkChange(target);
+  refreshTagState();
 
   toast('Done — added ' + result.added + ', skipped ' + result.skipped.length +
         (result.flagged.length ? ', ' + result.flagged.length + ' to review' : ''),
@@ -5167,8 +5285,9 @@ function renderBulkAddResult({ result, target }) {
         if (r && r.added) {
           row.style.opacity = '0.4';
           row.style.pointerEvents = 'none';
-          actions.innerHTML = '<span style="font-family:var(--mono);font-size:11px;color:var(--success);">✓ added to ' + target + '</span>';
-          renderVault(); renderPlayed(); updateStats();
+          const friendly = resolveTarget(target)?.name || target;
+          actions.innerHTML = '<span style="font-family:var(--mono);font-size:11px;color:var(--success);">✓ added to ' + escapeHtml(friendly) + '</span>';
+          refreshAfterBulkChange(target);
         }
       }
     }, '+ Add anyway');
@@ -5214,13 +5333,14 @@ function renderBulkAddResult({ result, target }) {
     const removeNew = el('button', {
       class: 'btn btn-sm btn-danger',
       onClick: () => {
-        const arr = state[target];
-        const i = arr.findIndex(x => x.id === f.item.id);
+        const t = resolveTarget(target);
+        if (!t) return;
+        const i = t.items.findIndex(x => x.id === f.item.id);
         if (i >= 0) {
-          arr.splice(i, 1);
-          (target === 'vault' ? state.vIndex : state.pIndex).remove(f.item);
-          scheduleSave(target);
-          renderVault(); renderPlayed(); updateStats();
+          t.items.splice(i, 1);
+          t.idx.remove(f.item);
+          t.save();
+          refreshAfterBulkChange(target);
           row.style.opacity = '0.4';
           row.style.pointerEvents = 'none';
           actions.innerHTML = '<span style="font-family:var(--mono);font-size:11px;color:var(--danger);">✗ removed new</span>';
@@ -5266,7 +5386,7 @@ $('#ba-add-all-skipped').addEventListener('click', () => {
       // Clear from result so list refreshes empty
       lr.result.skipped = [];
       renderBulkAddResult(lr);
-      renderVault(); renderPlayed(); updateStats();
+      refreshAfterBulkChange(lr.target);
       toast('Force-added ' + added, 'success');
     }
   });
@@ -5590,7 +5710,9 @@ $('#export-html-blank').addEventListener('click', () => exportHtml({ embedData: 
 /* Like bulkAdd but accepts items with optional preserved dateAdded.
    Used for restoring backups so original timestamps survive. */
 function bulkAddRich(richItems, target) {
-  const idx = target === 'vault' ? state.vIndex : state.pIndex;
+  const t = resolveTarget(target);
+  if (!t) return { added: 0, addedItems: [], skipped: [], flagged: [] };
+  const idx = t.idx;
   const seenDedup = new Map();
   const addedItems = [];
   const skipped = [];
@@ -5647,7 +5769,7 @@ function bulkAddRich(richItems, target) {
     item._norm = n;
     item._ts = tokenSort(name);
 
-    state[target].push(item);
+    t.items.push(item);
     idx.add(item);
     if (nd) seenDedup.set(nd, item);
     addedItems.push(item);
@@ -5666,7 +5788,7 @@ function bulkAddRich(richItems, target) {
     }
   }
 
-  scheduleSave(target);
+  t.save();
   return { added: addedItems.length, addedItems, skipped, flagged };
 }
 
@@ -6115,6 +6237,7 @@ async function init() {
   }
   renderCustomTabs();
   renderCustomDbsSettings();
+  refreshTargetDropdowns();
 
   // Load lists
   try {

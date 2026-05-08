@@ -381,13 +381,35 @@ class SearchIndex {
 
 // ── Stubs for bulkAdd ────────────────────────────────────────────────────────
 
-let state = { vault: [], played: [], vIndex: null, pIndex: null };
+let state = { vault: [], played: [], vIndex: null, pIndex: null, customLists: {} };
 let _idCounter = 0;
 function newId() { return 'g_test_' + (++_idCounter); }
 function scheduleSave() {}
+function scheduleCustomSave() {}
+
+function resolveTarget(target) {
+  if (target === 'vault') {
+    return { kind: 'vault', id: 'vault', name: 'Vault',
+             items: state.vault, idx: state.vIndex, save: () => scheduleSave('vault') };
+  }
+  if (target === 'played') {
+    return { kind: 'played', id: 'played', name: 'Played',
+             items: state.played, idx: state.pIndex, save: () => scheduleSave('played') };
+  }
+  if (typeof target === 'string' && target.startsWith('cl-')) {
+    const id = target.slice(3);
+    const list = state.customLists[id];
+    if (!list) return null;
+    return { kind: 'custom', id, name: list.name,
+             items: list.items, idx: list.index, save: () => scheduleCustomSave(id) };
+  }
+  return null;
+}
 
 function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
-  const idx = target === 'vault' ? state.vIndex : state.pIndex;
+  const t = resolveTarget(target);
+  if (!t) return { added: 0, addedItems: [], skipped: [], flagged: [] };
+  const idx = t.idx;
   const seenDedup = new Map();
   const addedItems = [];
   const skipped = [];
@@ -425,7 +447,7 @@ function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
     const item = { id: newId(), name: trimmed, dateAdded: Date.now() + addedItems.length };
     item._norm = n;
     item._ts = tokenSort(trimmed);
-    state[target].push(item);
+    t.items.push(item);
     idx.add(item);
     if (nd) seenDedup.set(nd, item);
     addedItems.push(item);
@@ -443,7 +465,7 @@ function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
     }
   }
 
-  scheduleSave(target);
+  t.save();
   return { added: addedItems.length, addedItems, skipped, flagged };
 }
 
@@ -662,7 +684,7 @@ describe('SearchIndex.matchOne()', () => {
 describe('bulkAdd()', () => {
   beforeEach(() => {
     _idCounter = 0;
-    state = { vault: [], played: [], vIndex: new SearchIndex(), pIndex: new SearchIndex() };
+    state = { vault: [], played: [], vIndex: new SearchIndex(), pIndex: new SearchIndex(), customLists: {} };
   });
 
   test('exact duplicate is skipped, not added', () => {
@@ -682,6 +704,92 @@ describe('bulkAdd()', () => {
     expect(result.flagged).toHaveLength(1);
     expect(result.flagged[0].item.name).toBe('Max Payne: Definitive Edition');
     expect(result.skipped).toHaveLength(0);
+  });
+});
+
+describe('resolveTarget', () => {
+  beforeEach(() => {
+    _idCounter = 0;
+    state = { vault: [], played: [], vIndex: new SearchIndex(), pIndex: new SearchIndex(), customLists: {} };
+  });
+
+  test('vault returns vault arrays', () => {
+    const t = resolveTarget('vault');
+    expect(t.kind).toBe('vault');
+    expect(t.items).toBe(state.vault);
+    expect(t.idx).toBe(state.vIndex);
+  });
+
+  test('played returns played arrays', () => {
+    const t = resolveTarget('played');
+    expect(t.kind).toBe('played');
+    expect(t.items).toBe(state.played);
+    expect(t.idx).toBe(state.pIndex);
+  });
+
+  test('cl-<id> for known id returns the custom list', () => {
+    state.customLists.ps5 = { id: 'ps5', name: 'PS5', items: [], index: new SearchIndex() };
+    const t = resolveTarget('cl-ps5');
+    expect(t.kind).toBe('custom');
+    expect(t.id).toBe('ps5');
+    expect(t.name).toBe('PS5');
+    expect(t.items).toBe(state.customLists.ps5.items);
+    expect(t.idx).toBe(state.customLists.ps5.index);
+  });
+
+  test('cl-<id> for unknown id returns null', () => {
+    expect(resolveTarget('cl-nonexistent')).toBeNull();
+  });
+
+  test('garbage targets return null', () => {
+    expect(resolveTarget('')).toBeNull();
+    expect(resolveTarget('foo')).toBeNull();
+    expect(resolveTarget(null)).toBeNull();
+    expect(resolveTarget(undefined)).toBeNull();
+    expect(resolveTarget(42)).toBeNull();
+  });
+
+  test('save callback fires for vault', () => {
+    let called = null;
+    const orig = scheduleSave;
+    // eslint-disable-next-line no-global-assign
+    scheduleSave = (n) => { called = n; };
+    try { resolveTarget('vault').save(); }
+    finally { scheduleSave = orig; }
+    expect(called).toBe('vault');
+  });
+});
+
+describe('bulkAdd to custom target', () => {
+  beforeEach(() => {
+    _idCounter = 0;
+    state = { vault: [], played: [], vIndex: new SearchIndex(), pIndex: new SearchIndex(), customLists: {} };
+    state.customLists.ps5 = { id: 'ps5', name: 'PS5', items: [], index: new SearchIndex() };
+  });
+
+  test('adds items to the custom list, not vault/played', () => {
+    const r = bulkAdd(['Bloodborne', 'Demon Souls'], 'cl-ps5');
+    expect(r.added).toBe(2);
+    expect(state.customLists.ps5.items).toHaveLength(2);
+    expect(state.vault).toHaveLength(0);
+    expect(state.played).toHaveLength(0);
+  });
+
+  test('dedup applies within the custom list only', () => {
+    bulkAdd(['Bloodborne'], 'cl-ps5');
+    bulkAdd(['Bloodborne'], 'vault'); // not a dup against PS5 list
+    const r = bulkAdd(['Bloodborne'], 'cl-ps5');
+    expect(r.added).toBe(0);
+    expect(r.skipped).toHaveLength(1);
+    expect(state.vault).toHaveLength(1);
+    expect(state.customLists.ps5.items).toHaveLength(1);
+  });
+
+  test('unknown custom id returns empty result, no throw', () => {
+    const r = bulkAdd(['Anything'], 'cl-zzz');
+    expect(r.added).toBe(0);
+    expect(r.addedItems).toEqual([]);
+    expect(state.vault).toHaveLength(0);
   });
 });
 
