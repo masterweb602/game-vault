@@ -289,6 +289,120 @@ body {
   text-align: center;
 }
 
+/* ─── Years tab — Phase 2C smart features ─────────────── */
+.year-row-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.year-action-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.year-action-btn:hover {
+  background: var(--card-hover);
+  border-color: var(--border);
+  color: var(--text);
+}
+.year-action-btn:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+.year-row-check {
+  margin-left: 2px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.years-sticky-bars {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg);
+  padding-top: 4px;
+  margin-top: -4px;
+}
+#recent-years-bar {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.recent-years-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-right: 4px;
+}
+.recent-year-btn {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.recent-year-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+#bulk-year-toolbar {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bulk-year-count {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 600;
+  margin-right: auto;
+}
+.bulk-year-btn {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 12px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.bulk-year-btn:hover {
+  background: var(--card-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ─── Modal ──────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed;
@@ -2781,6 +2895,23 @@ function resolveItemYear(item) {
   return extractYearFromName(item ? item.name : '');
 }
 
+// Pure: dedupe + unshift + cap at 5. Invalid years are dropped silently.
+// Mutates `arr` in place and returns it.
+function pushRecentYear(arr, year) {
+  const v = isValidYear(year);
+  if (v === null) return arr;
+  const i = arr.indexOf(v);
+  if (i !== -1) arr.splice(i, 1);
+  arr.unshift(v);
+  if (arr.length > 5) arr.length = 5;
+  return arr;
+}
+
+function persistRecentYears() {
+  try { Storage.set('recent-years', JSON.stringify(state.recentYears)); }
+  catch (e) { /* quota / disabled — non-fatal, list survives in memory */ }
+}
+
 /* ─── Tag helpers (pure) ──────────────────────────────────
    Tags are stored lowercase on items; display casing lives in
    state.tagLabels so "PS5" and "ps5" don't duplicate. */
@@ -3312,7 +3443,11 @@ const state = {
   // Years tab — derived view, rebuilt lazily when dirty
   yearsCache: null,              // { byYear: Map<int, Row[]>, unknown: Row[], detected: int, total: int }
   yearsDirty: true,
-  yearsFilter: ''
+  yearsFilter: '',
+  // Years tab — Phase 2C smart features
+  unknownSelections: new Set(),  // item ids selected in Unknown section (session-only, persists across tab switches)
+  recentYears: [],               // last 5 manually-set years, MRU first; persisted via Storage('recent-years')
+  bulkYearTarget: null            // transient id snapshot while bulk year-input modal is open
 };
 
 function newId() { return 'g_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
@@ -3825,6 +3960,7 @@ function editCustomItem(item, id) {
       list.index.add(item);
       scheduleCustomSave(id);
       state.yearsDirty = true;
+      if (typeof yr === 'number') { pushRecentYear(state.recentYears, yr); persistRecentYears(); }
       refreshTagState();
       renderCustomDbView(id);
       toast('Updated', 'success');
@@ -4478,6 +4614,7 @@ function editItem(item, source) {
 
       scheduleSave(source);
       state.yearsDirty = true;
+      if (typeof yr === 'number') { pushRecentYear(state.recentYears, yr); persistRecentYears(); }
       refreshTagState();
       if (source === 'vault') renderVault(); else renderPlayed();
       toast('Updated', 'success');
@@ -5007,22 +5144,24 @@ function aggregateYears() {
   const byYear = new Map();
   const unknown = [];
   let total = 0, detected = 0;
-  const push = (item, sourceLabel, sourceClass) => {
+  // sourceKind/sourceId let bulk-apply route saves to the right list without
+  // re-walking the source arrays. sourceId is null for vault/played, custom-list id for custom.
+  const push = (item, sourceLabel, sourceClass, sourceKind, sourceId) => {
     total++;
     const y = resolveItemYear(item);
-    const row = { item, sourceLabel, sourceClass };
+    const row = { item, sourceLabel, sourceClass, sourceKind, sourceId };
     if (y === null) { unknown.push(row); return; }
     detected++;
     let bucket = byYear.get(y);
     if (!bucket) { bucket = []; byYear.set(y, bucket); }
     bucket.push(row);
   };
-  for (const it of state.vault) push(it, 'Vault', 'src-vault');
-  for (const it of state.played) push(it, 'Played', 'src-played');
+  for (const it of state.vault) push(it, 'Vault', 'src-vault', 'vault', null);
+  for (const it of state.played) push(it, 'Played', 'src-played', 'played', null);
   for (const id of state.customListsOrder) {
     const list = state.customLists[id];
     if (!list) continue;
-    for (const it of list.items) push(it, list.name, 'src-custom');
+    for (const it of list.items) push(it, list.name, 'src-custom', 'custom', id);
   }
   return { byYear, unknown, detected, total };
 }
@@ -5046,7 +5185,7 @@ function filterYearRows(rows, q) {
   });
 }
 
-function makeYearRow(row, serial) {
+function makeYearRow(row, serial, isUnknown) {
   const div = document.createElement('div');
   div.className = 'year-row';
   const s = document.createElement('span');
@@ -5088,14 +5227,54 @@ function makeYearRow(row, serial) {
   badge.className = 'src-badge ' + row.sourceClass;
   badge.textContent = row.sourceLabel;
   div.appendChild(badge);
+
+  if (isUnknown) {
+    const actions = document.createElement('span');
+    actions.className = 'year-row-actions';
+
+    const search = document.createElement('a');
+    search.className = 'year-action-btn';
+    search.href = 'https://www.google.com/search?q=' + encodeURIComponent(row.item.name + ' release year');
+    search.target = '_blank';
+    search.rel = 'noopener noreferrer';
+    search.title = 'Search Google for release year';
+    search.textContent = '🔍';
+    actions.appendChild(search);
+
+    const edit = document.createElement('button');
+    edit.className = 'year-action-btn';
+    edit.type = 'button';
+    edit.title = 'Edit (set year manually)';
+    edit.textContent = '✎';
+    edit.addEventListener('click', () => {
+      if (row.sourceKind === 'vault') editItem(row.item, 'vault');
+      else if (row.sourceKind === 'played') editItem(row.item, 'played');
+      else if (row.sourceKind === 'custom') editCustomItem(row.item, row.sourceId);
+    });
+    actions.appendChild(edit);
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'year-row-check';
+    cb.title = 'Select for bulk year apply';
+    cb.checked = state.unknownSelections.has(row.item.id);
+    cb.addEventListener('change', () => {
+      if (cb.checked) state.unknownSelections.add(row.item.id);
+      else state.unknownSelections.delete(row.item.id);
+      refreshBulkToolbar();
+    });
+    actions.appendChild(cb);
+
+    div.appendChild(actions);
+  }
   return div;
 }
 
-function fillYearSection(sectionEl, rows) {
+function fillYearSection(sectionEl, rows, isUnknown) {
   const host = sectionEl.querySelector('.year-rows');
   if (!host || host.dataset.filled === '1') return;
   const frag = document.createDocumentFragment();
-  for (let i = 0; i < rows.length; i++) frag.appendChild(makeYearRow(rows[i], i + 1));
+  for (let i = 0; i < rows.length; i++) frag.appendChild(makeYearRow(rows[i], i + 1, isUnknown));
   host.appendChild(frag);
   host.dataset.filled = '1';
 }
@@ -5106,6 +5285,17 @@ function renderYears() {
   if (!sectionsHost || !statsHost) return;
   const cache = getYearsCache();
   const q = state.yearsFilter || '';
+
+  // Drop selections whose item is no longer in the unknown list (year was set
+  // elsewhere, or item was deleted). Pruned against full cache.unknown — not
+  // search-filtered — so search/clear keeps selections intact.
+  if (state.unknownSelections.size) {
+    const validIds = new Set();
+    for (const r of cache.unknown) validIds.add(r.item.id);
+    for (const id of Array.from(state.unknownSelections)) {
+      if (!validIds.has(id)) state.unknownSelections.delete(id);
+    }
+  }
 
   const sortedYears = Array.from(cache.byYear.keys()).sort((a, b) => b - a);
 
@@ -5164,11 +5354,157 @@ function renderYears() {
     sectionsHost.appendChild(buildYearSection(String(y), y, rows, openSet.has(y)));
   }
   if (filteredUnknown.length > 0) {
+    // Bars live INSIDE #years-sections, immediately above the Unknown details,
+    // wrapped in a single sticky container so the bulk toolbar follows even
+    // when the Recent bar is hidden (no fixed-height assumptions).
+    const sticky = document.createElement('div');
+    sticky.className = 'years-sticky-bars';
+    sticky.appendChild(buildRecentYearsBar());
+    sticky.appendChild(buildBulkYearToolbar());
+    sectionsHost.appendChild(sticky);
     sectionsHost.appendChild(buildYearSection('Unknown', 'unknown', filteredUnknown, openSet.has('unknown')));
+    refreshBulkToolbar();
   }
 }
 
+function buildRecentYearsBar() {
+  const bar = document.createElement('div');
+  bar.id = 'recent-years-bar';
+  // Hidden when there's nothing to show; rebuilt on each render so we can
+  // simply not append children rather than tracking visibility separately.
+  if (state.recentYears.length === 0) {
+    bar.style.display = 'none';
+    return bar;
+  }
+  const label = document.createElement('span');
+  label.className = 'recent-years-label';
+  label.textContent = 'Recent:';
+  bar.appendChild(label);
+  for (const y of state.recentYears) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'recent-year-btn';
+    btn.textContent = String(y);
+    btn.title = 'Apply ' + y + ' to selected (or select first)';
+    btn.addEventListener('click', () => {
+      if (state.unknownSelections.size === 0) {
+        toast('আগে কিছু game select করো', 'info');
+        return;
+      }
+      applyYearToSelection(y);
+    });
+    bar.appendChild(btn);
+  }
+  return bar;
+}
+
+function buildBulkYearToolbar() {
+  const bar = document.createElement('div');
+  bar.id = 'bulk-year-toolbar';
+  const count = document.createElement('span');
+  count.className = 'bulk-year-count';
+  count.id = 'bulk-year-count';
+  bar.appendChild(count);
+  const apply = document.createElement('button');
+  apply.type = 'button';
+  apply.className = 'bulk-year-btn';
+  apply.textContent = 'Apply year';
+  apply.addEventListener('click', openBulkYearModal);
+  bar.appendChild(apply);
+  const clear = document.createElement('button');
+  clear.type = 'button';
+  clear.className = 'bulk-year-btn';
+  clear.textContent = 'Clear';
+  clear.addEventListener('click', clearUnknownSelections);
+  bar.appendChild(clear);
+  return bar;
+}
+
+function refreshBulkToolbar() {
+  const bar = $('#bulk-year-toolbar');
+  const cnt = $('#bulk-year-count');
+  if (!bar || !cnt) return;
+  const n = state.unknownSelections.size;
+  if (n === 0) {
+    bar.style.display = 'none';
+  } else {
+    bar.style.display = '';
+    cnt.textContent = n + ' selected';
+  }
+}
+
+function clearUnknownSelections() {
+  state.unknownSelections.clear();
+  // Uncheck visible boxes without a full re-render so user keeps scroll/expansion state.
+  $$('.year-row-check').forEach(cb => { cb.checked = false; });
+  refreshBulkToolbar();
+}
+
+function openBulkYearModal() {
+  if (state.unknownSelections.size === 0) return;
+  // Snapshot ids — user can't reselect while the modal blocks input, but this
+  // keeps the apply path independent of state mutations during dialog lifetime.
+  const snapshot = new Set(state.unknownSelections);
+  state.bulkYearTarget = snapshot;
+  const yearField = buildYearField(null);
+  const body = el('div', { style: 'display:flex; flex-direction:column; gap:10px;' });
+  body.appendChild(el('p', { style: 'font-size:12px; margin:0; color:var(--muted);' },
+    snapshot.size + ' selected'));
+  body.appendChild(el('label', { class: 'tag-edit-label' }, 'Release year (1970–2030)'));
+  body.appendChild(yearField.root);
+  modal({
+    title: 'Apply year to ' + snapshot.size + ' selected games',
+    body,
+    confirmLabel: 'Apply',
+    onConfirm: () => {
+      const yr = yearField.commit();
+      if (yr === undefined) {
+        toast('Year invalid — must be 1970–2030', 'error');
+        return;
+      }
+      if (yr === null) {
+        toast('Year দাও — empty allowed না bulk apply-এ', 'error');
+        return;
+      }
+      // Restore the snapshot in case selection drifted (defensive — UI is blocked).
+      state.unknownSelections = snapshot;
+      applyYearToSelection(yr);
+    }
+  });
+  setTimeout(() => yearField.input.focus(), 50);
+}
+
+function applyYearToSelection(year) {
+  const v = isValidYear(year);
+  if (v === null) return;
+  const cache = getYearsCache();
+  const ids = new Set(state.unknownSelections);
+  const touched = { vault: false, played: false, customs: new Set() };
+  let n = 0;
+  for (const row of cache.unknown) {
+    if (!ids.has(row.item.id)) continue;
+    // Year isn't indexed by SearchIndex — name fields are. Skip remove/add churn.
+    row.item.year = v;
+    n++;
+    if (row.sourceKind === 'vault') touched.vault = true;
+    else if (row.sourceKind === 'played') touched.played = true;
+    else if (row.sourceKind === 'custom') touched.customs.add(row.sourceId);
+  }
+  if (n === 0) return;
+  state.yearsDirty = true;
+  if (touched.vault) scheduleSave('vault');
+  if (touched.played) scheduleSave('played');
+  for (const id of touched.customs) scheduleCustomSave(id);
+  pushRecentYear(state.recentYears, v);
+  persistRecentYears();
+  state.unknownSelections.clear();
+  state.bulkYearTarget = null;
+  renderYears();
+  toast('✓ ' + n + ' games এ year ' + v + ' apply হয়েছে', 'success');
+}
+
 function buildYearSection(label, key, rows, isOpen) {
+  const isUnknown = key === 'unknown';
   const det = document.createElement('details');
   det.className = 'year-group';
   det.dataset.year = String(key);
@@ -5183,8 +5519,8 @@ function buildYearSection(label, key, rows, isOpen) {
   const rowsHost = document.createElement('div');
   rowsHost.className = 'year-rows';
   det.appendChild(rowsHost);
-  if (isOpen) fillYearSection(det, rows);
-  det.addEventListener('toggle', () => { if (det.open) fillYearSection(det, rows); });
+  if (isOpen) fillYearSection(det, rows, isUnknown);
+  det.addEventListener('toggle', () => { if (det.open) fillYearSection(det, rows, isUnknown); });
   return det;
 }
 
@@ -6812,6 +7148,18 @@ async function init() {
     workerToggle.disabled = true;
     workerHint.textContent = '(এই browser-এ Worker support নেই)';
   }
+
+  // Phase 2C: restore recently-used manual years (Storage abstraction → IDB
+  // with localStorage fallback; matches how everything else in this file persists).
+  try {
+    const raw = await Storage.get('recent-years');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        state.recentYears = parsed.map(v => isValidYear(v)).filter(v => v !== null).slice(0, 5);
+      }
+    }
+  } catch (e) { /* corrupt entry — ignore, start with [] */ }
 
   // Load custom databases registry (Step 1: list metadata + per-list items)
   try {

@@ -1852,3 +1852,87 @@ describe('resolveItemYear', () => {
     expect(resolveItemYear(undefined)).toBe(null);
   });
 });
+
+// ── pushRecentYear — verbatim copy from game-vault.html ──
+function pushRecentYear(arr, year) {
+  const v = isValidYear(year);
+  if (v === null) return arr;
+  const i = arr.indexOf(v);
+  if (i !== -1) arr.splice(i, 1);
+  arr.unshift(v);
+  if (arr.length > 5) arr.length = 5;
+  return arr;
+}
+
+describe('pushRecentYear', () => {
+  test('pushes into empty array', () => {
+    const a = [];
+    pushRecentYear(a, 2024);
+    expect(a).toEqual([2024]);
+  });
+  test('mutates and returns the same array', () => {
+    const a = [];
+    const r = pushRecentYear(a, 2024);
+    expect(r).toBe(a);
+  });
+  test('dedupes identical year — length stays 1', () => {
+    const a = [2024];
+    pushRecentYear(a, 2024);
+    expect(a).toEqual([2024]);
+  });
+  test('most-recent-first ordering', () => {
+    const a = [2020, 2021];
+    pushRecentYear(a, 2022);
+    expect(a).toEqual([2022, 2020, 2021]);
+  });
+  test('caps at 5 entries — oldest dropped', () => {
+    const a = [2024, 2023, 2022, 2021, 2020];
+    pushRecentYear(a, 2019);
+    expect(a).toEqual([2019, 2024, 2023, 2022, 2021]);
+    expect(a).toHaveLength(5);
+  });
+  test('existing middle entry moves to front, length unchanged', () => {
+    const a = [2024, 2023, 2022, 2021, 2020];
+    pushRecentYear(a, 2022);
+    expect(a).toEqual([2022, 2024, 2023, 2021, 2020]);
+    expect(a).toHaveLength(5);
+  });
+  test('existing last entry moves to front', () => {
+    const a = [2024, 2023, 2022];
+    pushRecentYear(a, 2022);
+    expect(a).toEqual([2022, 2024, 2023]);
+  });
+  test('numeric string accepted (validated through isValidYear)', () => {
+    const a = [];
+    pushRecentYear(a, '2024');
+    expect(a).toEqual([2024]);
+  });
+  test('invalid years are rejected — array unchanged', () => {
+    const baseline = [2024, 2023];
+    const cases = [null, undefined, NaN, 1969, 2031, 'abc', 2024.5, '20.24', {}, []];
+    for (const bad of cases) {
+      const a = baseline.slice();
+      pushRecentYear(a, bad);
+      expect(a).toEqual(baseline);
+    }
+  });
+  test('repeated pushes of same year stay length 1', () => {
+    const a = [];
+    pushRecentYear(a, 2024);
+    pushRecentYear(a, 2024);
+    pushRecentYear(a, 2024);
+    expect(a).toEqual([2024]);
+  });
+  test('boundary years 1970 and 2030 accepted', () => {
+    const a = [];
+    pushRecentYear(a, 1970);
+    pushRecentYear(a, 2030);
+    expect(a).toEqual([2030, 1970]);
+  });
+  test('overflow with dedupe — existing entry surfaces, no truncation needed', () => {
+    const a = [2024, 2023, 2022, 2021, 2020];
+    pushRecentYear(a, 2020);
+    expect(a).toEqual([2020, 2024, 2023, 2022, 2021]);
+    expect(a).toHaveLength(5);
+  });
+});
