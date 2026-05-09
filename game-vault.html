@@ -188,6 +188,107 @@ body {
   padding: 8px 0 12px;
 }
 
+/* ─── Years tab ──────────────────────────────────────────── */
+.years-stats {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.year-group {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  background: var(--card);
+}
+.year-group > summary {
+  cursor: pointer;
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  list-style: none;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.year-group > summary::-webkit-details-marker { display: none; }
+.year-group > summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 12px;
+  font-size: 10px;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+.year-group[open] > summary::before { transform: rotate(90deg); }
+.year-group > summary:hover { color: var(--accent); }
+.year-count {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 4px;
+}
+.year-rows {
+  border-top: 1px solid var(--border);
+  padding: 6px 0;
+}
+.year-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  font-size: 13px;
+}
+.year-row:hover { background: var(--card-hover); }
+.year-row .serial {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 30px;
+  text-align: right;
+}
+.year-row .game-name { flex: 1; min-width: 0; }
+.year-row .game-name .year-tag {
+  font-family: var(--mono);
+  font-style: normal;
+  color: var(--accent);
+  font-size: 11px;
+  margin-left: 4px;
+}
+.src-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.src-badge.src-vault {
+  background: rgba(255,255,255,0.06);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.src-badge.src-played {
+  background: rgba(74,222,128,0.1);
+  color: #4ade80;
+  border: 1px solid rgba(74,222,128,0.25);
+}
+.src-badge.src-custom {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid rgba(245,166,35,0.25);
+}
+.years-empty {
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+  padding: 24px 0;
+  text-align: center;
+}
+
 /* ─── Modal ──────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed;
@@ -1142,6 +1243,7 @@ body {
   <button class="tab" data-tab="played">Played <span class="tab-count" id="tc-played">(0)</span></button>
   <button class="tab" data-tab="bulk-add">Bulk Add</button>
   <button class="tab" data-tab="bulk-check">Bulk Check</button>
+  <button class="tab" data-tab="years">Years</button>
   <button class="tab" data-tab="settings">Settings</button>
 </nav>
 
@@ -1456,6 +1558,24 @@ body {
       </div>
     </div>
   </div>
+</section>
+
+<!-- ──── YEARS VIEW ──────────────────────────────────────── -->
+<section class="view" id="view-years">
+  <h2 class="section-title">year-wise breakdown</h2>
+  <p class="section-desc">Game name থেকে release year auto-detect হয়েছে। যেগুলোতে year নাই, Unknown-এ যাবে।</p>
+
+  <div class="toolbar">
+    <div class="toolbar-row">
+      <div class="input-group">
+        <span class="input-icon">⌕</span>
+        <input class="input" id="years-search" placeholder="search years (fuzzy)..." autocomplete="off">
+      </div>
+    </div>
+  </div>
+
+  <div class="years-stats" id="years-stats"></div>
+  <div id="years-sections"></div>
 </section>
 
 <!-- ──── SETTINGS VIEW ───────────────────────────────────── -->
@@ -2603,6 +2723,17 @@ function tokenSort(str) {
   return n.split(' ').filter(Boolean).sort().join(' ');
 }
 
+// Pure helper: scan name for a 4-digit year in [1970, 2030], return
+// the LAST match as int, or null. "1979 Revolution 2016" → 2016.
+const YEAR_DETECT_RX = /\b(19[7-9]\d|20[0-2]\d|2030)\b/g;
+function extractYearFromName(name) {
+  if (typeof name !== 'string' || !name) return null;
+  YEAR_DETECT_RX.lastIndex = 0;
+  let last = null, m;
+  while ((m = YEAR_DETECT_RX.exec(name)) !== null) last = m[1];
+  return last === null ? null : parseInt(last, 10);
+}
+
 /* ─── Tag helpers (pure) ──────────────────────────────────
    Tags are stored lowercase on items; display casing lives in
    state.tagLabels so "PS5" and "ps5" don't duplicate. */
@@ -3130,12 +3261,16 @@ const state = {
   activeCustomId: null,          // id of the currently visible custom DB (null when not on a custom view)
   customSearches: {},            // id → search query string
   customSorts: {},               // id → 'recent'|'oldest'|'az'|'za'
-  customSerialMaps: {}           // id → Map(itemId → original index in items array)
+  customSerialMaps: {},          // id → Map(itemId → original index in items array)
+  // Years tab — derived view, rebuilt lazily when dirty
+  yearsCache: null,              // { byYear: Map<int, Row[]>, unknown: Row[], detected: int, total: int }
+  yearsDirty: true,
+  yearsFilter: ''
 };
 
 function newId() { return 'g_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
-const RESERVED_DB_IDS = new Set(['vault', 'played', 'settings', 'bulk-add', 'bulk-check']);
+const RESERVED_DB_IDS = new Set(['vault', 'played', 'settings', 'bulk-add', 'bulk-check', 'years']);
 const CUSTOM_DB_NAME_MAX = 40;
 
 function deriveCustomId(name) {
@@ -3164,6 +3299,7 @@ function validateCustomDbName(name, existingIds) {
 
 /* ─── Persistence with debounce ───────────────────────────── */
 function scheduleSave(name) {
+  state.yearsDirty = true;
   clearTimeout(state.saveTimers[name]);
   state.saveTimers[name] = setTimeout(async () => {
     const items = state[name];
@@ -3579,6 +3715,7 @@ function updateCustomTabCount(id) {
 }
 
 function scheduleCustomSave(id) {
+  state.yearsDirty = true;
   const key = 'cl-' + id;
   clearTimeout(state.saveTimers[key]);
   state.saveTimers[key] = setTimeout(async () => {
@@ -4756,6 +4893,188 @@ document.addEventListener('click', (e) => {
   }
 });
 
+/* ─── Years tab ──────────────────────────────────────────
+   Read-only derived view. Aggregation walks vault + played + every
+   custom DB once, buckets by extracted year. Cache invalidated by
+   yearsDirty flag set in scheduleSave / scheduleCustomSave / deleteCustomDb.
+   Section rows are filled lazily on <details> toggle so 10k+ items
+   doesn't pay the DOM cost upfront. */
+const YEAR_DEFAULT_OPEN = 3;
+
+function aggregateYears() {
+  const byYear = new Map();
+  const unknown = [];
+  let total = 0, detected = 0;
+  const push = (item, sourceLabel, sourceClass) => {
+    total++;
+    const y = extractYearFromName(item.name);
+    const row = { item, sourceLabel, sourceClass };
+    if (y === null) { unknown.push(row); return; }
+    detected++;
+    let bucket = byYear.get(y);
+    if (!bucket) { bucket = []; byYear.set(y, bucket); }
+    bucket.push(row);
+  };
+  for (const it of state.vault) push(it, 'Vault', 'src-vault');
+  for (const it of state.played) push(it, 'Played', 'src-played');
+  for (const id of state.customListsOrder) {
+    const list = state.customLists[id];
+    if (!list) continue;
+    for (const it of list.items) push(it, list.name, 'src-custom');
+  }
+  return { byYear, unknown, detected, total };
+}
+
+function getYearsCache() {
+  if (state.yearsDirty || !state.yearsCache) {
+    state.yearsCache = aggregateYears();
+    state.yearsDirty = false;
+  }
+  return state.yearsCache;
+}
+
+function filterYearRows(rows, q) {
+  if (!q) return rows;
+  const nq = normalize(q);
+  if (!nq) return rows;
+  const terms = nq.split(' ').filter(Boolean);
+  return rows.filter(r => {
+    const n = normalize(r.item.name);
+    return terms.every(t => n.indexOf(t) !== -1);
+  });
+}
+
+function makeYearRow(row, serial) {
+  const div = document.createElement('div');
+  div.className = 'year-row';
+  const s = document.createElement('span');
+  s.className = 'serial';
+  s.textContent = serial;
+  div.appendChild(s);
+  const name = document.createElement('span');
+  name.className = 'game-name';
+  // Highlight the year token inline (mono em). Match against the same regex
+  // we used to detect — last match wins, so highlight the last hit.
+  YEAR_DETECT_RX.lastIndex = 0;
+  let last = null, m;
+  while ((m = YEAR_DETECT_RX.exec(row.item.name)) !== null) {
+    last = { idx: m.index, len: m[0].length, txt: m[0] };
+  }
+  if (last) {
+    name.appendChild(document.createTextNode(row.item.name.slice(0, last.idx)));
+    const em = document.createElement('em');
+    em.className = 'year-tag';
+    em.textContent = last.txt;
+    name.appendChild(em);
+    name.appendChild(document.createTextNode(row.item.name.slice(last.idx + last.len)));
+  } else {
+    name.textContent = row.item.name;
+  }
+  div.appendChild(name);
+  const badge = document.createElement('span');
+  badge.className = 'src-badge ' + row.sourceClass;
+  badge.textContent = row.sourceLabel;
+  div.appendChild(badge);
+  return div;
+}
+
+function fillYearSection(sectionEl, rows) {
+  const host = sectionEl.querySelector('.year-rows');
+  if (!host || host.dataset.filled === '1') return;
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < rows.length; i++) frag.appendChild(makeYearRow(rows[i], i + 1));
+  host.appendChild(frag);
+  host.dataset.filled = '1';
+}
+
+function renderYears() {
+  const sectionsHost = $('#years-sections');
+  const statsHost = $('#years-stats');
+  if (!sectionsHost || !statsHost) return;
+  const cache = getYearsCache();
+  const q = state.yearsFilter || '';
+
+  const sortedYears = Array.from(cache.byYear.keys()).sort((a, b) => b - a);
+
+  // Apply search filter — drops rows then drops empty year buckets.
+  const filteredByYear = new Map();
+  let shownDetected = 0;
+  for (const y of sortedYears) {
+    const filtered = filterYearRows(cache.byYear.get(y), q);
+    if (filtered.length > 0) { filteredByYear.set(y, filtered); shownDetected += filtered.length; }
+  }
+  const filteredUnknown = filterYearRows(cache.unknown, q);
+
+  // Stats line
+  if (cache.total === 0) {
+    statsHost.textContent = '';
+  } else if (q) {
+    statsHost.textContent =
+      shownDetected + ' detected match · ' + filteredUnknown.length + ' unknown match · ' +
+      filteredByYear.size + ' years shown';
+  } else {
+    statsHost.textContent =
+      cache.detected + ' games auto-detected · ' + cache.unknown.length + ' unknown · ' +
+      cache.byYear.size + ' years total';
+  }
+
+  sectionsHost.innerHTML = '';
+
+  if (cache.total === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'years-empty';
+    empty.textContent = 'এখনো কোনো game নেই';
+    sectionsHost.appendChild(empty);
+    return;
+  }
+  if (filteredByYear.size === 0 && filteredUnknown.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'years-empty';
+    empty.textContent = 'কোনো match পাওয়া যায়নি';
+    sectionsHost.appendChild(empty);
+    return;
+  }
+
+  const visibleYears = Array.from(filteredByYear.keys());
+  // When searching, default-open every visible section so matches are visible.
+  // Otherwise open the top N most-recent years.
+  const openSet = new Set();
+  if (q) {
+    for (const y of visibleYears) openSet.add(y);
+    if (filteredUnknown.length > 0) openSet.add('unknown');
+  } else {
+    for (let i = 0; i < Math.min(YEAR_DEFAULT_OPEN, visibleYears.length); i++) openSet.add(visibleYears[i]);
+  }
+
+  for (const y of visibleYears) {
+    const rows = filteredByYear.get(y);
+    sectionsHost.appendChild(buildYearSection(String(y), y, rows, openSet.has(y)));
+  }
+  if (filteredUnknown.length > 0) {
+    sectionsHost.appendChild(buildYearSection('Unknown', 'unknown', filteredUnknown, openSet.has('unknown')));
+  }
+}
+
+function buildYearSection(label, key, rows, isOpen) {
+  const det = document.createElement('details');
+  det.className = 'year-group';
+  det.dataset.year = String(key);
+  if (isOpen) det.open = true;
+  const sum = document.createElement('summary');
+  sum.appendChild(document.createTextNode(label + ' '));
+  const cnt = document.createElement('span');
+  cnt.className = 'year-count';
+  cnt.textContent = '(' + rows.length + ')';
+  sum.appendChild(cnt);
+  det.appendChild(sum);
+  const rowsHost = document.createElement('div');
+  rowsHost.className = 'year-rows';
+  det.appendChild(rowsHost);
+  if (isOpen) fillYearSection(det, rows);
+  det.addEventListener('toggle', () => { if (det.open) fillYearSection(det, rows); });
+  return det;
+}
+
 /* ─── Tab switching ──────────────────────────────────────── */
 function switchTab(name) {
   state.currentTab = name;
@@ -4773,6 +5092,7 @@ function switchTab(name) {
   // Re-render to ensure VList recomputes after display change
   if (name === 'vault') renderVault();
   if (name === 'played') renderPlayed();
+  if (name === 'years') renderYears();
 }
 
 $$('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
@@ -4995,6 +5315,7 @@ async function deleteCustomDb(id) {
   delete state.customLists[id];
   const idx = state.customListsOrder.indexOf(id);
   if (idx !== -1) state.customListsOrder.splice(idx, 1);
+  state.yearsDirty = true;
   try { await persistCustomListsRegistry(); } catch (e) {
     toast('Registry save failed: ' + e.message, 'error');
   }
@@ -5135,6 +5456,15 @@ $('#played-dup-toggle').addEventListener('click', () => {
   state.playedDupOnly = !state.playedDupOnly;
   $('#played-dup-toggle').classList.toggle('btn-primary', state.playedDupOnly);
   renderPlayed();
+});
+
+let _yearsSearchTimer = 0;
+$('#years-search').addEventListener('input', e => {
+  state.yearsFilter = e.target.value;
+  clearTimeout(_yearsSearchTimer);
+  _yearsSearchTimer = setTimeout(() => {
+    if (state.currentTab === 'years') renderYears();
+  }, 100);
 });
 
 /* ─── Startup data cleanup (pure helper) ────────────────

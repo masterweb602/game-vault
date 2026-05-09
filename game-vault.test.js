@@ -1652,3 +1652,75 @@ describe('filterCustomItems', () => {
     expect(r[0].name).toBe('Some Game 0');
   });
 });
+
+// ── extractYearFromName — verbatim copy from game-vault.html ──
+const YEAR_DETECT_RX = /\b(19[7-9]\d|20[0-2]\d|2030)\b/g;
+function extractYearFromName(name) {
+  if (typeof name !== 'string' || !name) return null;
+  YEAR_DETECT_RX.lastIndex = 0;
+  let last = null, m;
+  while ((m = YEAR_DETECT_RX.exec(name)) !== null) last = m[1];
+  return last === null ? null : parseInt(last, 10);
+}
+
+describe('extractYearFromName', () => {
+  test('single 4-digit year', () => {
+    expect(extractYearFromName('Halo Infinite 2021')).toBe(2021);
+  });
+  test('multiple years — last (rightmost) wins', () => {
+    expect(extractYearFromName('1979 Revolution 2016')).toBe(2016);
+  });
+  test('three years — rightmost wins', () => {
+    expect(extractYearFromName('FIFA 1999 2000 2001')).toBe(2001);
+  });
+  test('last wins through parentheses', () => {
+    expect(extractYearFromName('Quake 1996 (Remastered 2021)')).toBe(2021);
+  });
+  test('two-digit shorthand is not a year', () => {
+    expect(extractYearFromName('FIFA 24')).toBe(null);
+  });
+  test('no year returns null', () => {
+    expect(extractYearFromName('The Last of Us')).toBe(null);
+  });
+  test('bare digit is not a year', () => {
+    expect(extractYearFromName('Half-Life 2')).toBe(null);
+  });
+  test('year fused to letters has no word boundary — no match', () => {
+    expect(extractYearFromName('NHL98')).toBe(null);
+  });
+  test('year at start of name', () => {
+    expect(extractYearFromName('2007: Murder Was the Case')).toBe(2007);
+  });
+  test('below 1970 range', () => {
+    expect(extractYearFromName('GTA 1969')).toBe(null);
+  });
+  test('above 2030 range', () => {
+    expect(extractYearFromName('Game 2031')).toBe(null);
+  });
+  test('out-of-range 4-digit number', () => {
+    expect(extractYearFromName('3030 Deathwar')).toBe(null);
+  });
+  test('null / undefined / empty returns null', () => {
+    expect(extractYearFromName(null)).toBe(null);
+    expect(extractYearFromName(undefined)).toBe(null);
+    expect(extractYearFromName('')).toBe(null);
+  });
+  test('non-string input returns null', () => {
+    expect(extractYearFromName(2021)).toBe(null);
+    expect(extractYearFromName({})).toBe(null);
+  });
+  test('boundary years 1970 and 2030', () => {
+    expect(extractYearFromName('Old Game 1970')).toBe(1970);
+    expect(extractYearFromName('New Game 2030')).toBe(2030);
+  });
+  test('stateful regex reset between calls', () => {
+    // YEAR_DETECT_RX is module-level with /g — exec must reset lastIndex
+    // so consecutive calls return the same result.
+    expect(extractYearFromName('Doom 2016')).toBe(2016);
+    expect(extractYearFromName('Doom 2016')).toBe(2016);
+    expect(extractYearFromName('Doom 2016')).toBe(2016);
+  });
+  test('hyphen-separated year', () => {
+    expect(extractYearFromName('FIFA-2021-Edition')).toBe(2021);
+  });
+});
