@@ -625,6 +625,13 @@ body {
   max-width: 240px;
   overflow: hidden;
 }
+.row-year {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: 8px;
+  flex-shrink: 0;
+}
 .tag-chip {
   display: inline-flex;
   align-items: center;
@@ -2583,13 +2590,17 @@ async function saveList(name, items) {
   const oldMeta = await Storage.get(`${name}-meta`);
   if (oldMeta) { try { oldChunks = JSON.parse(oldMeta).chunks || 0; } catch(e){} }
 
-  // Strip computed fields before save
-  const lean = items.map(it => ({
-    id: it.id,
-    name: it.name,
-    dateAdded: it.dateAdded,
-    tags: Array.isArray(it.tags) ? it.tags.slice() : []
-  }));
+  // Strip computed fields before save. year is optional — only persisted if set.
+  const lean = items.map(it => {
+    const o = {
+      id: it.id,
+      name: it.name,
+      dateAdded: it.dateAdded,
+      tags: Array.isArray(it.tags) ? it.tags.slice() : []
+    };
+    if (typeof it.year === 'number') o.year = it.year;
+    return o;
+  });
 
   const tasks = [];
   for (let i = 0; i < chunks; i++) {
@@ -2732,6 +2743,42 @@ function extractYearFromName(name) {
   let last = null, m;
   while ((m = YEAR_DETECT_RX.exec(name)) !== null) last = m[1];
   return last === null ? null : parseInt(last, 10);
+}
+
+// Accepts integer or numeric string in [1970, 2030]; returns int or null.
+// Floats and non-numeric strings are rejected.
+function isValidYear(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number') {
+    if (!Number.isInteger(v)) return null;
+    return (v >= 1970 && v <= 2030) ? v : null;
+  }
+  if (typeof v === 'string') {
+    const t = v.trim();
+    if (!/^\d{4}$/.test(t)) return null;
+    const n = parseInt(t, 10);
+    return (n >= 1970 && n <= 2030) ? n : null;
+  }
+  return null;
+}
+
+// Parses raw input from the year text field. Distinguishes "cleared" from
+// "garbage" so the dialog can show an error for the latter.
+//   ""/"   "  → null  (user cleared the field, save as unset)
+//   valid    → int   (save the year)
+//   invalid  → undefined (show inline error, don't save)
+function parseYearInput(raw) {
+  if (raw === null || raw === undefined) return null;
+  const t = String(raw).trim();
+  if (!t) return null;
+  const v = isValidYear(t);
+  return v === null ? undefined : v;
+}
+
+// Manual item.year overrides regex extraction from name.
+function resolveItemYear(item) {
+  if (item && typeof item.year === 'number') return item.year;
+  return extractYearFromName(item ? item.name : '');
 }
 
 /* ─── Tag helpers (pure) ──────────────────────────────────
@@ -3448,6 +3495,9 @@ function makeRow(item, idx, source) {
   name.innerHTML = highlight(escapeHtml(item.name), query);
   row.appendChild(name);
 
+  const yr = resolveItemYear(item);
+  if (yr !== null) row.appendChild(el('span', { class: 'row-year' }, '[' + yr + ']'));
+
   // Inline tag chips — up to 3, then "+N"
   if (Array.isArray(item.tags) && item.tags.length > 0) {
     const tagWrap = el('span', { class: 'row-tags' });
@@ -3642,6 +3692,9 @@ function makeCustomRow(item, idx, id) {
   name.innerHTML = highlight(escapeHtml(item.name), query);
   row.appendChild(name);
 
+  const yr = resolveItemYear(item);
+  if (yr !== null) row.appendChild(el('span', { class: 'row-year' }, '[' + yr + ']'));
+
   if (Array.isArray(item.tags) && item.tags.length > 0) {
     const tagWrap = el('span', { class: 'row-tags' });
     const visible = item.tags.slice(0, 3);
@@ -3743,10 +3796,13 @@ function editCustomItem(item, id) {
 
   const workTags = Array.isArray(item.tags) ? item.tags.slice() : [];
   const tagEditor = buildTagEditor(workTags);
+  const yearField = buildYearField(item.year);
 
   const body = el('div', { style: 'display:flex; flex-direction:column; gap:14px;' });
   body.appendChild(el('label', { class: 'tag-edit-label' }, 'Name'));
   body.appendChild(inputBox);
+  body.appendChild(el('label', { class: 'tag-edit-label' }, 'Release year (1970–2030, optional)'));
+  body.appendChild(yearField.root);
   body.appendChild(el('label', { class: 'tag-edit-label' }, 'Tags'));
   body.appendChild(tagEditor.root);
 
@@ -3757,14 +3813,18 @@ function editCustomItem(item, id) {
     onConfirm: () => {
       const v = inputBox.value.trim();
       if (!v) return;
+      const yr = yearField.commit();
+      if (yr === undefined) { toast('Year invalid — must be 1970–2030 or empty', 'error'); return; }
       list.index.remove(item);
       item.name = v;
       item._norm = normalize(v);
       item._ts = tokenSort(v);
       item._lower = v.toLowerCase();
       item.tags = tagEditor.getTags();
+      if (yr === null) delete item.year; else item.year = yr;
       list.index.add(item);
       scheduleCustomSave(id);
+      state.yearsDirty = true;
       refreshTagState();
       renderCustomDbView(id);
       toast('Updated', 'success');
@@ -4383,11 +4443,14 @@ function editItem(item, source) {
   // Working copy of tags so cancel doesn't mutate
   const workTags = Array.isArray(item.tags) ? item.tags.slice() : [];
   const tagEditor = buildTagEditor(workTags);
+  const yearField = buildYearField(item.year);
 
   const body = el('div', { style: 'display:flex; flex-direction:column; gap:14px;' });
   const nameLabel = el('label', { class: 'tag-edit-label' }, 'Name');
   body.appendChild(nameLabel);
   body.appendChild(inputBox);
+  body.appendChild(el('label', { class: 'tag-edit-label' }, 'Release year (1970–2030, optional)'));
+  body.appendChild(yearField.root);
   const tagsLabel = el('label', { class: 'tag-edit-label' }, 'Tags');
   body.appendChild(tagsLabel);
   body.appendChild(tagEditor.root);
@@ -4399,6 +4462,8 @@ function editItem(item, source) {
     onConfirm: () => {
       const v = inputBox.value.trim();
       if (!v) return;
+      const yr = yearField.commit();
+      if (yr === undefined) { toast('Year invalid — must be 1970–2030 or empty', 'error'); return; }
       const idx = source === 'vault' ? state.vIndex : state.pIndex;
 
       // Remove old version from index, mutate, re-add — keeps insertion order via items array
@@ -4408,14 +4473,51 @@ function editItem(item, source) {
       item._ts = tokenSort(v);
       item._lower = v.toLowerCase();
       item.tags = tagEditor.getTags();
+      if (yr === null) delete item.year; else item.year = yr;
       idx.add(item);
 
       scheduleSave(source);
+      state.yearsDirty = true;
       refreshTagState();
       if (source === 'vault') renderVault(); else renderPlayed();
       toast('Updated', 'success');
     }
   });
+}
+
+/* ─── Year input widget ─────────────────────────────────
+   Returns { root, commit }. commit() parses the input and returns:
+     null      → cleared (caller should set item.year = undefined)
+     int       → save this year
+     undefined → invalid input (error shown inline; caller should NOT save)
+*/
+function buildYearField(initialYear) {
+  const input = el('input', {
+    type: 'number', class: 'input',
+    min: '1970', max: '2030', step: '1',
+    inputmode: 'numeric', autocomplete: 'off',
+    placeholder: 'e.g. 2024 (খালি = unknown)',
+    style: 'width:100%;'
+  });
+  if (typeof initialYear === 'number') input.value = String(initialYear);
+  const err = el('div', {
+    class: 'modal-error',
+    style: 'min-height:0; margin-top:4px;'
+  });
+  const root = el('div');
+  root.appendChild(input);
+  root.appendChild(err);
+  function commit() {
+    err.textContent = '';
+    const v = parseYearInput(input.value);
+    if (v === undefined) {
+      err.textContent = 'Year must be a 4-digit number between 1970 and 2030 (or empty).';
+      input.focus();
+      return undefined;
+    }
+    return v; // int or null
+  }
+  return { root, input, commit };
 }
 
 /* ─── Tag editor widget (chip strip + autocomplete input) ───
@@ -4907,7 +5009,7 @@ function aggregateYears() {
   let total = 0, detected = 0;
   const push = (item, sourceLabel, sourceClass) => {
     total++;
-    const y = extractYearFromName(item.name);
+    const y = resolveItemYear(item);
     const row = { item, sourceLabel, sourceClass };
     if (y === null) { unknown.push(row); return; }
     detected++;
@@ -4953,22 +5055,33 @@ function makeYearRow(row, serial) {
   div.appendChild(s);
   const name = document.createElement('span');
   name.className = 'game-name';
-  // Highlight the year token inline (mono em). Match against the same regex
-  // we used to detect — last match wins, so highlight the last hit.
+  // Highlight the year token inline (mono em) when the manual year happens to
+  // appear in the name; for manual-only or pure-regex matches, append a trailing
+  // year tag so the resolved year is always visible.
+  const resolved = resolveItemYear(row.item);
   YEAR_DETECT_RX.lastIndex = 0;
-  let last = null, m;
+  let inline = null, m;
   while ((m = YEAR_DETECT_RX.exec(row.item.name)) !== null) {
-    last = { idx: m.index, len: m[0].length, txt: m[0] };
+    if (resolved !== null && parseInt(m[1], 10) === resolved) {
+      inline = { idx: m.index, len: m[0].length, txt: m[0] };
+    }
   }
-  if (last) {
-    name.appendChild(document.createTextNode(row.item.name.slice(0, last.idx)));
+  if (inline) {
+    name.appendChild(document.createTextNode(row.item.name.slice(0, inline.idx)));
     const em = document.createElement('em');
     em.className = 'year-tag';
-    em.textContent = last.txt;
+    em.textContent = inline.txt;
     name.appendChild(em);
-    name.appendChild(document.createTextNode(row.item.name.slice(last.idx + last.len)));
+    name.appendChild(document.createTextNode(row.item.name.slice(inline.idx + inline.len)));
   } else {
     name.textContent = row.item.name;
+    if (resolved !== null) {
+      const em = document.createElement('em');
+      em.className = 'year-tag';
+      em.textContent = String(resolved);
+      name.appendChild(document.createTextNode(' '));
+      name.appendChild(em);
+    }
   }
   div.appendChild(name);
   const badge = document.createElement('span');
@@ -6008,11 +6121,16 @@ $('#export-json').addEventListener('click', () => {
     toast('Vault আর played দুটোই খালি, export করার মতো কিছু নাই', 'info');
     return;
   }
+  const exportItem = (it) => {
+    const o = { name: it.name, dateAdded: it.dateAdded, tags: Array.isArray(it.tags) ? it.tags.slice() : [] };
+    if (typeof it.year === 'number') o.year = it.year;
+    return o;
+  };
   const data = {
     version: 2,
     exportedAt: new Date().toISOString(),
-    vault: state.vault.map(it => ({ name: it.name, dateAdded: it.dateAdded, tags: Array.isArray(it.tags) ? it.tags.slice() : [] })),
-    played: state.played.map(it => ({ name: it.name, dateAdded: it.dateAdded, tags: Array.isArray(it.tags) ? it.tags.slice() : [] }))
+    vault: state.vault.map(exportItem),
+    played: state.played.map(exportItem)
   };
   const ok = downloadFile(
     JSON.stringify(data, null, 2),
@@ -6028,9 +6146,10 @@ $('#export-csv').addEventListener('click', () => {
     return;
   }
   const tagsCell = (it) => Array.isArray(it.tags) ? it.tags.join(';') : '';
-  const rows = [['list','name','date_added','tags']];
-  for (const it of state.vault) rows.push(['vault', it.name, new Date(it.dateAdded).toISOString(), tagsCell(it)]);
-  for (const it of state.played) rows.push(['played', it.name, new Date(it.dateAdded).toISOString(), tagsCell(it)]);
+  const yearCell = (it) => (typeof it.year === 'number') ? String(it.year) : '';
+  const rows = [['list','name','date_added','tags','year']];
+  for (const it of state.vault) rows.push(['vault', it.name, new Date(it.dateAdded).toISOString(), tagsCell(it), yearCell(it)]);
+  for (const it of state.played) rows.push(['played', it.name, new Date(it.dateAdded).toISOString(), tagsCell(it), yearCell(it)]);
   const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
   // BOM for Excel UTF-8 detection (Bengali names display correctly)
   const ok = downloadFile(
@@ -6073,11 +6192,18 @@ async function exportHtml({ embedData }) {
   if (embedData) {
     // Inject a one-shot bootstrap before init() that seeds the storage with
     // current vault + played, so the file opens with the data preloaded.
+    // v2: includes tags + year so the embedded backup is complete.
+    const projectEmbed = (it) => {
+      const o = { name: it.name, dateAdded: it.dateAdded };
+      if (Array.isArray(it.tags) && it.tags.length) o.tags = it.tags.slice();
+      if (typeof it.year === 'number') o.year = it.year;
+      return o;
+    };
     const payload = {
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
-      vault: state.vault.map(it => ({ name: it.name, dateAdded: it.dateAdded })),
-      played: state.played.map(it => ({ name: it.name, dateAdded: it.dateAdded })),
+      vault: state.vault.map(projectEmbed),
+      played: state.played.map(projectEmbed),
     };
     const json = JSON.stringify(payload).replace(/<\/script>/gi, '<\\/script>');
 
@@ -6182,7 +6308,7 @@ function bulkAddRich(richItems, target) {
   let counter = 0;
 
   for (const raw of richItems) {
-    let name, dateAdded, rawTags;
+    let name, dateAdded, rawTags, rawYear;
     if (typeof raw === 'string') {
       name = raw.trim();
       dateAdded = Date.now() + counter;
@@ -6191,6 +6317,7 @@ function bulkAddRich(richItems, target) {
       const d = Number(raw.dateAdded);
       dateAdded = (Number.isFinite(d) && d > 0) ? d : Date.now() + counter;
       rawTags = raw.tags;
+      rawYear = raw.year;
     } else continue;
 
     if (!name) continue;
@@ -6228,6 +6355,8 @@ function bulkAddRich(richItems, target) {
       }
     }
     const item = { id: newId(), name, dateAdded, tags };
+    const yr = isValidYear(rawYear);
+    if (yr !== null) item.year = yr;
     item._norm = n;
     item._ts = tokenSort(name);
 
@@ -6407,17 +6536,23 @@ function parseCsvSmart(text) {
 
   const firstCells = parseCsvRow(rows[0]);
   const lowered = firstCells.map(c => c.trim().toLowerCase());
-  const hasHeader = lowered.some(h => /^(name|title|game|list|category|date_added|added|tags)$/i.test(h));
+  const hasHeader = lowered.some(h => /^(name|title|game|list|category|date_added|added|tags|year)$/i.test(h));
 
   if (hasHeader) {
     const nameIdx = lowered.findIndex(h => /^(name|title|game)$/i.test(h));
     const listIdx = lowered.findIndex(h => /^(list|category|type)$/i.test(h));
     const dateIdx = lowered.findIndex(h => /^(date_added|added|created|timestamp)$/i.test(h));
     const tagsIdx = lowered.findIndex(h => /^tags$/i.test(h));
+    const yearIdx = lowered.findIndex(h => /^year$/i.test(h));
 
     const parseTagsCell = (cell) => {
       if (!cell) return [];
       return String(cell).split(';').map(sanitizeTag).filter(Boolean);
+    };
+    const parseYearCell = (cell) => {
+      if (cell == null || String(cell).trim() === '') return undefined;
+      const v = isValidYear(String(cell).trim());
+      return v === null ? undefined : v;
     };
 
     if (nameIdx >= 0 && listIdx >= 0) {
@@ -6430,7 +6565,9 @@ function parseCsvSmart(text) {
         const listVal = (cells[listIdx] || '').trim().toLowerCase();
         const date = dateIdx >= 0 ? Date.parse(cells[dateIdx]) : NaN;
         const tags = tagsIdx >= 0 ? parseTagsCell(cells[tagsIdx]) : [];
+        const year = yearIdx >= 0 ? parseYearCell(cells[yearIdx]) : undefined;
         const item = { name, dateAdded: Number.isFinite(date) ? date : undefined, tags };
+        if (year !== undefined) item.year = year;
         if (listVal === 'played') played.push(item);
         else vault.push(item); // default to vault
       }
@@ -6438,7 +6575,7 @@ function parseCsvSmart(text) {
     }
 
     if (nameIdx >= 0) {
-      // Single-list import — extract name + optional date + tags
+      // Single-list import — extract name + optional date + tags + year
       const lines = [];
       for (let i = 1; i < rows.length; i++) {
         const cells = parseCsvRow(rows[i]);
@@ -6446,7 +6583,10 @@ function parseCsvSmart(text) {
         if (!name) continue;
         const date = dateIdx >= 0 ? Date.parse(cells[dateIdx]) : NaN;
         const tags = tagsIdx >= 0 ? parseTagsCell(cells[tagsIdx]) : [];
-        lines.push({ name, dateAdded: Number.isFinite(date) ? date : undefined, tags });
+        const year = yearIdx >= 0 ? parseYearCell(cells[yearIdx]) : undefined;
+        const item = { name, dateAdded: Number.isFinite(date) ? date : undefined, tags };
+        if (year !== undefined) item.year = year;
+        lines.push(item);
       }
       return { routed: false, lines };
     }

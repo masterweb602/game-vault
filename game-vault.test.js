@@ -1724,3 +1724,131 @@ describe('extractYearFromName', () => {
     expect(extractYearFromName('FIFA-2021-Edition')).toBe(2021);
   });
 });
+
+// ── Year helpers — verbatim copy from game-vault.html ──
+function isValidYear(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number') {
+    if (!Number.isInteger(v)) return null;
+    return (v >= 1970 && v <= 2030) ? v : null;
+  }
+  if (typeof v === 'string') {
+    const t = v.trim();
+    if (!/^\d{4}$/.test(t)) return null;
+    const n = parseInt(t, 10);
+    return (n >= 1970 && n <= 2030) ? n : null;
+  }
+  return null;
+}
+function parseYearInput(raw) {
+  if (raw === null || raw === undefined) return null;
+  const t = String(raw).trim();
+  if (!t) return null;
+  const v = isValidYear(t);
+  return v === null ? undefined : v;
+}
+function resolveItemYear(item) {
+  if (item && typeof item.year === 'number') return item.year;
+  return extractYearFromName(item ? item.name : '');
+}
+
+describe('isValidYear', () => {
+  test('integer in range', () => {
+    expect(isValidYear(2024)).toBe(2024);
+    expect(isValidYear(1970)).toBe(1970);
+    expect(isValidYear(2030)).toBe(2030);
+  });
+  test('numeric string in range', () => {
+    expect(isValidYear('2024')).toBe(2024);
+    expect(isValidYear('  2000  ')).toBe(2000);
+  });
+  test('out-of-range integer rejected', () => {
+    expect(isValidYear(1969)).toBe(null);
+    expect(isValidYear(2031)).toBe(null);
+    expect(isValidYear(0)).toBe(null);
+    expect(isValidYear(-2024)).toBe(null);
+  });
+  test('out-of-range string rejected', () => {
+    expect(isValidYear('1969')).toBe(null);
+    expect(isValidYear('2031')).toBe(null);
+  });
+  test('non-4-digit string rejected', () => {
+    expect(isValidYear('99999')).toBe(null);
+    expect(isValidYear('123')).toBe(null);
+    expect(isValidYear('20')).toBe(null);
+  });
+  test('non-numeric string rejected', () => {
+    expect(isValidYear('abc')).toBe(null);
+    expect(isValidYear('20.24')).toBe(null);
+    expect(isValidYear('2024a')).toBe(null);
+  });
+  test('float rejected', () => {
+    expect(isValidYear(2024.5)).toBe(null);
+    expect(isValidYear(2024.0001)).toBe(null);
+  });
+  test('NaN / null / undefined / empty rejected', () => {
+    expect(isValidYear(NaN)).toBe(null);
+    expect(isValidYear(null)).toBe(null);
+    expect(isValidYear(undefined)).toBe(null);
+    expect(isValidYear('')).toBe(null);
+  });
+  test('non-primitive rejected', () => {
+    expect(isValidYear({})).toBe(null);
+    expect(isValidYear([])).toBe(null);
+    expect(isValidYear([2024])).toBe(null);
+  });
+});
+
+describe('parseYearInput', () => {
+  test('empty / whitespace returns null (cleared)', () => {
+    expect(parseYearInput('')).toBe(null);
+    expect(parseYearInput('   ')).toBe(null);
+    expect(parseYearInput(null)).toBe(null);
+    expect(parseYearInput(undefined)).toBe(null);
+  });
+  test('valid year returns int', () => {
+    expect(parseYearInput('2024')).toBe(2024);
+    expect(parseYearInput('  2024  ')).toBe(2024);
+    expect(parseYearInput('1970')).toBe(1970);
+    expect(parseYearInput('2030')).toBe(2030);
+  });
+  test('garbage returns undefined (error)', () => {
+    expect(parseYearInput('abc')).toBe(undefined);
+    expect(parseYearInput('1969')).toBe(undefined);
+    expect(parseYearInput('2031')).toBe(undefined);
+    expect(parseYearInput('99999')).toBe(undefined);
+    expect(parseYearInput('20.24')).toBe(undefined);
+    expect(parseYearInput('2024a')).toBe(undefined);
+  });
+  test('clear vs error are distinct sentinels', () => {
+    expect(parseYearInput('')).not.toBe(undefined);   // cleared = null
+    expect(parseYearInput('xyz')).not.toBe(null);     // error = undefined
+  });
+});
+
+describe('resolveItemYear', () => {
+  test('manual year wins over regex from name', () => {
+    expect(resolveItemYear({ name: 'Halo 2021', year: 2015 })).toBe(2015);
+  });
+  test('falls back to regex when year unset', () => {
+    expect(resolveItemYear({ name: 'Halo 2021' })).toBe(2021);
+  });
+  test('returns null when neither set nor extractable', () => {
+    expect(resolveItemYear({ name: 'Untitled' })).toBe(null);
+  });
+  test('undefined year still falls back to regex', () => {
+    expect(resolveItemYear({ name: 'Halo 2021', year: undefined })).toBe(2021);
+  });
+  test('manual year used when name has no year', () => {
+    expect(resolveItemYear({ name: 'Untitled', year: 2010 })).toBe(2010);
+  });
+  test('non-number year is ignored, falls back', () => {
+    // Defensive: stored garbage should not break aggregation.
+    expect(resolveItemYear({ name: 'Halo 2021', year: '2015' })).toBe(2021);
+    expect(resolveItemYear({ name: 'Halo 2021', year: null })).toBe(2021);
+  });
+  test('null / undefined item returns null safely', () => {
+    expect(resolveItemYear(null)).toBe(null);
+    expect(resolveItemYear(undefined)).toBe(null);
+  });
+});
