@@ -1337,6 +1337,13 @@ body {
   .app { max-width: 1400px; }
 }
 
+/* ─── Serial-jump flash ──────────────────────────────────── */
+.row.serial-flash { animation: serialFlash 1.5s ease-out; }
+@keyframes serialFlash {
+  0%   { background: var(--accent-soft); }
+  100% { background: transparent; }
+}
+
 /* ─── Notes tab ──────────────────────────────────────────── */
 #notes-textarea {
   min-height: 400px;
@@ -3650,6 +3657,27 @@ class VList {
     }
     this.spacer.appendChild(frag);
   }
+  // Scroll the list so item `idx` is centered in view, then re-render
+  // synchronously and return the resulting row element (or null if not rendered).
+  scrollToIndex(idx, opts) {
+    if (idx < 0 || idx >= this.items.length) return null;
+    const center = !opts || opts.center !== false;
+    const viewH = this.scroll.clientHeight;
+    const maxTop = Math.max(0, this.items.length * this.rowH - viewH);
+    let target = idx * this.rowH;
+    if (center) target -= Math.max(0, (viewH - this.rowH) / 2);
+    target = Math.max(0, Math.min(target, maxTop));
+    this.scroll.scrollTop = target;
+    this.render();
+    return this.findRenderedRow(idx);
+  }
+  findRenderedRow(idx) {
+    const top = (idx * this.rowH) + 'px';
+    for (const child of this.spacer.children) {
+      if (child.style.top === top) return child;
+    }
+    return null;
+  }
 }
 
 /* ─── Renderers ──────────────────────────────────────────── */
@@ -4056,11 +4084,22 @@ let _customSearchTimer = 0;
 $('#custom-search').addEventListener('input', e => {
   const id = state.activeCustomId;
   if (!id) return;
-  state.customSearches[id] = e.target.value;
+  const v = e.target.value;
   const n = state.customLists[id]?.items.length || 0;
   const delay = n < 1000 ? 60 : n < 10000 ? 100 : n < 50000 ? 150 : 220;
   clearTimeout(_customSearchTimer);
-  _customSearchTimer = setTimeout(() => renderCustomDbView(id), delay);
+  _customSearchTimer = setTimeout(() => {
+    const list = state.customLists[id];
+    if (!list) return;
+    const handled = tryHandleSerialQuery(v, {
+      rawItems: list.items,
+      vlist: customVList,
+      setStatus: (msg) => { $('#custom-status').textContent = msg; }
+    });
+    if (handled) return;
+    state.customSearches[id] = v;
+    renderCustomDbView(id);
+  }, delay);
 });
 $('#custom-sort').addEventListener('change', e => {
   const id = state.activeCustomId;
@@ -5919,11 +5958,60 @@ function adaptiveDelay(source) {
   return 220;
 }
 
+/* ─── Serial-number jump (pure helper + dispatch) ─────────
+   Typing pure digits in a search bar jumps to the serial-numbered
+   row instead of running text search. parseSerialQuery is pure,
+   tryHandleSerialQuery wires it to a VList instance and a status
+   element. Designed for reuse — call sites just supply ctx. */
+function parseSerialQuery(query) {
+  if (typeof query !== 'string') return { isSerial: false };
+  const s = query.trim();
+  if (!/^\d+$/.test(s)) return { isSerial: false };
+  const num = parseInt(s, 10);
+  if (!Number.isFinite(num) || num <= 0) return { isSerial: false };
+  return { isSerial: true, num };
+}
+
+function flashRow(el) {
+  if (!el) return;
+  el.classList.add('serial-flash');
+  setTimeout(() => { if (el) el.classList.remove('serial-flash'); }, 1500);
+}
+
+function fmtSerial(n) { return '#' + String(n).padStart(4, '0'); }
+
+function tryHandleSerialQuery(query, ctx) {
+  const r = parseSerialQuery(query);
+  if (!r.isSerial) return false;
+  const item = ctx.rawItems[r.num - 1];
+  if (!item) {
+    ctx.setStatus('Serial ' + fmtSerial(r.num) + ' পাওয়া যায়নি (max: ' + fmtSerial(ctx.rawItems.length) + ')');
+    return true;
+  }
+  const displayed = ctx.vlist.items;
+  const dispIdx = displayed.findIndex(it => it.id === item.id);
+  if (dispIdx === -1) {
+    ctx.setStatus('Serial ' + fmtSerial(r.num) + ' exists but hidden by filter');
+    return true;
+  }
+  const rowEl = ctx.vlist.scrollToIndex(dispIdx);
+  flashRow(rowEl);
+  ctx.setStatus('Jumped to ' + fmtSerial(r.num) + ': ' + item.name);
+  return true;
+}
+
 let _vaultSearchTimer = 0;
 $('#vault-search').addEventListener('input', e => {
-  state.vaultFilter = e.target.value;
+  const v = e.target.value;
   clearTimeout(_vaultSearchTimer);
   _vaultSearchTimer = setTimeout(() => {
+    const handled = tryHandleSerialQuery(v, {
+      rawItems: state.vault,
+      vlist: vList,
+      setStatus: (msg) => { $('#vault-status').textContent = msg; }
+    });
+    if (handled) return; // serial-mode: don't touch filter/render
+    state.vaultFilter = v;
     const _t0 = performance.now();
     renderVault();
     Profiler.record('search.vault', performance.now() - _t0);
@@ -5951,9 +6039,16 @@ $('#vault-bulk-toggle').addEventListener('click', () => {
 /* ─── Wire played controls ───────────────────────────────── */
 let _playedSearchTimer = 0;
 $('#played-search').addEventListener('input', e => {
-  state.playedFilter = e.target.value;
+  const v = e.target.value;
   clearTimeout(_playedSearchTimer);
   _playedSearchTimer = setTimeout(() => {
+    const handled = tryHandleSerialQuery(v, {
+      rawItems: state.played,
+      vlist: pList,
+      setStatus: (msg) => { $('#played-status').textContent = msg; }
+    });
+    if (handled) return;
+    state.playedFilter = v;
     const _t0 = performance.now();
     renderPlayed();
     Profiler.record('search.played', performance.now() - _t0);

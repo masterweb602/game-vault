@@ -2036,3 +2036,55 @@ describe('makeDebouncer (notes save timing)', () => {
     expect(fn).toHaveBeenCalledTimes(2);
   });
 });
+
+// ── Serial-number jump helper ────────────────────────────────────────────────
+// Verbatim copy of parseSerialQuery from game-vault.html. Pure — no DOM/state.
+
+function parseSerialQuery(query) {
+  if (typeof query !== 'string') return { isSerial: false };
+  const s = query.trim();
+  if (!/^\d+$/.test(s)) return { isSerial: false };
+  const num = parseInt(s, 10);
+  if (!Number.isFinite(num) || num <= 0) return { isSerial: false };
+  return { isSerial: true, num };
+}
+
+describe('parseSerialQuery', () => {
+  test('pure digits → serial mode', () => {
+    expect(parseSerialQuery('321')).toEqual({ isSerial: true, num: 321 });
+  });
+  test('leading zeros stripped', () => {
+    expect(parseSerialQuery('0321')).toEqual({ isSerial: true, num: 321 });
+    expect(parseSerialQuery('00001')).toEqual({ isSerial: true, num: 1 });
+  });
+  test('whitespace trimmed', () => {
+    expect(parseSerialQuery('  321  ')).toEqual({ isSerial: true, num: 321 });
+    expect(parseSerialQuery('\t42\n')).toEqual({ isSerial: true, num: 42 });
+  });
+  test('"0" rejected — serials start at 1', () => {
+    expect(parseSerialQuery('0')).toEqual({ isSerial: false });
+    expect(parseSerialQuery('000')).toEqual({ isSerial: false });
+  });
+  test('plain text → not serial', () => {
+    expect(parseSerialQuery('max')).toEqual({ isSerial: false });
+  });
+  test('text mixed with digits → not serial', () => {
+    expect(parseSerialQuery('max 321')).toEqual({ isSerial: false });
+    expect(parseSerialQuery('321 max')).toEqual({ isSerial: false });
+  });
+  test('empty / whitespace-only → not serial', () => {
+    expect(parseSerialQuery('')).toEqual({ isSerial: false });
+    expect(parseSerialQuery('   ')).toEqual({ isSerial: false });
+  });
+  test('decimals → not serial', () => {
+    expect(parseSerialQuery('321.5')).toEqual({ isSerial: false });
+  });
+  test('negative numbers → not serial', () => {
+    expect(parseSerialQuery('-321')).toEqual({ isSerial: false });
+  });
+  test('non-string input safe', () => {
+    expect(parseSerialQuery(null)).toEqual({ isSerial: false });
+    expect(parseSerialQuery(undefined)).toEqual({ isSerial: false });
+    expect(parseSerialQuery(321)).toEqual({ isSerial: false });
+  });
+});
