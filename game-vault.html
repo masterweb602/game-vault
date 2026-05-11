@@ -1337,6 +1337,42 @@ body {
   .app { max-width: 1400px; }
 }
 
+/* ─── Notes tab ──────────────────────────────────────────── */
+#notes-textarea {
+  min-height: 400px;
+  resize: vertical;
+  font-family: var(--body);
+  font-size: 14px;
+  line-height: 1.6;
+  display: block;
+}
+@media (min-width: 768px) {
+  #notes-textarea { min-height: 600px; }
+}
+.notes-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.notes-toolbar .notes-stats {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.notes-status {
+  color: var(--muted);
+  font-size: 11px;
+  font-family: var(--mono);
+  margin-top: 8px;
+  min-height: 14px;
+}
+.notes-status.warn { color: var(--accent); }
+.notes-status.error { color: var(--danger); }
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -1365,6 +1401,7 @@ body {
   <button class="tab" data-tab="bulk-add">Bulk Add</button>
   <button class="tab" data-tab="bulk-check">Bulk Check</button>
   <button class="tab" data-tab="years">Years</button>
+  <button class="tab" data-tab="notes">📝 Notes <span class="tab-count" id="tc-notes"></span></button>
   <button class="tab" data-tab="settings">Settings</button>
 </nav>
 
@@ -1697,6 +1734,22 @@ body {
 
   <div class="years-stats" id="years-stats"></div>
   <div id="years-sections"></div>
+</section>
+
+<!-- ──── NOTES VIEW ──────────────────────────────────────── -->
+<section class="view" id="view-notes">
+  <h2 class="section-title">notes</h2>
+  <p class="section-desc">যা ইচ্ছে লিখো এখানে — auto-save হবে।</p>
+
+  <div class="notes-toolbar">
+    <span class="notes-stats" id="notes-stats">0 words · 0 characters</span>
+    <button class="btn" id="notes-export">Export as .txt</button>
+    <button class="btn" id="notes-clear">Clear</button>
+  </div>
+
+  <textarea class="input" id="notes-textarea" placeholder="এখানে যা ইচ্ছে লিখো — auto-save হবে" spellcheck="false"></textarea>
+
+  <div class="notes-status" id="notes-status"></div>
 </section>
 
 <!-- ──── SETTINGS VIEW ───────────────────────────────────── -->
@@ -3447,12 +3500,20 @@ const state = {
   // Years tab — Phase 2C smart features
   unknownSelections: new Set(),  // item ids selected in Unknown section (session-only, persists across tab switches)
   recentYears: [],               // last 5 manually-set years, MRU first; persisted via Storage('recent-years')
-  bulkYearTarget: null            // transient id snapshot while bulk year-input modal is open
+  bulkYearTarget: null,           // transient id snapshot while bulk year-input modal is open
+  // Notes tab
+  notes: '',                     // current notes content
+  notesLastSaved: 0,             // ms timestamp of last successful save
+  notesSaveTimer: null           // debounce timer ref
 };
+
+// Notes: hard cap (refuse to save beyond this) and soft warn (status turns amber)
+const NOTES_HARD_LIMIT = 2 * 1024 * 1024;   // 2MB
+const NOTES_SOFT_LIMIT = 500 * 1024;        // 500KB
 
 function newId() { return 'g_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
-const RESERVED_DB_IDS = new Set(['vault', 'played', 'settings', 'bulk-add', 'bulk-check', 'years']);
+const RESERVED_DB_IDS = new Set(['vault', 'played', 'settings', 'bulk-add', 'bulk-check', 'years', 'notes']);
 const CUSTOM_DB_NAME_MAX = 40;
 
 function deriveCustomId(name) {
@@ -5542,6 +5603,7 @@ function switchTab(name) {
   if (name === 'vault') renderVault();
   if (name === 'played') renderPlayed();
   if (name === 'years') renderYears();
+  if (name === 'notes') refreshNotesStatus();
 }
 
 $$('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
@@ -6540,6 +6602,7 @@ async function exportHtml({ embedData }) {
       exportedAt: new Date().toISOString(),
       vault: state.vault.map(projectEmbed),
       played: state.played.map(projectEmbed),
+      notes: (typeof state.notes === 'string') ? state.notes : '',
     };
     const json = JSON.stringify(payload).replace(/<\/script>/gi, '<\\/script>');
 
@@ -6565,7 +6628,10 @@ async function exportHtml({ embedData }) {
 '    if (!existing) {\n' +
 '      chunkAndSeed("vault", EMBEDDED.vault);\n' +
 '      chunkAndSeed("played", EMBEDDED.played);\n' +
-'      console.log("[Game Vault] Embedded data seeded:", EMBEDDED.vault.length, "vault,", EMBEDDED.played.length, "played");\n' +
+'      if (typeof EMBEDDED.notes === "string" && EMBEDDED.notes.length) {\n' +
+'        try { localStorage.setItem("gv:user-notes", EMBEDDED.notes); } catch(e){}\n' +
+'      }\n' +
+'      console.log("[Game Vault] Embedded data seeded:", EMBEDDED.vault.length, "vault,", EMBEDDED.played.length, "played,", (EMBEDDED.notes ? EMBEDDED.notes.length : 0), "note chars");\n' +
 '    }\n' +
 '  } catch(e) { console.warn("seed failed:", e); }\n' +
 '})();\n';
@@ -7123,6 +7189,148 @@ $('#debug-copy-stats').addEventListener('click', async () => {
   }
 });
 
+/* ─── Notes tab ──────────────────────────────────────────── */
+function countNotesStats(text) {
+  const s = typeof text === 'string' ? text : '';
+  const chars = [...s].length;
+  const trimmed = s.trim();
+  const words = trimmed ? trimmed.split(/\s+/).length : 0;
+  return { words, chars };
+}
+
+function formatNotesBadge(text) {
+  const s = typeof text === 'string' ? text : '';
+  const chars = [...s].length;
+  if (chars === 0) return '';
+  if (chars >= 1000) {
+    const k = chars / 1000;
+    const rounded = k >= 10 ? Math.round(k) : Math.round(k * 10) / 10;
+    return '(' + rounded + 'k)';
+  }
+  return '(' + chars + ')';
+}
+
+function refreshNotesStats() {
+  const ta = $('#notes-textarea');
+  if (!ta) return;
+  const { words, chars } = countNotesStats(ta.value);
+  const statsEl = $('#notes-stats');
+  if (statsEl) statsEl.textContent = words + ' words · ' + chars + ' characters';
+  updateNotesBadge();
+}
+
+function updateNotesBadge() {
+  const badge = $('#tc-notes');
+  if (!badge) return;
+  badge.textContent = formatNotesBadge(state.notes);
+}
+
+function refreshNotesStatus(extra) {
+  const el = $('#notes-status');
+  if (!el) return;
+  el.classList.remove('warn', 'error');
+  if (extra && extra.kind === 'error') {
+    el.classList.add('error');
+    el.textContent = extra.msg;
+    return;
+  }
+  const bytes = new Blob([state.notes]).size;
+  let line = '';
+  if (state.notesLastSaved) {
+    const d = new Date(state.notesLastSaved);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    line = 'auto-saved [' + hh + ':' + mm + ':' + ss + ']';
+  } else if (state.notes) {
+    line = 'unsaved';
+  }
+  if (bytes >= NOTES_SOFT_LIMIT) {
+    el.classList.add('warn');
+    line = (line ? line + ' · ' : '') + Math.round(bytes / 1024) + 'KB — consider trimming';
+  }
+  el.textContent = line;
+}
+
+async function saveNotesNow() {
+  const bytes = new Blob([state.notes]).size;
+  if (bytes > NOTES_HARD_LIMIT) {
+    refreshNotesStatus({ kind: 'error', msg: '2MB limit reached — save blocked. Trim notes ও আবার try করো।' });
+    return;
+  }
+  try {
+    await Storage.set('user-notes', state.notes);
+    state.notesLastSaved = Date.now();
+    refreshNotesStatus();
+    updateNotesBadge();
+  } catch (e) {
+    refreshNotesStatus({ kind: 'error', msg: 'save failed: ' + (e && e.message ? e.message : e) });
+  }
+}
+
+function scheduleNotesSave() {
+  if (state.notesSaveTimer) clearTimeout(state.notesSaveTimer);
+  state.notesSaveTimer = setTimeout(() => {
+    state.notesSaveTimer = null;
+    saveNotesNow();
+  }, 600);
+}
+
+async function loadNotes() {
+  try {
+    const raw = await Storage.get('user-notes');
+    state.notes = (typeof raw === 'string') ? raw : '';
+  } catch (e) {
+    state.notes = '';
+  }
+  const ta = $('#notes-textarea');
+  if (ta) ta.value = state.notes;
+  // Last-saved timestamp is not persisted (only used as a "since this session" hint),
+  // so on first load show a neutral status.
+  state.notesLastSaved = 0;
+  refreshNotesStats();
+  refreshNotesStatus();
+}
+
+function exportNotesAsTxt() {
+  const date = new Date().toISOString().slice(0, 10);
+  const ok = downloadFile(state.notes || '', 'game-vault-notes-' + date + '.txt', 'text/plain;charset=utf-8');
+  toast(ok ? 'Notes exported' : 'Export failed', ok ? 'success' : 'error');
+}
+
+function clearNotes() {
+  modal({
+    title: 'Clear notes?',
+    body: 'সব notes মুছে যাবে। নিশ্চিত?',
+    confirmLabel: 'Clear',
+    confirmKind: 'btn-danger',
+    onConfirm: async () => {
+      state.notes = '';
+      const ta = $('#notes-textarea');
+      if (ta) ta.value = '';
+      try { await Storage.set('user-notes', ''); } catch (e) { /* best-effort */ }
+      state.notesLastSaved = Date.now();
+      refreshNotesStats();
+      refreshNotesStatus();
+      toast('Notes cleared', 'success');
+    }
+  });
+}
+
+// Wire up input + buttons. `init()` calls `loadNotes()` to populate state/UI.
+{
+  const ta = $('#notes-textarea');
+  if (ta) {
+    ta.addEventListener('input', () => {
+      state.notes = ta.value;
+      refreshNotesStats();
+      scheduleNotesSave();
+    });
+  }
+  $('#notes-clear')?.addEventListener('click', clearNotes);
+  $('#notes-export')?.addEventListener('click', exportNotesAsTxt);
+}
+
 async function init() {
   $('#storage-info').textContent = Storage.label;
   $('#vault-status').textContent = 'loading vault…';
@@ -7188,6 +7396,9 @@ async function init() {
   renderCustomTabs();
   renderCustomDbsSettings();
   refreshTargetDropdowns();
+
+  // Load user notes (separate Storage key, independent of vault/played).
+  try { await loadNotes(); } catch (e) { console.warn('loadNotes failed:', e); }
 
   // Load lists
   try {

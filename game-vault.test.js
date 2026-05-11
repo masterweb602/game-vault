@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
 
 // ── Verbatim copy from game-vault.html <script> ──────────────────────────────
 // game-vault.html is not a module and cannot be imported; functions are
@@ -1934,5 +1934,105 @@ describe('pushRecentYear', () => {
     pushRecentYear(a, 2020);
     expect(a).toEqual([2020, 2024, 2023, 2022, 2021]);
     expect(a).toHaveLength(5);
+  });
+});
+
+// ── Notes tab helpers ────────────────────────────────────────────────────────
+// Verbatim copies of countNotesStats / formatNotesBadge / makeDebouncer from
+// game-vault.html. Pure functions, no DOM, so they're safe to test in isolation.
+
+function countNotesStats(text) {
+  const s = typeof text === 'string' ? text : '';
+  const chars = [...s].length;
+  const trimmed = s.trim();
+  const words = trimmed ? trimmed.split(/\s+/).length : 0;
+  return { words, chars };
+}
+
+function formatNotesBadge(text) {
+  const s = typeof text === 'string' ? text : '';
+  const chars = [...s].length;
+  if (chars === 0) return '';
+  if (chars >= 1000) {
+    const k = chars / 1000;
+    const rounded = k >= 10 ? Math.round(k) : Math.round(k * 10) / 10;
+    return '(' + rounded + 'k)';
+  }
+  return '(' + chars + ')';
+}
+
+function makeDebouncer(fn, ms) {
+  let t = null;
+  return function () {
+    if (t) clearTimeout(t);
+    t = setTimeout(fn, ms);
+  };
+}
+
+describe('countNotesStats', () => {
+  test('empty string', () => {
+    expect(countNotesStats('')).toEqual({ words: 0, chars: 0 });
+  });
+  test('simple words', () => {
+    expect(countNotesStats('hello world')).toEqual({ words: 2, chars: 11 });
+  });
+  test('chars include whitespace, words collapse runs', () => {
+    expect(countNotesStats('  hello   world  ')).toEqual({ words: 2, chars: 17 });
+  });
+  test('emoji counted as one char (codepoint, not UTF-16 unit)', () => {
+    // 📝 is a surrogate pair in UTF-16; [...text].length collapses it to 1
+    expect(countNotesStats('📝 note')).toEqual({ words: 2, chars: 6 });
+  });
+  test('Bengali text counted', () => {
+    const r = countNotesStats('আমি লিখি');
+    expect(r.words).toBe(2);
+    expect(r.chars).toBeGreaterThan(0);
+  });
+  test('non-string input safe', () => {
+    expect(countNotesStats(null)).toEqual({ words: 0, chars: 0 });
+    expect(countNotesStats(undefined)).toEqual({ words: 0, chars: 0 });
+  });
+});
+
+describe('formatNotesBadge', () => {
+  test('empty → empty string', () => {
+    expect(formatNotesBadge('')).toBe('');
+  });
+  test('small content shows char count', () => {
+    expect(formatNotesBadge('hello')).toBe('(5)');
+    expect(formatNotesBadge('a'.repeat(50))).toBe('(50)');
+    expect(formatNotesBadge('a'.repeat(999))).toBe('(999)');
+  });
+  test('≥1000 chars use k suffix with one decimal', () => {
+    expect(formatNotesBadge('a'.repeat(1000))).toBe('(1k)');
+    expect(formatNotesBadge('a'.repeat(1234))).toBe('(1.2k)');
+    expect(formatNotesBadge('a'.repeat(1500))).toBe('(1.5k)');
+  });
+  test('≥10k drops the decimal', () => {
+    expect(formatNotesBadge('a'.repeat(10000))).toBe('(10k)');
+    expect(formatNotesBadge('a'.repeat(12345))).toBe('(12k)');
+  });
+});
+
+describe('makeDebouncer (notes save timing)', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  test('fires once after quiet period, even after many calls', () => {
+    const fn = vi.fn();
+    const debounced = makeDebouncer(fn, 600);
+    debounced(); debounced(); debounced();
+    vi.advanceTimersByTime(599);
+    expect(fn).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+  test('subsequent call after firing starts a new window', () => {
+    const fn = vi.fn();
+    const debounced = makeDebouncer(fn, 600);
+    debounced();
+    vi.advanceTimersByTime(600);
+    expect(fn).toHaveBeenCalledTimes(1);
+    debounced();
+    vi.advanceTimersByTime(600);
+    expect(fn).toHaveBeenCalledTimes(2);
   });
 });
