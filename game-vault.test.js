@@ -2088,3 +2088,204 @@ describe('parseSerialQuery', () => {
     expect(parseSerialQuery(321)).toEqual({ isSerial: false });
   });
 });
+
+// ── Mother tab aggregation + filter ──────────────────────────────────────────
+// Verbatim copies from game-vault.html. Pure functions over stateLike + rows.
+
+function aggregateMotherList(stateLike) {
+  const out = [];
+  const vault = (stateLike && stateLike.vault) || [];
+  for (const it of vault) {
+    out.push({ item: it, sourceKind: 'vault', sourceId: null, sourceLabel: 'Vault', sourceClass: 'src-vault' });
+  }
+  const order = (stateLike && stateLike.customListsOrder) || [];
+  const customs = (stateLike && stateLike.customLists) || {};
+  for (const id of order) {
+    const list = customs[id];
+    if (!list || !Array.isArray(list.items)) continue;
+    for (const it of list.items) {
+      out.push({ item: it, sourceKind: 'custom', sourceId: id, sourceLabel: list.name, sourceClass: 'src-custom' });
+    }
+  }
+  return out;
+}
+
+function filterMotherRows(rows, opts) {
+  opts = opts || {};
+  const search = (opts.search || '').trim().toLowerCase();
+  const sourceFilter = opts.sourceFilter || '';
+  const sort = opts.sort || 'recent';
+
+  let result = rows;
+  if (sourceFilter) {
+    result = result.filter(r =>
+      (sourceFilter === 'vault' && r.sourceKind === 'vault')
+      || (sourceFilter.startsWith('cl-') && r.sourceKind === 'custom' && ('cl-' + r.sourceId) === sourceFilter)
+    );
+  }
+  if (search) {
+    result = result.filter(r => (r.item.name || '').toLowerCase().indexOf(search) !== -1);
+  }
+  result = result.slice();
+  if (sort === 'az') result.sort((a, b) => a.item.name.localeCompare(b.item.name));
+  else if (sort === 'za') result.sort((a, b) => b.item.name.localeCompare(a.item.name));
+  else if (sort === 'recent') result.sort((a, b) => (b.item.dateAdded || 0) - (a.item.dateAdded || 0));
+  else if (sort === 'oldest') result.sort((a, b) => (a.item.dateAdded || 0) - (b.item.dateAdded || 0));
+  else if (sort === 'source') result.sort((a, b) => {
+    const s = a.sourceLabel.localeCompare(b.sourceLabel);
+    return s !== 0 ? s : a.item.name.localeCompare(b.item.name);
+  });
+  return result;
+}
+
+describe('aggregateMotherList', () => {
+  test('empty state → empty array', () => {
+    expect(aggregateMotherList({})).toEqual([]);
+    expect(aggregateMotherList({ vault: [], customListsOrder: [], customLists: {} })).toEqual([]);
+  });
+
+  test('vault-only state produces vault rows', () => {
+    const stateLike = {
+      vault: [
+        { id: 'a', name: 'Skyrim', dateAdded: 1 },
+        { id: 'b', name: 'Morrowind', dateAdded: 2 }
+      ],
+      customListsOrder: [],
+      customLists: {}
+    };
+    const rows = aggregateMotherList(stateLike);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ sourceKind: 'vault', sourceId: null, sourceLabel: 'Vault' });
+    expect(rows[0].item.name).toBe('Skyrim');
+    expect(rows[1].item.name).toBe('Morrowind');
+  });
+
+  test('played is excluded even when populated', () => {
+    const stateLike = {
+      vault: [{ id: 'a', name: 'Skyrim' }],
+      played: [{ id: 'p1', name: 'Witcher 3' }],   // should NOT appear
+      customListsOrder: [],
+      customLists: {}
+    };
+    const rows = aggregateMotherList(stateLike);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].item.name).toBe('Skyrim');
+  });
+
+  test('custom DBs appear in customListsOrder order, after vault', () => {
+    const stateLike = {
+      vault: [{ id: 'v1', name: 'Vault Game' }],
+      customListsOrder: ['b', 'a'],   // intentionally not alphabetical
+      customLists: {
+        a: { id: 'a', name: 'Alpha', items: [{ id: 'a1', name: 'Alpha Game' }] },
+        b: { id: 'b', name: 'Beta',  items: [{ id: 'b1', name: 'Beta Game' }] }
+      }
+    };
+    const rows = aggregateMotherList(stateLike);
+    expect(rows.map(r => r.item.name)).toEqual(['Vault Game', 'Beta Game', 'Alpha Game']);
+    expect(rows.map(r => r.sourceKind)).toEqual(['vault', 'custom', 'custom']);
+    expect(rows.map(r => r.sourceId)).toEqual([null, 'b', 'a']);
+    expect(rows.map(r => r.sourceLabel)).toEqual(['Vault', 'Beta', 'Alpha']);
+  });
+
+  test('same game in vault and custom → two distinct rows (no dedup)', () => {
+    const game = { id: 'g1', name: 'Skyrim' };
+    const stateLike = {
+      vault: [game],
+      customListsOrder: ['favs'],
+      customLists: {
+        favs: { id: 'favs', name: 'Favs', items: [game] }
+      }
+    };
+    const rows = aggregateMotherList(stateLike);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].sourceKind).toBe('vault');
+    expect(rows[1].sourceKind).toBe('custom');
+    expect(rows[1].sourceLabel).toBe('Favs');
+  });
+
+  test('empty custom DB contributes nothing', () => {
+    const stateLike = {
+      vault: [],
+      customListsOrder: ['empty', 'has-one'],
+      customLists: {
+        'empty':   { id: 'empty', name: 'Empty', items: [] },
+        'has-one': { id: 'has-one', name: 'HasOne', items: [{ id: 'x', name: 'X' }] }
+      }
+    };
+    const rows = aggregateMotherList(stateLike);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].sourceLabel).toBe('HasOne');
+  });
+});
+
+describe('filterMotherRows', () => {
+  // Helper to build a minimal row
+  const r = (name, sourceKind, sourceId, dateAdded) => ({
+    item: { id: name.toLowerCase(), name, dateAdded: dateAdded || 0 },
+    sourceKind,
+    sourceId,
+    sourceLabel: sourceKind === 'vault' ? 'Vault' : sourceId,
+    sourceClass: sourceKind === 'vault' ? 'src-vault' : 'src-custom'
+  });
+
+  const rows = [
+    r('Skyrim',    'vault',  null,  100),
+    r('Witcher',   'vault',  null,  200),
+    r('Morrowind', 'custom', 'fav', 50),
+    r('Skyrim',    'custom', 'fav', 75)   // dup name, different source
+  ];
+
+  test('no filters → returns sorted copy (recent default)', () => {
+    const out = filterMotherRows(rows, {});
+    expect(out.map(r => r.item.name)).toEqual(['Witcher', 'Skyrim', 'Skyrim', 'Morrowind']);
+    expect(out).not.toBe(rows); // must not mutate input
+  });
+
+  test('search filters by substring on item.name (case-insensitive)', () => {
+    const out = filterMotherRows(rows, { search: 'sky', sort: 'az' });
+    expect(out).toHaveLength(2);
+    expect(out.every(r => r.item.name === 'Skyrim')).toBe(true);
+  });
+
+  test('sourceFilter "vault" keeps only vault rows', () => {
+    const out = filterMotherRows(rows, { sourceFilter: 'vault' });
+    expect(out).toHaveLength(2);
+    expect(out.every(r => r.sourceKind === 'vault')).toBe(true);
+  });
+
+  test('sourceFilter "cl-<id>" keeps only that custom DB', () => {
+    const out = filterMotherRows(rows, { sourceFilter: 'cl-fav' });
+    expect(out).toHaveLength(2);
+    expect(out.every(r => r.sourceKind === 'custom' && r.sourceId === 'fav')).toBe(true);
+  });
+
+  test('sort az/za order by item.name', () => {
+    const az = filterMotherRows(rows, { sort: 'az' }).map(r => r.item.name);
+    expect(az).toEqual(['Morrowind', 'Skyrim', 'Skyrim', 'Witcher']);
+    const za = filterMotherRows(rows, { sort: 'za' }).map(r => r.item.name);
+    expect(za).toEqual(['Witcher', 'Skyrim', 'Skyrim', 'Morrowind']);
+  });
+
+  test('sort recent/oldest order by dateAdded', () => {
+    const recent = filterMotherRows(rows, { sort: 'recent' }).map(r => r.item.dateAdded);
+    expect(recent).toEqual([200, 100, 75, 50]);
+    const oldest = filterMotherRows(rows, { sort: 'oldest' }).map(r => r.item.dateAdded);
+    expect(oldest).toEqual([50, 75, 100, 200]);
+  });
+
+  test('sort source groups by sourceLabel then name', () => {
+    const out = filterMotherRows(rows, { sort: 'source' });
+    // 'Vault' rows (V) come after 'fav' rows alphabetically
+    expect(out.map(r => r.sourceLabel + ':' + r.item.name)).toEqual([
+      'fav:Morrowind', 'fav:Skyrim', 'Vault:Skyrim', 'Vault:Witcher'
+    ]);
+  });
+
+  test('search + sourceFilter compose', () => {
+    const out = filterMotherRows(rows, { search: 'sky', sourceFilter: 'cl-fav' });
+    expect(out).toHaveLength(1);
+    expect(out[0].sourceId).toBe('fav');
+    expect(out[0].item.name).toBe('Skyrim');
+  });
+});

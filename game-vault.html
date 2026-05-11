@@ -1405,6 +1405,7 @@ body {
 <nav class="tabs">
   <button class="tab active" data-tab="vault">Vault <span class="tab-count" id="tc-vault">(0)</span></button>
   <button class="tab" data-tab="played">Played <span class="tab-count" id="tc-played">(0)</span></button>
+  <button class="tab" data-tab="mother">Mother <span class="tab-count" id="tc-mother">(0)</span></button>
   <button class="tab" data-tab="bulk-add">Bulk Add</button>
   <button class="tab" data-tab="bulk-check">Bulk Check</button>
   <button class="tab" data-tab="years">Years</button>
@@ -1521,6 +1522,43 @@ body {
     </div>
     <div class="list-scroll" id="played-list-scroll">
       <div class="virtual-spacer" id="played-spacer"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ──── MOTHER VIEW (aggregated read-only across vault + customs) ── -->
+<section class="view" id="view-mother">
+  <h2 class="section-title">mother database</h2>
+  <p class="section-desc">সব database একসাথে — Played বাদে। প্রতিটা item-এ source দেখাবে।</p>
+
+  <div class="toolbar">
+    <div class="toolbar-row">
+      <div class="input-group">
+        <span class="input-icon">⌕</span>
+        <input class="input" id="mother-search" placeholder="search mother (fuzzy) — digits jump to serial..." autocomplete="off">
+      </div>
+      <select class="select" id="mother-sort">
+        <option value="recent">Recent first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="az">A → Z</option>
+        <option value="za">Z → A</option>
+        <option value="source">Source group</option>
+      </select>
+      <select class="select" id="mother-source-filter" title="Filter by source">
+        <option value="">All sources</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="status-bar" id="mother-status">ready</div>
+
+  <div class="list-wrap">
+    <div class="list-head">
+      <span id="mother-list-info">items</span>
+      <span class="filter-info" id="mother-filter-info"></span>
+    </div>
+    <div class="list-scroll" id="mother-list-scroll">
+      <div class="virtual-spacer" id="mother-spacer"></div>
     </div>
   </div>
 </section>
@@ -3511,7 +3549,13 @@ const state = {
   // Notes tab
   notes: '',                     // current notes content
   notesLastSaved: 0,             // ms timestamp of last successful save
-  notesSaveTimer: null           // debounce timer ref
+  notesSaveTimer: null,          // debounce timer ref
+  // Mother tab — aggregated view across vault + custom DBs (excludes played)
+  motherCache: null,             // { rows, wrappedItems, index } | null
+  motherDirty: true,
+  motherSearch: '',
+  motherSort: 'recent',
+  motherSourceFilter: ''         // '' = all, 'vault', or 'cl-<id>'
 };
 
 // Notes: hard cap (refuse to save beyond this) and soft warn (status turns amber)
@@ -3520,7 +3564,7 @@ const NOTES_SOFT_LIMIT = 500 * 1024;        // 500KB
 
 function newId() { return 'g_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
-const RESERVED_DB_IDS = new Set(['vault', 'played', 'settings', 'bulk-add', 'bulk-check', 'years', 'notes']);
+const RESERVED_DB_IDS = new Set(['vault', 'played', 'settings', 'bulk-add', 'bulk-check', 'years', 'notes', 'mother']);
 const CUSTOM_DB_NAME_MAX = 40;
 
 function deriveCustomId(name) {
@@ -3550,6 +3594,8 @@ function validateCustomDbName(name, existingIds) {
 /* ─── Persistence with debounce ───────────────────────────── */
 function scheduleSave(name) {
   state.yearsDirty = true;
+  // Mother excludes played — only vault mutations dirty the mother cache.
+  if (name !== 'played') state.motherDirty = true;
   clearTimeout(state.saveTimers[name]);
   state.saveTimers[name] = setTimeout(async () => {
     const items = state[name];
@@ -3993,6 +4039,7 @@ function updateCustomTabCount(id) {
 
 function scheduleCustomSave(id) {
   state.yearsDirty = true;
+  state.motherDirty = true;
   const key = 'cl-' + id;
   clearTimeout(state.saveTimers[key]);
   state.saveTimers[key] = setTimeout(async () => {
@@ -5624,6 +5671,283 @@ function buildYearSection(label, key, rows, isOpen) {
   return det;
 }
 
+/* ─── Mother tab — aggregated read-only view ──────────────
+   Pure aggregateMotherList walks vault + every custom DB in
+   customListsOrder, skipping played. filterMotherRows is the pure
+   filter/sort path used when no fuzzy query is active. When a query
+   is present, renderMotherView delegates to a cached SearchIndex
+   built over wrapped rows. */
+function aggregateMotherList(stateLike) {
+  const out = [];
+  const vault = (stateLike && stateLike.vault) || [];
+  for (const it of vault) {
+    out.push({ item: it, sourceKind: 'vault', sourceId: null, sourceLabel: 'Vault', sourceClass: 'src-vault' });
+  }
+  const order = (stateLike && stateLike.customListsOrder) || [];
+  const customs = (stateLike && stateLike.customLists) || {};
+  for (const id of order) {
+    const list = customs[id];
+    if (!list || !Array.isArray(list.items)) continue;
+    for (const it of list.items) {
+      out.push({ item: it, sourceKind: 'custom', sourceId: id, sourceLabel: list.name, sourceClass: 'src-custom' });
+    }
+  }
+  return out;
+}
+
+function filterMotherRows(rows, opts) {
+  opts = opts || {};
+  const search = (opts.search || '').trim().toLowerCase();
+  const sourceFilter = opts.sourceFilter || '';
+  const sort = opts.sort || 'recent';
+
+  let result = rows;
+  if (sourceFilter) {
+    result = result.filter(r =>
+      (sourceFilter === 'vault' && r.sourceKind === 'vault')
+      || (sourceFilter.startsWith('cl-') && r.sourceKind === 'custom' && ('cl-' + r.sourceId) === sourceFilter)
+    );
+  }
+  if (search) {
+    result = result.filter(r => (r.item.name || '').toLowerCase().indexOf(search) !== -1);
+  }
+  // Always materialize a new array before sort so we never mutate inputs.
+  result = result.slice();
+  if (sort === 'az') result.sort((a, b) => a.item.name.localeCompare(b.item.name));
+  else if (sort === 'za') result.sort((a, b) => b.item.name.localeCompare(a.item.name));
+  else if (sort === 'recent') result.sort((a, b) => (b.item.dateAdded || 0) - (a.item.dateAdded || 0));
+  else if (sort === 'oldest') result.sort((a, b) => (a.item.dateAdded || 0) - (b.item.dateAdded || 0));
+  else if (sort === 'source') result.sort((a, b) => {
+    const s = a.sourceLabel.localeCompare(b.sourceLabel);
+    return s !== 0 ? s : a.item.name.localeCompare(b.item.name);
+  });
+  return result;
+}
+
+function getMotherCache() {
+  if (state.motherDirty || !state.motherCache) {
+    const rows = aggregateMotherList(state);
+    // Wrap rows for SearchIndex: needs unique .id and .name. Synthetic id keeps
+    // wrappers unique even when the same game appears in vault + a custom DB.
+    const wrappedItems = rows.map((r, i) => ({ id: 'mother-' + i, name: r.item.name, _row: r }));
+    const index = new SearchIndex();
+    index.rebuild(wrappedItems);
+    state.motherCache = { rows, wrappedItems, index };
+    state.motherDirty = false;
+  }
+  return state.motherCache;
+}
+
+function refreshMotherSourceOptions() {
+  const sel = $('#mother-source-filter');
+  if (!sel) return;
+  const prev = state.motherSourceFilter || '';
+  sel.innerHTML = '';
+  const optAll = document.createElement('option');
+  optAll.value = '';
+  optAll.textContent = 'All sources';
+  sel.appendChild(optAll);
+  const optVault = document.createElement('option');
+  optVault.value = 'vault';
+  optVault.textContent = 'Vault';
+  sel.appendChild(optVault);
+  for (const id of state.customListsOrder) {
+    const list = state.customLists[id];
+    if (!list) continue;
+    const o = document.createElement('option');
+    o.value = 'cl-' + id;
+    o.textContent = list.name;
+    sel.appendChild(o);
+  }
+  // Restore selection if it still exists; otherwise fall back to ''.
+  const hasPrev = Array.from(sel.options).some(o => o.value === prev);
+  sel.value = hasPrev ? prev : '';
+  if (!hasPrev) state.motherSourceFilter = '';
+}
+
+function makeMotherRow(row, idx) {
+  const div = el('div', { class: 'row' });
+  // Mother has its own sequential serial — passed in idx is the displayed
+  // index, but we want the serial to be the position in the unfiltered
+  // mother list. That's set by the caller via row._motherSerial.
+  const serialNum = (typeof row._motherSerial === 'number') ? (row._motherSerial + 1) : (idx + 1);
+  div.appendChild(el('span', { class: 'serial' }, '#' + String(serialNum).padStart(4, '0')));
+
+  const name = el('span', { class: 'name' });
+  const query = state.motherSearch || '';
+  name.innerHTML = highlight(escapeHtml(row.item.name), query);
+  div.appendChild(name);
+
+  const yr = resolveItemYear(row.item);
+  if (yr !== null) div.appendChild(el('span', { class: 'row-year' }, '[' + yr + ']'));
+
+  if (Array.isArray(row.item.tags) && row.item.tags.length > 0) {
+    const tagWrap = el('span', { class: 'row-tags' });
+    const visible = row.item.tags.slice(0, 3);
+    for (const t of visible) {
+      tagWrap.appendChild(el('span', { class: 'tag-chip tag-chip-row' }, tagDisplay(t)));
+    }
+    if (row.item.tags.length > 3) {
+      tagWrap.appendChild(el('span', { class: 'tag-chip tag-chip-more' }, '+' + (row.item.tags.length - 3)));
+    }
+    div.appendChild(tagWrap);
+  }
+
+  const badge = el('span', { class: 'src-badge ' + row.sourceClass }, row.sourceLabel);
+  div.appendChild(badge);
+
+  const actions = el('div', { class: 'actions' });
+  actions.appendChild(el('button', {
+    class: 'btn btn-ghost btn-sm', title: 'Edit (routes to source)',
+    onClick: (e) => {
+      e.stopPropagation();
+      if (row.sourceKind === 'vault') editItem(row.item, 'vault');
+      else if (row.sourceKind === 'custom') editCustomItem(row.item, row.sourceId);
+    }
+  }, '✎'));
+  actions.appendChild(el('button', {
+    class: 'btn btn-ghost btn-sm', title: 'Jump to source tab',
+    onClick: (e) => {
+      e.stopPropagation();
+      jumpToMotherSource(row);
+    }
+  }, '🔍'));
+  div.appendChild(actions);
+
+  return div;
+}
+
+// Switch to the source tab and serial-jump to the item's row within that tab.
+function jumpToMotherSource(row) {
+  if (row.sourceKind === 'vault') {
+    const idx = state.vault.findIndex(it => it.id === row.item.id);
+    if (idx === -1) { switchTab('vault'); return; }
+    switchTab('vault');
+    const serial = String(idx + 1);
+    const input = $('#vault-search');
+    if (input) {
+      input.value = serial;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  } else if (row.sourceKind === 'custom') {
+    const list = state.customLists[row.sourceId];
+    if (!list) return;
+    const idx = list.items.findIndex(it => it.id === row.item.id);
+    switchTab('cl-' + row.sourceId);
+    if (idx === -1) return;
+    const serial = String(idx + 1);
+    const input = $('#custom-search');
+    if (input) {
+      input.value = serial;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+}
+
+const motherVList = new VList($('#mother-list-scroll'), $('#mother-spacer'));
+motherVList.renderRow = (row, i) => makeMotherRow(row, i);
+
+function renderMotherView() {
+  const cache = getMotherCache();
+  refreshMotherSourceOptions();
+
+  // Attach the mother-wide serial (pre-filter position) so the row renderer
+  // can show stable #NNNN even after filter/sort.
+  for (let i = 0; i < cache.rows.length; i++) cache.rows[i]._motherSerial = i;
+
+  const search = (state.motherSearch || '').trim();
+  let rows;
+  if (search) {
+    const ranked = cache.index.search(search, { limit: 5000 });
+    // Map wrapped items back to rows via the _row back-reference.
+    rows = ranked.map(r => r.item._row);
+    // Apply source filter on ranked rows (preserves relevance order).
+    if (state.motherSourceFilter) {
+      const sf = state.motherSourceFilter;
+      rows = rows.filter(r =>
+        (sf === 'vault' && r.sourceKind === 'vault')
+        || (sf.startsWith('cl-') && r.sourceKind === 'custom' && ('cl-' + r.sourceId) === sf)
+      );
+    }
+    if (state.motherSort === 'az') rows = rows.slice().sort((a, b) => a.item.name.localeCompare(b.item.name));
+    else if (state.motherSort === 'za') rows = rows.slice().sort((a, b) => b.item.name.localeCompare(a.item.name));
+    else if (state.motherSort === 'oldest') rows = rows.slice().sort((a, b) => (a.item.dateAdded || 0) - (b.item.dateAdded || 0));
+    else if (state.motherSort === 'source') rows = rows.slice().sort((a, b) => {
+      const s = a.sourceLabel.localeCompare(b.sourceLabel);
+      return s !== 0 ? s : a.item.name.localeCompare(b.item.name);
+    });
+    // 'recent' with active search: preserve relevance order
+  } else {
+    rows = filterMotherRows(cache.rows, {
+      search: '',
+      sourceFilter: state.motherSourceFilter,
+      sort: state.motherSort
+    });
+  }
+
+  motherVList.setItems(rows);
+
+  // Stats and toolbar sync
+  $('#mother-list-info').textContent = rows.length + ' / ' + cache.rows.length + ' items';
+  const bits = [];
+  if (search) bits.push('search: "' + search + '"');
+  if (state.motherSourceFilter) {
+    const lbl = state.motherSourceFilter === 'vault'
+      ? 'Vault'
+      : (state.customLists[state.motherSourceFilter.slice(3)]?.name || state.motherSourceFilter);
+    bits.push('source: ' + lbl);
+  }
+  $('#mother-filter-info').textContent = bits.join(' · ');
+  $('#mother-status').textContent = 'ready · ' + cache.rows.length + ' aggregated items · storage: ' + Storage.label;
+
+  const badge = $('#tc-mother');
+  if (badge) badge.textContent = '(' + cache.rows.length + ')';
+
+  // Sync inputs (in case state changed externally — e.g. source removed)
+  const searchEl = $('#mother-search');
+  if (searchEl && searchEl.value !== state.motherSearch) searchEl.value = state.motherSearch;
+  const sortEl = $('#mother-sort');
+  if (sortEl) sortEl.value = state.motherSort;
+  const srcEl = $('#mother-source-filter');
+  if (srcEl) srcEl.value = state.motherSourceFilter || '';
+}
+
+// Wire toolbar
+let _motherSearchTimer = 0;
+$('#mother-search')?.addEventListener('input', e => {
+  const v = e.target.value;
+  clearTimeout(_motherSearchTimer);
+  const n = state.motherCache ? state.motherCache.rows.length : 0;
+  const delay = n < 1000 ? 60 : n < 10000 ? 100 : n < 50000 ? 150 : 220;
+  _motherSearchTimer = setTimeout(() => {
+    const cache = getMotherCache();
+    const handled = tryHandleSerialQuery(v, {
+      rawItems: cache.rows.map(r => r.item),
+      vlist: motherVList,
+      // Mother's vlist holds rows, not items — match via row.item.id.
+      finder: (displayedRow) => {
+        const rawIdx = parseSerialQuery(v).num - 1;
+        const target = cache.rows[rawIdx];
+        return target && displayedRow.item && displayedRow.item.id === target.item.id
+          && displayedRow.sourceKind === target.sourceKind
+          && displayedRow.sourceId === target.sourceId;
+      },
+      setStatus: (msg) => { $('#mother-status').textContent = msg; }
+    });
+    if (handled) return;
+    state.motherSearch = v;
+    renderMotherView();
+  }, delay);
+});
+$('#mother-sort')?.addEventListener('change', e => {
+  state.motherSort = e.target.value;
+  renderMotherView();
+});
+$('#mother-source-filter')?.addEventListener('change', e => {
+  state.motherSourceFilter = e.target.value;
+  renderMotherView();
+});
+
 /* ─── Tab switching ──────────────────────────────────────── */
 function switchTab(name) {
   state.currentTab = name;
@@ -5643,6 +5967,7 @@ function switchTab(name) {
   if (name === 'played') renderPlayed();
   if (name === 'years') renderYears();
   if (name === 'notes') refreshNotesStatus();
+  if (name === 'mother') renderMotherView();
 }
 
 $$('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
@@ -5670,6 +5995,8 @@ function renderCustomTabs() {
     btn.addEventListener('click', () => switchTab('cl-' + id));
     nav.insertBefore(btn, anchor);
   }
+  // Keep mother's source-filter dropdown in sync with the current DB list.
+  if (typeof refreshMotherSourceOptions === 'function') refreshMotherSourceOptions();
 }
 
 function renderCustomDbsSettings() {
@@ -5771,6 +6098,7 @@ async function createCustomDb() {
     createdAt: entry.createdAt
   };
   state.customListsOrder.push(entry.id);
+  state.motherDirty = true;
   // Persist registry. Items list starts empty — no chunk write needed.
   const registry = state.customListsOrder.map(id => {
     const l = state.customLists[id];
@@ -5866,6 +6194,8 @@ async function deleteCustomDb(id) {
   const idx = state.customListsOrder.indexOf(id);
   if (idx !== -1) state.customListsOrder.splice(idx, 1);
   state.yearsDirty = true;
+  state.motherDirty = true;
+  if (state.motherSourceFilter === 'cl-' + id) state.motherSourceFilter = '';
   try { await persistCustomListsRegistry(); } catch (e) {
     toast('Registry save failed: ' + e.message, 'error');
   }
@@ -5889,6 +6219,7 @@ async function moveCustomDb(id, dir) {
     toast('Save failed: ' + e.message, 'error');
     return;
   }
+  state.motherDirty = true;
   renderCustomTabs();
   renderCustomDbsSettings();
 }
@@ -5989,7 +6320,10 @@ function tryHandleSerialQuery(query, ctx) {
     return true;
   }
   const displayed = ctx.vlist.items;
-  const dispIdx = displayed.findIndex(it => it.id === item.id);
+  // Optional finder lets callers whose vlist holds wrapper rows (e.g. mother)
+  // map a raw item back to its display index. Defaults to id-match.
+  const finder = ctx.finder || ((displayedItem) => displayedItem.id === item.id);
+  const dispIdx = displayed.findIndex(finder);
   if (dispIdx === -1) {
     ctx.setStatus('Serial ' + fmtSerial(r.num) + ' exists but hidden by filter');
     return true;
