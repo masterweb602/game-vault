@@ -3046,6 +3046,23 @@ function extractYearFromName(name) {
   return last === null ? null : parseInt(last, 10);
 }
 
+// Pure helper: strip year + trailing playtime from a name for DISPLAY.
+// Returns everything before the rightmost detected year, trimmed. Falls
+// back to the original (trimmed) when the slice would be empty, so rows
+// named purely with a leading year (e.g. "2024", "2007: Murder...") are
+// never blanked. item.name in state is never mutated — this output is
+// only used for visible row text.
+function stripDisplayMetadata(name) {
+  if (typeof name !== 'string' || !name) return '';
+  YEAR_DETECT_RX.lastIndex = 0;
+  let idx = -1, m;
+  while ((m = YEAR_DETECT_RX.exec(name)) !== null) idx = m.index;
+  YEAR_DETECT_RX.lastIndex = 0;
+  if (idx === -1) return name.trim();
+  const head = name.slice(0, idx).trim();
+  return head === '' ? name.trim() : head;
+}
+
 // Pure helper: extract playtime metadata that follows the rightmost
 // detected year. Returns { hours, minutes } or null. Rules:
 //   "Halo 2024 5h"        → { hours: 5, minutes: 0 }
@@ -3949,7 +3966,7 @@ function makeRow(item, idx, source) {
 
   const name = el('span', { class: 'name' });
   const query = source === 'vault' ? state.vaultFilter : state.playedFilter;
-  name.innerHTML = highlight(escapeHtml(item.name), query);
+  name.innerHTML = highlight(escapeHtml(stripDisplayMetadata(item.name)), query);
   row.appendChild(name);
 
   const yr = resolveItemYear(item);
@@ -4183,7 +4200,7 @@ function makeCustomRow(item, idx, id) {
 
   const name = el('span', { class: 'name' });
   const query = state.customSearches[id] || '';
-  name.innerHTML = highlight(escapeHtml(item.name), query);
+  name.innerHTML = highlight(escapeHtml(stripDisplayMetadata(item.name)), query);
   row.appendChild(name);
 
   const yr = resolveItemYear(item);
@@ -5569,33 +5586,16 @@ function makeYearRow(row, serial, isUnknown) {
   div.appendChild(s);
   const name = document.createElement('span');
   name.className = 'game-name';
-  // Highlight the year token inline (mono em) when the manual year happens to
-  // appear in the name; for manual-only or pure-regex matches, append a trailing
-  // year tag so the resolved year is always visible.
+  // Display name has year + trailing playtime stripped; resolved year is
+  // re-appended as a year-tag em so it stays visible (and styled mono).
   const resolved = resolveItemYear(row.item);
-  YEAR_DETECT_RX.lastIndex = 0;
-  let inline = null, m;
-  while ((m = YEAR_DETECT_RX.exec(row.item.name)) !== null) {
-    if (resolved !== null && parseInt(m[1], 10) === resolved) {
-      inline = { idx: m.index, len: m[0].length, txt: m[0] };
-    }
-  }
-  if (inline) {
-    name.appendChild(document.createTextNode(row.item.name.slice(0, inline.idx)));
+  name.textContent = stripDisplayMetadata(row.item.name);
+  if (resolved !== null) {
     const em = document.createElement('em');
     em.className = 'year-tag';
-    em.textContent = inline.txt;
+    em.textContent = String(resolved);
+    name.appendChild(document.createTextNode(' '));
     name.appendChild(em);
-    name.appendChild(document.createTextNode(row.item.name.slice(inline.idx + inline.len)));
-  } else {
-    name.textContent = row.item.name;
-    if (resolved !== null) {
-      const em = document.createElement('em');
-      em.className = 'year-tag';
-      em.textContent = String(resolved);
-      name.appendChild(document.createTextNode(' '));
-      name.appendChild(em);
-    }
   }
   div.appendChild(name);
   const ptTxt = formatGamePlaytime(extractPlaytimeFromName(row.item.name));
@@ -6031,7 +6031,7 @@ function makeMotherRow(row, idx) {
 
   const name = el('span', { class: 'name' });
   const query = state.motherSearch || '';
-  name.innerHTML = highlight(escapeHtml(row.item.name), query);
+  name.innerHTML = highlight(escapeHtml(stripDisplayMetadata(row.item.name)), query);
   div.appendChild(name);
 
   const yr = resolveItemYear(row.item);

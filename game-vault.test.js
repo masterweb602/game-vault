@@ -2620,3 +2620,56 @@ describe('getPlaytimeForSort', () => {
     ]);
   });
 });
+
+// ── stripDisplayMetadata — verbatim copy from game-vault.html ──
+function stripDisplayMetadata(name) {
+  if (typeof name !== 'string' || !name) return '';
+  YEAR_DETECT_RX.lastIndex = 0;
+  let idx = -1, m;
+  while ((m = YEAR_DETECT_RX.exec(name)) !== null) idx = m.index;
+  YEAR_DETECT_RX.lastIndex = 0;
+  if (idx === -1) return name.trim();
+  const head = name.slice(0, idx).trim();
+  return head === '' ? name.trim() : head;
+}
+
+describe('stripDisplayMetadata', () => {
+  test('strips year + trailing playtime (minutes)', () => {
+    expect(stripDisplayMetadata('Better Than Dead 2026 57 min')).toBe('Better Than Dead');
+  });
+  test('strips year + trailing playtime (hours)', () => {
+    expect(stripDisplayMetadata('Halo Infinite 2024 5h')).toBe('Halo Infinite');
+  });
+  test('number in title is preserved when year is at end', () => {
+    expect(stripDisplayMetadata('Halo 3 2024')).toBe('Halo 3');
+  });
+  test('rightmost year wins — leading year-like number stays', () => {
+    expect(stripDisplayMetadata('1979 Revolution 2016')).toBe('1979 Revolution');
+  });
+  test('no year — identity (with trim)', () => {
+    expect(stripDisplayMetadata('Halo 3')).toBe('Halo 3');
+    expect(stripDisplayMetadata('Halo Infinite')).toBe('Halo Infinite');
+  });
+  test('empty / null / undefined returns empty string', () => {
+    expect(stripDisplayMetadata('')).toBe('');
+    expect(stripDisplayMetadata(null)).toBe('');
+    expect(stripDisplayMetadata(undefined)).toBe('');
+  });
+  test('non-string input returns empty string', () => {
+    expect(stripDisplayMetadata(2024)).toBe('');
+    expect(stripDisplayMetadata({})).toBe('');
+  });
+  test('pure year name — empty-fallback returns trimmed original', () => {
+    expect(stripDisplayMetadata('2024')).toBe('2024');
+  });
+  test('leading-year title — empty-fallback returns trimmed original', () => {
+    expect(stripDisplayMetadata('2007: Murder Was the Case')).toBe('2007: Murder Was the Case');
+  });
+  test('whitespace around name is trimmed', () => {
+    expect(stripDisplayMetadata('  Halo Infinite 2024 5h  ')).toBe('Halo Infinite');
+    expect(stripDisplayMetadata('   Halo 3   ')).toBe('Halo 3');
+  });
+  test('multiple years — slice anchors on rightmost', () => {
+    expect(stripDisplayMetadata('FIFA 1999 2000 2001 5h')).toBe('FIFA 1999 2000');
+  });
+});
