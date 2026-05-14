@@ -3115,22 +3115,28 @@ function formatTotalHours(hours) {
   return txt + ' ' + label;
 }
 
-// Format a per-game playtime object for badge display.
+// Format a per-game playtime object for badge display. Full-word
+// suffix with singular/plural agreement, mirrors formatTotalHours style.
 //   null               → ""
-//   {hours:5, m:0}     → "5h"
-//   {hours:5.5, m:0}   → "5.5h"
-//   {hours:0, m:45}    → "45min"
-//   {hours:2, m:30}    → "2.5h"  (combined when both present)
+//   {hours:5, m:0}     → "5 hours"
+//   {hours:1, m:0}     → "1 hour"
+//   {hours:5.5, m:0}   → "5.5 hours"
+//   {hours:0, m:45}    → "45 minutes"
+//   {hours:0, m:1}     → "1 minute"
+//   {hours:2, m:30}    → "2.5 hours"  (combined when both present)
+//   {hours:0, m:60}    → "1 hour"     (combined rounds to exactly 1)
 function formatGamePlaytime(playtime) {
   if (!playtime) return '';
   const h = Number(playtime.hours) || 0;
   const mn = Number(playtime.minutes) || 0;
   if (h === 0 && mn === 0) return '';
-  if (mn === 0) return h + 'h';
-  if (h === 0) return mn + 'min';
-  const combined = h + mn / 60;
+  // Pure minutes display as-is only when under an hour; 60+ minutes
+  // promotes into the combined branch so "60 min" reads as "1 hour".
+  if (h === 0 && mn < 60) return mn + (mn === 1 ? ' minute' : ' minutes');
+  if (mn === 0) return h + (h === 1 ? ' hour' : ' hours');
   // Round to 2 decimals, drop trailing zeros via parseFloat round-trip.
-  return parseFloat(combined.toFixed(2)) + 'h';
+  const combined = parseFloat((h + mn / 60).toFixed(2));
+  return combined + (combined === 1 ? ' hour' : ' hours');
 }
 
 // Total playtime as fractional hours, suitable for sort comparators.

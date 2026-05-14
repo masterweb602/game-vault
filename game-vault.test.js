@@ -2349,10 +2349,10 @@ function formatGamePlaytime(playtime) {
   const h = Number(playtime.hours) || 0;
   const mn = Number(playtime.minutes) || 0;
   if (h === 0 && mn === 0) return '';
-  if (mn === 0) return h + 'h';
-  if (h === 0) return mn + 'min';
-  const combined = h + mn / 60;
-  return parseFloat(combined.toFixed(2)) + 'h';
+  if (h === 0 && mn < 60) return mn + (mn === 1 ? ' minute' : ' minutes');
+  if (mn === 0) return h + (h === 1 ? ' hour' : ' hours');
+  const combined = parseFloat((h + mn / 60).toFixed(2));
+  return combined + (combined === 1 ? ' hour' : ' hours');
 }
 
 function getPlaytimeForSort(item) {
@@ -2541,19 +2541,31 @@ describe('formatGamePlaytime', () => {
     expect(formatGamePlaytime({ hours: 0, minutes: 0 })).toBe('');
   });
   test('hours only — integer', () => {
-    expect(formatGamePlaytime({ hours: 5, minutes: 0 })).toBe('5h');
+    expect(formatGamePlaytime({ hours: 5, minutes: 0 })).toBe('5 hours');
+  });
+  test('hours only — singular', () => {
+    expect(formatGamePlaytime({ hours: 1, minutes: 0 })).toBe('1 hour');
   });
   test('hours only — decimal', () => {
-    expect(formatGamePlaytime({ hours: 5.5, minutes: 0 })).toBe('5.5h');
+    expect(formatGamePlaytime({ hours: 5.5, minutes: 0 })).toBe('5.5 hours');
   });
-  test('minutes only', () => {
-    expect(formatGamePlaytime({ hours: 0, minutes: 45 })).toBe('45min');
+  test('minutes only — plural', () => {
+    expect(formatGamePlaytime({ hours: 0, minutes: 45 })).toBe('45 minutes');
+  });
+  test('minutes only — singular', () => {
+    expect(formatGamePlaytime({ hours: 0, minutes: 1 })).toBe('1 minute');
+  });
+  test('minutes only — 30', () => {
+    expect(formatGamePlaytime({ hours: 0, minutes: 30 })).toBe('30 minutes');
   });
   test('combined — clean half', () => {
-    expect(formatGamePlaytime({ hours: 2, minutes: 30 })).toBe('2.5h');
+    expect(formatGamePlaytime({ hours: 2, minutes: 30 })).toBe('2.5 hours');
   });
   test('combined — quarter hour', () => {
-    expect(formatGamePlaytime({ hours: 5, minutes: 15 })).toBe('5.25h');
+    expect(formatGamePlaytime({ hours: 5, minutes: 15 })).toBe('5.25 hours');
+  });
+  test('combined rounds to exactly 1 → singular hour', () => {
+    expect(formatGamePlaytime({ hours: 0, minutes: 60 })).toBe('1 hour');
   });
 });
 
