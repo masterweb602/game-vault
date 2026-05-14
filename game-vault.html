@@ -1440,6 +1440,8 @@ body {
         <option value="oldest">Oldest first</option>
         <option value="az">A → Z</option>
         <option value="za">Z → A</option>
+        <option value="playtime-desc">Playtime: High → Low</option>
+        <option value="playtime-asc">Playtime: Low → High</option>
       </select>
       <button class="btn btn-sm" id="vault-dup-toggle" title="Show duplicates only">Duplicates</button>
       <button class="btn btn-sm btn-danger" id="vault-dup-remove" title="Review duplicate groups">Remove dups</button>
@@ -1495,6 +1497,8 @@ body {
         <option value="oldest">Oldest first</option>
         <option value="az">A → Z</option>
         <option value="za">Z → A</option>
+        <option value="playtime-desc">Playtime: High → Low</option>
+        <option value="playtime-asc">Playtime: Low → High</option>
       </select>
       <button class="btn btn-sm" id="played-dup-toggle">Duplicates</button>
       <button class="btn btn-sm btn-danger" id="played-dup-remove" title="Review duplicate groups">Remove dups</button>
@@ -1550,6 +1554,8 @@ body {
         <option value="az">A → Z</option>
         <option value="za">Z → A</option>
         <option value="source">Source group</option>
+        <option value="playtime-desc">Playtime: High → Low</option>
+        <option value="playtime-asc">Playtime: Low → High</option>
       </select>
       <select class="select" id="mother-source-filter" title="Filter by source">
         <option value="">All sources</option>
@@ -1586,6 +1592,8 @@ body {
         <option value="oldest">Oldest first</option>
         <option value="az">A → Z</option>
         <option value="za">Z → A</option>
+        <option value="playtime-desc">Playtime: High → Low</option>
+        <option value="playtime-asc">Playtime: Low → High</option>
       </select>
     </div>
   </div>
@@ -3065,6 +3073,13 @@ function formatGamePlaytime(playtime) {
   return parseFloat(combined.toFixed(2)) + 'h';
 }
 
+// Total playtime as fractional hours, suitable for sort comparators.
+// Items with no extractable playtime contribute 0 (sort to top in asc, bottom in desc).
+function getPlaytimeForSort(item) {
+  const p = extractPlaytimeFromName(item && item.name);
+  return p ? p.hours + p.minutes / 60 : 0;
+}
+
 // Accepts integer or numeric string in [1970, 2030]; returns int or null.
 // Floats and non-numeric strings are rejected.
 function isValidYear(v) {
@@ -3959,6 +3974,14 @@ function getFilteredItems(source) {
     if (sort === 'az') result.sort((a, b) => a.name.localeCompare(b.name));
     else if (sort === 'za') result.sort((a, b) => b.name.localeCompare(a.name));
     else if (sort === 'oldest') result.sort((a, b) => (a.dateAdded || 0) - (b.dateAdded || 0));
+    else if (sort === 'playtime-desc') result.sort((a, b) => {
+      const d = getPlaytimeForSort(b) - getPlaytimeForSort(a);
+      return d !== 0 ? d : a.name.localeCompare(b.name);
+    });
+    else if (sort === 'playtime-asc') result.sort((a, b) => {
+      const d = getPlaytimeForSort(a) - getPlaytimeForSort(b);
+      return d !== 0 ? d : a.name.localeCompare(b.name);
+    });
     // 'recent' — keep search-score order; user can switch manually if needed
     return result;
   }
@@ -3977,6 +4000,14 @@ function getFilteredItems(source) {
   else if (sort === 'za') result.sort((a, b) => b.name.localeCompare(a.name));
   else if (sort === 'recent') result.sort((a, b) => (b.dateAdded || 0) - (a.dateAdded || 0));
   else if (sort === 'oldest') result.sort((a, b) => (a.dateAdded || 0) - (b.dateAdded || 0));
+  else if (sort === 'playtime-desc') result.sort((a, b) => {
+    const d = getPlaytimeForSort(b) - getPlaytimeForSort(a);
+    return d !== 0 ? d : a.name.localeCompare(b.name);
+  });
+  else if (sort === 'playtime-asc') result.sort((a, b) => {
+    const d = getPlaytimeForSort(a) - getPlaytimeForSort(b);
+    return d !== 0 ? d : a.name.localeCompare(b.name);
+  });
 
   return result;
 }
@@ -3999,6 +4030,14 @@ function filterCustomItems(items, index, query, sort) {
     if (sort === 'az') result.sort((a, b) => a.name.localeCompare(b.name));
     else if (sort === 'za') result.sort((a, b) => b.name.localeCompare(a.name));
     else if (sort === 'oldest') result.sort((a, b) => (a.dateAdded || 0) - (b.dateAdded || 0));
+    else if (sort === 'playtime-desc') result.sort((a, b) => {
+      const d = getPlaytimeForSort(b) - getPlaytimeForSort(a);
+      return d !== 0 ? d : a.name.localeCompare(b.name);
+    });
+    else if (sort === 'playtime-asc') result.sort((a, b) => {
+      const d = getPlaytimeForSort(a) - getPlaytimeForSort(b);
+      return d !== 0 ? d : a.name.localeCompare(b.name);
+    });
     // 'recent' with active query: preserve relevance order
     return result;
   }
@@ -4007,6 +4046,14 @@ function filterCustomItems(items, index, query, sort) {
   else if (sort === 'za') result.sort((a, b) => b.name.localeCompare(a.name));
   else if (sort === 'recent') result.sort((a, b) => (b.dateAdded || 0) - (a.dateAdded || 0));
   else if (sort === 'oldest') result.sort((a, b) => (a.dateAdded || 0) - (b.dateAdded || 0));
+  else if (sort === 'playtime-desc') result.sort((a, b) => {
+    const d = getPlaytimeForSort(b) - getPlaytimeForSort(a);
+    return d !== 0 ? d : a.name.localeCompare(b.name);
+  });
+  else if (sort === 'playtime-asc') result.sort((a, b) => {
+    const d = getPlaytimeForSort(a) - getPlaytimeForSort(b);
+    return d !== 0 ? d : a.name.localeCompare(b.name);
+  });
   return result;
 }
 
@@ -4027,7 +4074,7 @@ function renderVault() {
   rebuildSerialMap('vault');
   const items = getFilteredItems('vault');
   vList.setItems(items);
-  $('#vault-list-info').textContent = items.length + ' / ' + state.vault.length + ' items';
+  $('#vault-list-info').textContent = items.length + ' / ' + state.vault.length + ' items · ' + formatTotalHours(totalPlaytimeHours(items));
   const filterText = [];
   if (state.vaultFilter) filterText.push('search: "' + state.vaultFilter + '"');
   if (state.vaultDupOnly) filterText.push('duplicates only');
@@ -4040,7 +4087,7 @@ function renderPlayed() {
   rebuildSerialMap('played');
   const items = getFilteredItems('played');
   pList.setItems(items);
-  $('#played-list-info').textContent = items.length + ' / ' + state.played.length + ' items';
+  $('#played-list-info').textContent = items.length + ' / ' + state.played.length + ' items · ' + formatTotalHours(totalPlaytimeHours(items));
   const filterText = [];
   if (state.playedFilter) filterText.push('search: "' + state.playedFilter + '"');
   if (state.playedDupOnly) filterText.push('duplicates only');
@@ -4123,7 +4170,7 @@ function renderCustomDbView(id) {
   $('#custom-section-title').textContent = list.name;
   $('#custom-section-desc').textContent =
     'এটা ' + list.name + ' database — আলাদা list, নিজস্ব search/add আছে।';
-  $('#custom-list-info').textContent = items.length + ' / ' + list.items.length + ' items';
+  $('#custom-list-info').textContent = items.length + ' / ' + list.items.length + ' items · ' + formatTotalHours(totalPlaytimeHours(items));
   const filterText = [];
   if (query) filterText.push('search: "' + query + '"');
   $('#custom-filter-info').textContent = filterText.join(' · ');
@@ -5576,16 +5623,25 @@ function renderYears() {
   }
   const filteredUnknown = filterYearRows(cache.unknown, q);
 
-  // Stats line
+  // Stats line — total playtime across whatever is currently visible
+  // (filtered when q is active, full cache otherwise). Map row → item once.
   if (cache.total === 0) {
     statsHost.textContent = '';
   } else if (q) {
+    const visibleItems = [];
+    for (const rows of filteredByYear.values()) for (const r of rows) visibleItems.push(r.item);
+    for (const r of filteredUnknown) visibleItems.push(r.item);
     statsHost.textContent =
       shownDetected + ' detected match · ' + filteredUnknown.length + ' unknown match · ' +
+      formatTotalHours(totalPlaytimeHours(visibleItems)) + ' · ' +
       filteredByYear.size + ' years shown';
   } else {
+    const allItems = [];
+    for (const rows of cache.byYear.values()) for (const r of rows) allItems.push(r.item);
+    for (const r of cache.unknown) allItems.push(r.item);
     statsHost.textContent =
       cache.detected + ' games auto-detected · ' + cache.unknown.length + ' unknown · ' +
+      formatTotalHours(totalPlaytimeHours(allItems)) + ' · ' +
       cache.byYear.size + ' years total';
   }
 
@@ -5781,7 +5837,11 @@ function buildYearSection(label, key, rows, isOpen) {
   sum.appendChild(document.createTextNode(label + ' '));
   const cnt = document.createElement('span');
   cnt.className = 'year-count';
-  cnt.textContent = '(' + rows.length + ')';
+  const secHours = totalPlaytimeHours(rows.map(r => r.item));
+  // Suppress hours suffix when 0 — keeps Unknown bucket and zero-playtime years clean.
+  cnt.textContent = secHours > 0
+    ? '(' + rows.length + ' · ' + parseFloat(secHours.toFixed(2)) + 'h)'
+    : '(' + rows.length + ')';
   sum.appendChild(cnt);
   det.appendChild(sum);
   const rowsHost = document.createElement('div');
@@ -5841,6 +5901,14 @@ function filterMotherRows(rows, opts) {
   else if (sort === 'source') result.sort((a, b) => {
     const s = a.sourceLabel.localeCompare(b.sourceLabel);
     return s !== 0 ? s : a.item.name.localeCompare(b.item.name);
+  });
+  else if (sort === 'playtime-desc') result.sort((a, b) => {
+    const d = getPlaytimeForSort(b.item) - getPlaytimeForSort(a.item);
+    return d !== 0 ? d : a.item.name.localeCompare(b.item.name);
+  });
+  else if (sort === 'playtime-asc') result.sort((a, b) => {
+    const d = getPlaytimeForSort(a.item) - getPlaytimeForSort(b.item);
+    return d !== 0 ? d : a.item.name.localeCompare(b.item.name);
   });
   return result;
 }
@@ -6000,6 +6068,14 @@ function renderMotherView() {
       const s = a.sourceLabel.localeCompare(b.sourceLabel);
       return s !== 0 ? s : a.item.name.localeCompare(b.item.name);
     });
+    else if (state.motherSort === 'playtime-desc') rows = rows.slice().sort((a, b) => {
+      const d = getPlaytimeForSort(b.item) - getPlaytimeForSort(a.item);
+      return d !== 0 ? d : a.item.name.localeCompare(b.item.name);
+    });
+    else if (state.motherSort === 'playtime-asc') rows = rows.slice().sort((a, b) => {
+      const d = getPlaytimeForSort(a.item) - getPlaytimeForSort(b.item);
+      return d !== 0 ? d : a.item.name.localeCompare(b.item.name);
+    });
     // 'recent' with active search: preserve relevance order
   } else {
     rows = filterMotherRows(cache.rows, {
@@ -6012,7 +6088,7 @@ function renderMotherView() {
   motherVList.setItems(rows);
 
   // Stats and toolbar sync
-  $('#mother-list-info').textContent = rows.length + ' / ' + cache.rows.length + ' items';
+  $('#mother-list-info').textContent = rows.length + ' / ' + cache.rows.length + ' items · ' + formatTotalHours(totalPlaytimeHours(rows.map(r => r.item)));
   const bits = [];
   if (search) bits.push('search: "' + search + '"');
   if (state.motherSourceFilter) {

@@ -2355,6 +2355,11 @@ function formatGamePlaytime(playtime) {
   return parseFloat(combined.toFixed(2)) + 'h';
 }
 
+function getPlaytimeForSort(item) {
+  const p = extractPlaytimeFromName(item && item.name);
+  return p ? p.hours + p.minutes / 60 : 0;
+}
+
 describe('extractPlaytimeFromName', () => {
   test('hours suffix h', () => {
     expect(extractPlaytimeFromName('Black Mesa 2020 15h')).toEqual({ hours: 15, minutes: 0 });
@@ -2549,5 +2554,69 @@ describe('formatGamePlaytime', () => {
   });
   test('combined — quarter hour', () => {
     expect(formatGamePlaytime({ hours: 5, minutes: 15 })).toBe('5.25h');
+  });
+});
+
+describe('getPlaytimeForSort', () => {
+  test('item with hours', () => {
+    expect(getPlaytimeForSort({ name: 'Halo 2024 5h' })).toBe(5);
+  });
+  test('item with decimal hours', () => {
+    expect(getPlaytimeForSort({ name: 'Halo 2024 4.5h' })).toBe(4.5);
+  });
+  test('item with minutes converts to fractional hours', () => {
+    expect(getPlaytimeForSort({ name: 'Halo 2024 30 min' })).toBe(0.5);
+  });
+  test('item with bare number defaults to hours', () => {
+    expect(getPlaytimeForSort({ name: 'Halo 2024 12' })).toBe(12);
+  });
+  test('item without playtime → 0', () => {
+    expect(getPlaytimeForSort({ name: 'Halo Infinite 2024' })).toBe(0);
+  });
+  test('item without year → 0', () => {
+    expect(getPlaytimeForSort({ name: 'No Year Game 5h' })).toBe(0);
+  });
+  test('null item → 0', () => {
+    expect(getPlaytimeForSort(null)).toBe(0);
+  });
+  test('undefined item → 0', () => {
+    expect(getPlaytimeForSort(undefined)).toBe(0);
+  });
+  test('item with no name → 0', () => {
+    expect(getPlaytimeForSort({})).toBe(0);
+  });
+  test('sort comparator — desc orders by playtime, ties by name', () => {
+    const items = [
+      { name: 'Zelda 2024 5h' },
+      { name: 'Halo 2024 10h' },
+      { name: 'Aero 2024 5h' },
+      { name: 'Doom 2024' },
+    ];
+    items.sort((a, b) => {
+      const d = getPlaytimeForSort(b) - getPlaytimeForSort(a);
+      return d !== 0 ? d : a.name.localeCompare(b.name);
+    });
+    expect(items.map(i => i.name)).toEqual([
+      'Halo 2024 10h',     // 10h
+      'Aero 2024 5h',      // 5h, name 'A' < 'Z'
+      'Zelda 2024 5h',     // 5h
+      'Doom 2024',         // 0h last
+    ]);
+  });
+  test('sort comparator — asc puts 0-hour items first', () => {
+    const items = [
+      { name: 'Halo 2024 10h' },
+      { name: 'Doom 2024' },
+      { name: 'Aero 2024 5h' },
+    ];
+    items.sort((a, b) => {
+      const d = getPlaytimeForSort(a) - getPlaytimeForSort(b);
+      return d !== 0 ? d : a.name.localeCompare(b.name);
+    });
+    expect(items.map(i => i.name)).toEqual([
+      'Doom 2024',         // 0h first
+      'Aero 2024 5h',      // 5h
+      'Halo 2024 10h',     // 10h
+    ]);
   });
 });
