@@ -284,7 +284,7 @@ body {
   min-width: 30px;
   text-align: right;
 }
-.year-row .game-name { flex: 1; min-width: 0; }
+.year-row .game-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .year-row .game-name .year-tag {
   font-family: var(--mono);
   font-style: normal;
@@ -667,11 +667,20 @@ body {
   flex-shrink: 0;
 }
 .row .name {
-  flex: 1;
+  flex: 0 1 auto;
+  min-width: 0;
   font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.name-cluster {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
 }
 .row .name mark {
   background: var(--accent-soft);
@@ -777,14 +786,12 @@ body {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--muted);
-  margin-left: 8px;
   flex-shrink: 0;
 }
 .row-playtime {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--info);
-  margin-left: 4px;
   flex-shrink: 0;
 }
 .tag-chip {
@@ -3970,16 +3977,18 @@ function makeRow(item, idx, source) {
 
   row.appendChild(el('span', { class: 'serial' }, serialText));
 
+  const cluster = el('div', { class: 'name-cluster' });
   const name = el('span', { class: 'name' });
   const query = source === 'vault' ? state.vaultFilter : state.playedFilter;
   name.innerHTML = highlight(escapeHtml(stripDisplayMetadata(item.name)), query);
-  row.appendChild(name);
+  cluster.appendChild(name);
 
   const yr = resolveItemYear(item);
-  if (yr !== null) row.appendChild(el('span', { class: 'row-year' }, '[' + yr + ']'));
+  if (yr !== null) cluster.appendChild(el('span', { class: 'row-year' }, '[' + yr + ']'));
 
   const ptTxt = formatGamePlaytime(extractPlaytimeFromName(item.name));
-  if (ptTxt) row.appendChild(el('span', { class: 'row-playtime' }, '[' + ptTxt + ']'));
+  if (ptTxt) cluster.appendChild(el('span', { class: 'row-playtime' }, '[' + ptTxt + ']'));
+  row.appendChild(cluster);
 
   // Inline tag chips — up to 3, then "+N"
   if (Array.isArray(item.tags) && item.tags.length > 0) {
@@ -4204,16 +4213,18 @@ function makeCustomRow(item, idx, id) {
   const serialText = origIdx === undefined ? '#----' : '#' + String(origIdx + 1).padStart(4, '0');
   row.appendChild(el('span', { class: 'serial' }, serialText));
 
+  const cluster = el('div', { class: 'name-cluster' });
   const name = el('span', { class: 'name' });
   const query = state.customSearches[id] || '';
   name.innerHTML = highlight(escapeHtml(stripDisplayMetadata(item.name)), query);
-  row.appendChild(name);
+  cluster.appendChild(name);
 
   const yr = resolveItemYear(item);
-  if (yr !== null) row.appendChild(el('span', { class: 'row-year' }, '[' + yr + ']'));
+  if (yr !== null) cluster.appendChild(el('span', { class: 'row-year' }, '[' + yr + ']'));
 
   const ptTxt = formatGamePlaytime(extractPlaytimeFromName(item.name));
-  if (ptTxt) row.appendChild(el('span', { class: 'row-playtime' }, '[' + ptTxt + ']'));
+  if (ptTxt) cluster.appendChild(el('span', { class: 'row-playtime' }, '[' + ptTxt + ']'));
+  row.appendChild(cluster);
 
   if (Array.isArray(item.tags) && item.tags.length > 0) {
     const tagWrap = el('span', { class: 'row-tags' });
@@ -4460,6 +4471,9 @@ function renderTagFilterBar() {
   const bar = $('#vault-tag-filter-bar');
   if (!bar) return;
   bar.innerHTML = '';
+  // No tags anywhere → leave bar empty; existing :empty CSS rule hides it.
+  // Manage/New-tag controls are reachable via the per-item Edit dialog.
+  if (state.tagCounts.size === 0) return;
   const total = state.vault.length;
   const allBtn = el('button', {
     class: 'tag-filter-btn' + (state.vaultTagFilter.size === 0 ? ' active' : ''),
@@ -5590,6 +5604,8 @@ function makeYearRow(row, serial, isUnknown) {
   s.className = 'serial';
   s.textContent = serial;
   div.appendChild(s);
+  const cluster = document.createElement('div');
+  cluster.className = 'name-cluster';
   const name = document.createElement('span');
   name.className = 'game-name';
   // Display name has year + trailing playtime stripped; resolved year is
@@ -5603,14 +5619,15 @@ function makeYearRow(row, serial, isUnknown) {
     name.appendChild(document.createTextNode(' '));
     name.appendChild(em);
   }
-  div.appendChild(name);
+  cluster.appendChild(name);
   const ptTxt = formatGamePlaytime(extractPlaytimeFromName(row.item.name));
   if (ptTxt) {
     const ptEl = document.createElement('span');
     ptEl.className = 'row-playtime';
     ptEl.textContent = '[' + ptTxt + ']';
-    div.appendChild(ptEl);
+    cluster.appendChild(ptEl);
   }
+  div.appendChild(cluster);
   const badge = document.createElement('span');
   badge.className = 'src-badge ' + row.sourceClass;
   badge.textContent = row.sourceLabel;
@@ -6035,16 +6052,18 @@ function makeMotherRow(row, idx) {
   const serialNum = (typeof row._motherSerial === 'number') ? (row._motherSerial + 1) : (idx + 1);
   div.appendChild(el('span', { class: 'serial' }, '#' + String(serialNum).padStart(4, '0')));
 
+  const cluster = el('div', { class: 'name-cluster' });
   const name = el('span', { class: 'name' });
   const query = state.motherSearch || '';
   name.innerHTML = highlight(escapeHtml(stripDisplayMetadata(row.item.name)), query);
-  div.appendChild(name);
+  cluster.appendChild(name);
 
   const yr = resolveItemYear(row.item);
-  if (yr !== null) div.appendChild(el('span', { class: 'row-year' }, '[' + yr + ']'));
+  if (yr !== null) cluster.appendChild(el('span', { class: 'row-year' }, '[' + yr + ']'));
 
   const ptTxt = formatGamePlaytime(extractPlaytimeFromName(row.item.name));
-  if (ptTxt) div.appendChild(el('span', { class: 'row-playtime' }, '[' + ptTxt + ']'));
+  if (ptTxt) cluster.appendChild(el('span', { class: 'row-playtime' }, '[' + ptTxt + ']'));
+  div.appendChild(cluster);
 
   if (Array.isArray(row.item.tags) && row.item.tags.length > 0) {
     const tagWrap = el('span', { class: 'row-tags' });
