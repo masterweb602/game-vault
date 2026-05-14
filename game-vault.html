@@ -746,6 +746,13 @@ body {
   margin-left: 8px;
   flex-shrink: 0;
 }
+.row-playtime {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--info);
+  margin-left: 4px;
+  flex-shrink: 0;
+}
 .tag-chip {
   display: inline-flex;
   align-items: center;
@@ -3869,6 +3876,9 @@ function makeRow(item, idx, source) {
   const yr = resolveItemYear(item);
   if (yr !== null) row.appendChild(el('span', { class: 'row-year' }, '[' + yr + ']'));
 
+  const ptTxt = formatGamePlaytime(extractPlaytimeFromName(item.name));
+  if (ptTxt) row.appendChild(el('span', { class: 'row-playtime' }, '[' + ptTxt + ']'));
+
   // Inline tag chips — up to 3, then "+N"
   if (Array.isArray(item.tags) && item.tags.length > 0) {
     const tagWrap = el('span', { class: 'row-tags' });
@@ -4065,6 +4075,9 @@ function makeCustomRow(item, idx, id) {
 
   const yr = resolveItemYear(item);
   if (yr !== null) row.appendChild(el('span', { class: 'row-year' }, '[' + yr + ']'));
+
+  const ptTxt = formatGamePlaytime(extractPlaytimeFromName(item.name));
+  if (ptTxt) row.appendChild(el('span', { class: 'row-playtime' }, '[' + ptTxt + ']'));
 
   if (Array.isArray(item.tags) && item.tags.length > 0) {
     const tagWrap = el('span', { class: 'row-tags' });
@@ -5471,6 +5484,13 @@ function makeYearRow(row, serial, isUnknown) {
     }
   }
   div.appendChild(name);
+  const ptTxt = formatGamePlaytime(extractPlaytimeFromName(row.item.name));
+  if (ptTxt) {
+    const ptEl = document.createElement('span');
+    ptEl.className = 'row-playtime';
+    ptEl.textContent = '[' + ptTxt + ']';
+    div.appendChild(ptEl);
+  }
   const badge = document.createElement('span');
   badge.className = 'src-badge ' + row.sourceClass;
   badge.textContent = row.sourceLabel;
@@ -5881,6 +5901,9 @@ function makeMotherRow(row, idx) {
 
   const yr = resolveItemYear(row.item);
   if (yr !== null) div.appendChild(el('span', { class: 'row-year' }, '[' + yr + ']'));
+
+  const ptTxt = formatGamePlaytime(extractPlaytimeFromName(row.item.name));
+  if (ptTxt) div.appendChild(el('span', { class: 'row-playtime' }, '[' + ptTxt + ']'));
 
   if (Array.isArray(row.item.tags) && row.item.tags.length > 0) {
     const tagWrap = el('span', { class: 'row-tags' });
