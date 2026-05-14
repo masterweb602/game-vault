@@ -2231,6 +2231,8 @@ const _WORKER_SRC = '(' + function () {
     ].join('|') + ')\\b', 'g');
 
   const YEAR_RX = /\b(19|20)\d{2}\b/g;
+  const YEAR_DETECT_RX = /\b(19[7-9]\d|20[0-2]\d|2030)\b/g;
+  const PLAYTIME_RX = /\b\d+(?:\.\d+)?\s*(?:hours?|hrs?|h|minutes?|mins?|m)\b/gi;
   const PAREN_RX = /\([^)]*\)|\[[^\]]*\]|\{[^}]*\}/g;
   const APOSTROPHE_RX = /[‘’‚‛'`´]/g;
   const NON_ALPHANUM_RX = /[^a-z0-9\s]/g;
@@ -2238,12 +2240,25 @@ const _WORKER_SRC = '(' + function () {
   const TM_RX = /[®™©]/g;
   const WS_RX = /\s+/g;
 
+  // Strip playtime tokens (5h, 45 min, 2.5 hours...) that appear AFTER
+  // the rightmost detected year. Anchoring on the year avoids damaging
+  // titles like "24 Hours Later".
+  function _stripPlaytimeAfterYear(s) {
+    YEAR_DETECT_RX.lastIndex = 0;
+    let end = -1, m;
+    while ((m = YEAR_DETECT_RX.exec(s)) !== null) end = m.index + m[0].length;
+    YEAR_DETECT_RX.lastIndex = 0;
+    if (end === -1) return s;
+    return s.slice(0, end) + s.slice(end).replace(PLAYTIME_RX, ' ');
+  }
+
   function normalize(str) {
     if (!str) return '';
     let s = str.toLowerCase();
     s = s.replace(APOSTROPHE_RX, '');
     s = s.replace(TM_RX, ' ');
     s = s.replace(PAREN_RX, ' ');
+    s = _stripPlaytimeAfterYear(s);
     s = s.replace(NON_ALPHANUM_RX, ' ');
     s = s.replace(YEAR_RX, ' ');
     s = s.replace(EDITION_RX, ' ');
@@ -2258,6 +2273,7 @@ const _WORKER_SRC = '(' + function () {
     s = s.replace(APOSTROPHE_RX, '');
     s = s.replace(TM_RX, ' ');
     s = s.replace(PAREN_RX, ' ');
+    s = _stripPlaytimeAfterYear(s);
     s = s.replace(NON_ALPHANUM_RX, ' ');
     s = s.replace(ROMAN_RX, (m) => ROMAN[m] !== undefined ? ROMAN[m] : m);
     s = s.replace(WS_RX, ' ').trim();
@@ -2902,6 +2918,8 @@ const EDITION_RX = new RegExp(
   ].join('|') + ')\\b', 'g');
 
 const YEAR_RX = /\b(19|20)\d{2}\b/g;
+const YEAR_DETECT_RX = /\b(19[7-9]\d|20[0-2]\d|2030)\b/g;
+const PLAYTIME_RX = /\b\d+(?:\.\d+)?\s*(?:hours?|hrs?|h|minutes?|mins?|m)\b/gi;
 const PAREN_RX = /\([^)]*\)|\[[^\]]*\]|\{[^}]*\}/g;
 const APOSTROPHE_RX = /[\u2018\u2019\u201A\u201B'`\u00B4]/g;
 const NON_ALPHANUM_RX = /[^a-z0-9\s]/g;
@@ -2909,12 +2927,25 @@ const ROMAN_RX = /\b([ivx]+)\b/g;
 const TM_RX = /[\u00AE\u2122\u00A9]/g;
 const WS_RX = /\s+/g;
 
+// Strip playtime tokens (5h, 45 min, 2.5 hours...) that appear AFTER
+// the rightmost detected year. Anchoring on the year avoids damaging
+// titles like "24 Hours Later".
+function _stripPlaytimeAfterYear(s) {
+  YEAR_DETECT_RX.lastIndex = 0;
+  let end = -1, m;
+  while ((m = YEAR_DETECT_RX.exec(s)) !== null) end = m.index + m[0].length;
+  YEAR_DETECT_RX.lastIndex = 0;
+  if (end === -1) return s;
+  return s.slice(0, end) + s.slice(end).replace(PLAYTIME_RX, ' ');
+}
+
 function normalize(str) {
   if (!str) return '';
   let s = str.toLowerCase();
   s = s.replace(APOSTROPHE_RX, '');     // remove apostrophes (Assassin's → Assassins)
   s = s.replace(TM_RX, ' ');
   s = s.replace(PAREN_RX, ' ');         // strip (...) [...] {...}
+  s = _stripPlaytimeAfterYear(s);       // strip "5h"/"2.5 hours" before NON_ALPHANUM breaks decimals
   s = s.replace(NON_ALPHANUM_RX, ' ');  // collapse special chars
   s = s.replace(YEAR_RX, ' ');          // remove years
   s = s.replace(EDITION_RX, ' ');       // strip edition keywords
@@ -2933,6 +2964,7 @@ function normalizeDedup(str) {
   s = s.replace(APOSTROPHE_RX, '');
   s = s.replace(TM_RX, ' ');
   s = s.replace(PAREN_RX, ' ');
+  s = _stripPlaytimeAfterYear(s);       // strip "5h"/"2.5 hours" before NON_ALPHANUM breaks decimals
   s = s.replace(NON_ALPHANUM_RX, ' ');
   // Roman numerals → digits (so "II" and "2" still match)
   s = s.replace(ROMAN_RX, (m) => ROMAN[m] !== undefined ? ROMAN[m] : m);
@@ -2948,13 +2980,82 @@ function tokenSort(str) {
 
 // Pure helper: scan name for a 4-digit year in [1970, 2030], return
 // the LAST match as int, or null. "1979 Revolution 2016" → 2016.
-const YEAR_DETECT_RX = /\b(19[7-9]\d|20[0-2]\d|2030)\b/g;
 function extractYearFromName(name) {
   if (typeof name !== 'string' || !name) return null;
   YEAR_DETECT_RX.lastIndex = 0;
   let last = null, m;
   while ((m = YEAR_DETECT_RX.exec(name)) !== null) last = m[1];
   return last === null ? null : parseInt(last, 10);
+}
+
+// Pure helper: extract playtime metadata that follows the rightmost
+// detected year. Returns { hours, minutes } or null. Rules:
+//   "Halo 2024 5h"        → { hours: 5, minutes: 0 }
+//   "Halo 2024 45 min"    → { hours: 0, minutes: 45 }
+//   "Halo 2024 45"        → { hours: 45, minutes: 0 }  (bare number = hours)
+//   "Halo 2024 4.5"       → { hours: 4.5, minutes: 0 }
+//   "Halo 2024"           → null
+//   "No Year Game 5h"     → null  (no year anchor)
+const _PT_HOURS_RX   = /^\s+(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\b/i;
+const _PT_MINUTES_RX = /^\s+(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m)\b/i;
+const _PT_BARE_RX    = /^\s+(\d+(?:\.\d+)?)\s*$/;
+function extractPlaytimeFromName(name) {
+  if (typeof name !== 'string' || !name) return null;
+  YEAR_DETECT_RX.lastIndex = 0;
+  let end = -1, m;
+  while ((m = YEAR_DETECT_RX.exec(name)) !== null) end = m.index + m[0].length;
+  YEAR_DETECT_RX.lastIndex = 0;
+  if (end === -1) return null;
+  const tail = name.slice(end);
+  let mt = _PT_HOURS_RX.exec(tail);
+  if (mt) return { hours: parseFloat(mt[1]), minutes: 0 };
+  mt = _PT_MINUTES_RX.exec(tail);
+  if (mt) return { hours: 0, minutes: Math.round(parseFloat(mt[1])) };
+  mt = _PT_BARE_RX.exec(tail);
+  if (mt) return { hours: parseFloat(mt[1]), minutes: 0 };
+  return null;
+}
+
+// Sum playtime across items, converting minutes to fractional hours.
+// Items without extractable playtime contribute 0.
+function totalPlaytimeHours(items) {
+  if (!Array.isArray(items)) return 0;
+  let total = 0;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (!it) continue;
+    const p = extractPlaytimeFromName(it.name);
+    if (!p) continue;
+    total += p.hours + p.minutes / 60;
+  }
+  return total;
+}
+
+// Format a total-hours number for display: "0 hours", "1 hour", "25.5 hours",
+// "1,500 hours" (with thousands separator).
+function formatTotalHours(hours) {
+  const h = Number(hours) || 0;
+  const label = h === 1 ? 'hour' : 'hours';
+  const txt = h.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  return txt + ' ' + label;
+}
+
+// Format a per-game playtime object for badge display.
+//   null               → ""
+//   {hours:5, m:0}     → "5h"
+//   {hours:5.5, m:0}   → "5.5h"
+//   {hours:0, m:45}    → "45min"
+//   {hours:2, m:30}    → "2.5h"  (combined when both present)
+function formatGamePlaytime(playtime) {
+  if (!playtime) return '';
+  const h = Number(playtime.hours) || 0;
+  const mn = Number(playtime.minutes) || 0;
+  if (h === 0 && mn === 0) return '';
+  if (mn === 0) return h + 'h';
+  if (h === 0) return mn + 'min';
+  const combined = h + mn / 60;
+  // Round to 2 decimals, drop trailing zeros via parseFloat round-trip.
+  return parseFloat(combined.toFixed(2)) + 'h';
 }
 
 // Accepts integer or numeric string in [1970, 2030]; returns int or null.

@@ -33,6 +33,8 @@ const EDITION_RX = new RegExp(
   ].join('|') + ')\\b', 'g');
 
 const YEAR_RX        = /\b(19|20)\d{2}\b/g;
+const YEAR_DETECT_RX = /\b(19[7-9]\d|20[0-2]\d|2030)\b/g;
+const PLAYTIME_RX    = /\b\d+(?:\.\d+)?\s*(?:hours?|hrs?|h|minutes?|mins?|m)\b/gi;
 const PAREN_RX       = /\([^)]*\)|\[[^\]]*\]|\{[^}]*\}/g;
 const APOSTROPHE_RX  = /[‘’‚‛'`´]/g;
 const NON_ALPHANUM_RX = /[^a-z0-9\s]/g;
@@ -40,12 +42,22 @@ const ROMAN_RX       = /\b([ivx]+)\b/g;
 const TM_RX          = /[®™©]/g;
 const WS_RX          = /\s+/g;
 
+function _stripPlaytimeAfterYear(s) {
+  YEAR_DETECT_RX.lastIndex = 0;
+  let end = -1, m;
+  while ((m = YEAR_DETECT_RX.exec(s)) !== null) end = m.index + m[0].length;
+  YEAR_DETECT_RX.lastIndex = 0;
+  if (end === -1) return s;
+  return s.slice(0, end) + s.slice(end).replace(PLAYTIME_RX, ' ');
+}
+
 function normalize(str) {
   if (!str) return '';
   let s = str.toLowerCase();
   s = s.replace(APOSTROPHE_RX, '');
   s = s.replace(TM_RX, ' ');
   s = s.replace(PAREN_RX, ' ');
+  s = _stripPlaytimeAfterYear(s);
   s = s.replace(NON_ALPHANUM_RX, ' ');
   s = s.replace(YEAR_RX, ' ');
   s = s.replace(EDITION_RX, ' ');
@@ -60,6 +72,7 @@ function normalizeDedup(str) {
   s = s.replace(APOSTROPHE_RX, '');
   s = s.replace(TM_RX, ' ');
   s = s.replace(PAREN_RX, ' ');
+  s = _stripPlaytimeAfterYear(s);
   s = s.replace(NON_ALPHANUM_RX, ' ');
   s = s.replace(ROMAN_RX, (m) => ROMAN[m] !== undefined ? ROMAN[m] : m);
   s = s.replace(WS_RX, ' ').trim();
@@ -1654,7 +1667,7 @@ describe('filterCustomItems', () => {
 });
 
 // ── extractYearFromName — verbatim copy from game-vault.html ──
-const YEAR_DETECT_RX = /\b(19[7-9]\d|20[0-2]\d|2030)\b/g;
+// (YEAR_DETECT_RX declared once at top of file)
 function extractYearFromName(name) {
   if (typeof name !== 'string' || !name) return null;
   YEAR_DETECT_RX.lastIndex = 0;
@@ -2287,5 +2300,254 @@ describe('filterMotherRows', () => {
     expect(out).toHaveLength(1);
     expect(out[0].sourceId).toBe('fav');
     expect(out[0].item.name).toBe('Skyrim');
+  });
+});
+
+// ── Playtime helpers — verbatim copy from game-vault.html ─────────────────
+const _PT_HOURS_RX   = /^\s+(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\b/i;
+const _PT_MINUTES_RX = /^\s+(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m)\b/i;
+const _PT_BARE_RX    = /^\s+(\d+(?:\.\d+)?)\s*$/;
+function extractPlaytimeFromName(name) {
+  if (typeof name !== 'string' || !name) return null;
+  YEAR_DETECT_RX.lastIndex = 0;
+  let end = -1, m;
+  while ((m = YEAR_DETECT_RX.exec(name)) !== null) end = m.index + m[0].length;
+  YEAR_DETECT_RX.lastIndex = 0;
+  if (end === -1) return null;
+  const tail = name.slice(end);
+  let mt = _PT_HOURS_RX.exec(tail);
+  if (mt) return { hours: parseFloat(mt[1]), minutes: 0 };
+  mt = _PT_MINUTES_RX.exec(tail);
+  if (mt) return { hours: 0, minutes: Math.round(parseFloat(mt[1])) };
+  mt = _PT_BARE_RX.exec(tail);
+  if (mt) return { hours: parseFloat(mt[1]), minutes: 0 };
+  return null;
+}
+
+function totalPlaytimeHours(items) {
+  if (!Array.isArray(items)) return 0;
+  let total = 0;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (!it) continue;
+    const p = extractPlaytimeFromName(it.name);
+    if (!p) continue;
+    total += p.hours + p.minutes / 60;
+  }
+  return total;
+}
+
+function formatTotalHours(hours) {
+  const h = Number(hours) || 0;
+  const label = h === 1 ? 'hour' : 'hours';
+  const txt = h.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  return txt + ' ' + label;
+}
+
+function formatGamePlaytime(playtime) {
+  if (!playtime) return '';
+  const h = Number(playtime.hours) || 0;
+  const mn = Number(playtime.minutes) || 0;
+  if (h === 0 && mn === 0) return '';
+  if (mn === 0) return h + 'h';
+  if (h === 0) return mn + 'min';
+  const combined = h + mn / 60;
+  return parseFloat(combined.toFixed(2)) + 'h';
+}
+
+describe('extractPlaytimeFromName', () => {
+  test('hours suffix h', () => {
+    expect(extractPlaytimeFromName('Black Mesa 2020 15h')).toEqual({ hours: 15, minutes: 0 });
+  });
+  test('decimal hours suffix h', () => {
+    expect(extractPlaytimeFromName('Some Game 2023 4.5h')).toEqual({ hours: 4.5, minutes: 0 });
+  });
+  test('hours full word', () => {
+    expect(extractPlaytimeFromName('Game 2020 10 hours')).toEqual({ hours: 10, minutes: 0 });
+  });
+  test('hour singular', () => {
+    expect(extractPlaytimeFromName('Game 2020 1 hour')).toEqual({ hours: 1, minutes: 0 });
+  });
+  test('hr abbreviation', () => {
+    expect(extractPlaytimeFromName('Game 2020 7 hr')).toEqual({ hours: 7, minutes: 0 });
+  });
+  test('minutes with min suffix', () => {
+    expect(extractPlaytimeFromName('Halo 2024 45 min')).toEqual({ hours: 0, minutes: 45 });
+  });
+  test('minutes full word', () => {
+    expect(extractPlaytimeFromName('Some Game 2023 56 minute')).toEqual({ hours: 0, minutes: 56 });
+  });
+  test('minutes single letter m', () => {
+    expect(extractPlaytimeFromName('Game 2020 30m')).toEqual({ hours: 0, minutes: 30 });
+  });
+  test('bare number defaults to hours', () => {
+    expect(extractPlaytimeFromName('Some Game 2012 45')).toEqual({ hours: 45, minutes: 0 });
+  });
+  test('bare decimal defaults to hours', () => {
+    expect(extractPlaytimeFromName('Some Game 2023 4.5')).toEqual({ hours: 4.5, minutes: 0 });
+  });
+  test('no year → null', () => {
+    expect(extractPlaytimeFromName('No Year Game 5h')).toBeNull();
+  });
+  test('year but no time → null', () => {
+    expect(extractPlaytimeFromName('Halo Infinite 2024')).toBeNull();
+  });
+  test('no year no time → null', () => {
+    expect(extractPlaytimeFromName('Halo Infinite')).toBeNull();
+  });
+  test('number embedded in title is not playtime', () => {
+    expect(extractPlaytimeFromName('Halo 3 2024')).toBeNull();
+  });
+  test('multiple years — rightmost anchors playtime', () => {
+    expect(extractPlaytimeFromName('FIFA 1999 2000 2001 5h')).toEqual({ hours: 5, minutes: 0 });
+  });
+  test('first time pattern wins, second ignored', () => {
+    expect(extractPlaytimeFromName('Halo 2024 5h 10min')).toEqual({ hours: 5, minutes: 0 });
+  });
+  test('unknown suffix → null', () => {
+    expect(extractPlaytimeFromName('Halo 2024 5x')).toBeNull();
+  });
+  test('zero hours', () => {
+    expect(extractPlaytimeFromName('Halo 2024 0h')).toEqual({ hours: 0, minutes: 0 });
+  });
+  test('zero bare number', () => {
+    expect(extractPlaytimeFromName('Halo 2024 0')).toEqual({ hours: 0, minutes: 0 });
+  });
+  test('whitespace-only after year → null', () => {
+    expect(extractPlaytimeFromName('Halo 2024   ')).toBeNull();
+  });
+  test('non-string input → null', () => {
+    expect(extractPlaytimeFromName(null)).toBeNull();
+    expect(extractPlaytimeFromName(undefined)).toBeNull();
+    expect(extractPlaytimeFromName(123)).toBeNull();
+    expect(extractPlaytimeFromName({})).toBeNull();
+    expect(extractPlaytimeFromName('')).toBeNull();
+  });
+  test('decimal minutes rounded to int', () => {
+    expect(extractPlaytimeFromName('Halo 2024 30.5 min')).toEqual({ hours: 0, minutes: 31 });
+  });
+});
+
+describe('normalize() — playtime stripping', () => {
+  test('strips "5h" after year', () => {
+    expect(normalize('Halo 2024 5h')).toBe('halo');
+  });
+  test('strips "45 min" after year', () => {
+    expect(normalize('Halo 2024 45 min')).toBe('halo');
+  });
+  test('strips "2.5 hours" after year', () => {
+    expect(normalize('Game 2020 2.5 hours')).toBe('game');
+  });
+  test('preserves number-in-title (Halo 3 2024)', () => {
+    expect(normalize('Halo 3 2024')).toBe('halo 3');
+  });
+  test('preserves bare trailing number after year', () => {
+    expect(normalize('Halo 2024 45')).toBe('halo 45');
+  });
+  test('does not strip "5h" when no year present', () => {
+    expect(normalize('No Year 5h')).toBe('no year 5h');
+  });
+});
+
+describe('normalizeDedup() — playtime stripping', () => {
+  test('strips "5h" after year', () => {
+    const a = normalizeDedup('Halo 2024 5h');
+    const b = normalizeDedup('Halo 2024');
+    expect(a).toBe(b);
+  });
+  test('strips "45 min" after year', () => {
+    expect(normalizeDedup('Halo 2024 45 min')).toBe(normalizeDedup('Halo 2024'));
+  });
+  test('preserves year (unlike normalize)', () => {
+    expect(normalizeDedup('Halo 2024 5h')).toBe('halo 2024');
+  });
+  test('preserves number-in-title', () => {
+    expect(normalizeDedup('Halo 3 2024')).toBe('halo 3 2024');
+  });
+});
+
+describe('totalPlaytimeHours', () => {
+  test('empty array → 0', () => {
+    expect(totalPlaytimeHours([])).toBe(0);
+  });
+  test('non-array → 0', () => {
+    expect(totalPlaytimeHours(null)).toBe(0);
+    expect(totalPlaytimeHours(undefined)).toBe(0);
+  });
+  test('single item with hours', () => {
+    expect(totalPlaytimeHours([{ name: 'Halo 2024 5h' }])).toBe(5);
+  });
+  test('multiple items hours', () => {
+    expect(totalPlaytimeHours([
+      { name: 'Halo 2024 5h' },
+      { name: 'Doom 2020 10 hours' },
+    ])).toBe(15);
+  });
+  test('mixes hours and minutes', () => {
+    // 5h + 30min = 5.5h
+    expect(totalPlaytimeHours([
+      { name: 'Halo 2024 5h' },
+      { name: 'Doom 2020 30 min' },
+    ])).toBeCloseTo(5.5, 5);
+  });
+  test('items without playtime contribute 0', () => {
+    expect(totalPlaytimeHours([
+      { name: 'Halo 2024 5h' },
+      { name: 'No Year Game' },
+      { name: 'Halo Infinite 2024' },
+    ])).toBe(5);
+  });
+  test('null items skipped', () => {
+    expect(totalPlaytimeHours([null, { name: 'Game 2020 3h' }, undefined])).toBe(3);
+  });
+});
+
+describe('formatTotalHours', () => {
+  test('zero', () => {
+    expect(formatTotalHours(0)).toBe('0 hours');
+  });
+  test('one — singular', () => {
+    expect(formatTotalHours(1)).toBe('1 hour');
+  });
+  test('plural', () => {
+    expect(formatTotalHours(5)).toBe('5 hours');
+  });
+  test('decimal preserved', () => {
+    expect(formatTotalHours(25.5)).toBe('25.5 hours');
+  });
+  test('thousands separator', () => {
+    expect(formatTotalHours(1500)).toBe('1,500 hours');
+  });
+  test('non-numeric → 0 hours', () => {
+    expect(formatTotalHours(null)).toBe('0 hours');
+    expect(formatTotalHours(undefined)).toBe('0 hours');
+    expect(formatTotalHours(NaN)).toBe('0 hours');
+  });
+});
+
+describe('formatGamePlaytime', () => {
+  test('null → empty string', () => {
+    expect(formatGamePlaytime(null)).toBe('');
+  });
+  test('undefined → empty string', () => {
+    expect(formatGamePlaytime(undefined)).toBe('');
+  });
+  test('zero values → empty string', () => {
+    expect(formatGamePlaytime({ hours: 0, minutes: 0 })).toBe('');
+  });
+  test('hours only — integer', () => {
+    expect(formatGamePlaytime({ hours: 5, minutes: 0 })).toBe('5h');
+  });
+  test('hours only — decimal', () => {
+    expect(formatGamePlaytime({ hours: 5.5, minutes: 0 })).toBe('5.5h');
+  });
+  test('minutes only', () => {
+    expect(formatGamePlaytime({ hours: 0, minutes: 45 })).toBe('45min');
+  });
+  test('combined — clean half', () => {
+    expect(formatGamePlaytime({ hours: 2, minutes: 30 })).toBe('2.5h');
+  });
+  test('combined — quarter hour', () => {
+    expect(formatGamePlaytime({ hours: 5, minutes: 15 })).toBe('5.25h');
   });
 });
