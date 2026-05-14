@@ -102,6 +102,40 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
+.big-stats {
+  display: flex;
+  gap: 32px;
+  padding: 20px 24px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 14px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.big-stats[hidden] { display: none; }
+.big-stat { display: flex; align-items: baseline; gap: 10px; }
+.big-stat-num {
+  font-family: var(--display);
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.big-stat-games .big-stat-num { color: var(--accent); }
+.big-stat-hours .big-stat-num { color: var(--info); }
+.big-stat-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--muted);
+}
+.big-stat-sep {
+  color: var(--border-strong);
+  font-size: 28px;
+  align-self: center;
+}
 .stat-num { color: var(--text); font-weight: 600; margin-left: 8px; }
 
 /* ─── Tabs ───────────────────────────────────────────────── */
@@ -1038,6 +1072,7 @@ body {
   display: flex;
   flex-direction: column;
 }
+.dup-panel[hidden] { display: none; }
 .dup-panel-header {
   padding: 14px 18px;
   border-bottom: 1px solid var(--border);
@@ -1425,6 +1460,8 @@ body {
   <h2 class="section-title">main vault</h2>
   <p class="section-desc">তোমার পুরো collection। search fuzzy, এতে special character, year, edition keyword match করে।</p>
 
+  <div class="big-stats" id="vault-big-stats" hidden></div>
+
   <div class="tag-filter-bar" id="vault-tag-filter-bar" title="একাধিক tag select করলে — সব tag আছে এমন games দেখাবে (AND)"></div>
 
   <div class="bulk-toolbar" id="vault-bulk-toolbar" hidden></div>
@@ -1486,6 +1523,8 @@ body {
   <h2 class="section-title">played list</h2>
   <p class="section-desc">যেগুলো ইতিমধ্যে খেলেছ। আলাদা list, আলাদা search।</p>
 
+  <div class="big-stats" id="played-big-stats" hidden></div>
+
   <div class="toolbar">
     <div class="toolbar-row">
       <div class="input-group">
@@ -1542,6 +1581,8 @@ body {
   <h2 class="section-title">mother database</h2>
   <p class="section-desc">সব database একসাথে — Played বাদে। প্রতিটা item-এ source দেখাবে।</p>
 
+  <div class="big-stats" id="mother-big-stats" hidden></div>
+
   <div class="toolbar">
     <div class="toolbar-row">
       <div class="input-group">
@@ -1580,6 +1621,8 @@ body {
 <section class="view" id="view-custom">
   <h2 class="section-title" id="custom-section-title">database</h2>
   <p class="section-desc" id="custom-section-desc"></p>
+
+  <div class="big-stats" id="custom-big-stats" hidden></div>
 
   <div class="toolbar">
     <div class="toolbar-row">
@@ -3080,6 +3123,27 @@ function getPlaytimeForSort(item) {
   return p ? p.hours + p.minutes / 60 : 0;
 }
 
+// Populate the big colorful stats header. Hidden when count is 0.
+// Hours rounded to whole numbers for the prominent display.
+function setBigStats(elId, count, hours) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!count || count <= 0) { el.hidden = true; return; }
+  const c = Number(count) || 0;
+  const h = Math.round(Number(hours) || 0);
+  el.innerHTML =
+    '<div class="big-stat big-stat-games">'
+    + '<span class="big-stat-num">' + c.toLocaleString('en-US') + '</span>'
+    + '<span class="big-stat-label">games</span>'
+    + '</div>'
+    + '<span class="big-stat-sep">·</span>'
+    + '<div class="big-stat big-stat-hours">'
+    + '<span class="big-stat-num">' + h.toLocaleString('en-US') + '</span>'
+    + '<span class="big-stat-label">hours</span>'
+    + '</div>';
+  el.hidden = false;
+}
+
 // Accepts integer or numeric string in [1970, 2030]; returns int or null.
 // Floats and non-numeric strings are rejected.
 function isValidYear(v) {
@@ -4075,6 +4139,7 @@ function renderVault() {
   const items = getFilteredItems('vault');
   vList.setItems(items);
   $('#vault-list-info').textContent = items.length + ' / ' + state.vault.length + ' items · ' + formatTotalHours(totalPlaytimeHours(items));
+  setBigStats('vault-big-stats', state.vault.length, totalPlaytimeHours(state.vault));
   const filterText = [];
   if (state.vaultFilter) filterText.push('search: "' + state.vaultFilter + '"');
   if (state.vaultDupOnly) filterText.push('duplicates only');
@@ -4088,6 +4153,7 @@ function renderPlayed() {
   const items = getFilteredItems('played');
   pList.setItems(items);
   $('#played-list-info').textContent = items.length + ' / ' + state.played.length + ' items · ' + formatTotalHours(totalPlaytimeHours(items));
+  setBigStats('played-big-stats', state.played.length, totalPlaytimeHours(state.played));
   const filterText = [];
   if (state.playedFilter) filterText.push('search: "' + state.playedFilter + '"');
   if (state.playedDupOnly) filterText.push('duplicates only');
@@ -4171,6 +4237,7 @@ function renderCustomDbView(id) {
   $('#custom-section-desc').textContent =
     'এটা ' + list.name + ' database — আলাদা list, নিজস্ব search/add আছে।';
   $('#custom-list-info').textContent = items.length + ' / ' + list.items.length + ' items · ' + formatTotalHours(totalPlaytimeHours(items));
+  setBigStats('custom-big-stats', list.items.length, totalPlaytimeHours(list.items));
   const filterText = [];
   if (query) filterText.push('search: "' + query + '"');
   $('#custom-filter-info').textContent = filterText.join(' · ');
@@ -6089,6 +6156,7 @@ function renderMotherView() {
 
   // Stats and toolbar sync
   $('#mother-list-info').textContent = rows.length + ' / ' + cache.rows.length + ' items · ' + formatTotalHours(totalPlaytimeHours(rows.map(r => r.item)));
+  setBigStats('mother-big-stats', cache.rows.length, totalPlaytimeHours(cache.rows.map(r => r.item)));
   const bits = [];
   if (search) bits.push('search: "' + search + '"');
   if (state.motherSourceFilter) {
