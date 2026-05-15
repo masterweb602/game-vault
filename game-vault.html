@@ -3211,6 +3211,36 @@ function parseYearInput(raw) {
   return v === null ? undefined : v;
 }
 
+// Pure parser for the playtime widget. Parallels parseYearInput's role but
+// per Step 1C spec never returns "invalid" — silent fall-back to null on
+// bad/negative input keeps the form forgiving. Decimal hours and minutes
+// ≥ 60 normalize via total-minute carry, so stored shape is always
+// { hours: int, minutes: 0–59 }.
+//   both empty       → null  (cleared)
+//   non-numeric/neg  → null  (silent)
+//   decimal minutes  → null  (minutes step=1; must be integer)
+//   {0,0} effective  → null  (matches getPlaytimeForItem's empty semantics)
+//   valid            → { hours, minutes }
+function parsePlaytimeInput(hoursStr, minutesStr) {
+  const h = String(hoursStr == null ? '' : hoursStr).trim();
+  const m = String(minutesStr == null ? '' : minutesStr).trim();
+  if (h === '' && m === '') return null;
+  let hF = 0, mI = 0;
+  if (h !== '') {
+    const n = Number(h);
+    if (!isFinite(n) || n < 0) return null;
+    hF = n;
+  }
+  if (m !== '') {
+    const n = Number(m);
+    if (!isFinite(n) || n < 0 || !Number.isInteger(n)) return null;
+    mI = n;
+  }
+  const totalMin = Math.round(hF * 60) + mI;
+  if (totalMin === 0) return null;
+  return { hours: Math.floor(totalMin / 60), minutes: totalMin % 60 };
+}
+
 // Manual item.year overrides regex extraction from name.
 function resolveItemYear(item) {
   if (item && typeof item.year === 'number') return item.year;
@@ -4383,12 +4413,15 @@ function editCustomItem(item, id) {
   const workTags = Array.isArray(item.tags) ? item.tags.slice() : [];
   const tagEditor = buildTagEditor(workTags);
   const yearField = buildYearField(item.year);
+  const playtimeField = buildPlaytimeField(item.playtime);
 
   const body = el('div', { style: 'display:flex; flex-direction:column; gap:14px;' });
   body.appendChild(el('label', { class: 'tag-edit-label' }, 'Name'));
   body.appendChild(inputBox);
   body.appendChild(el('label', { class: 'tag-edit-label' }, 'Release year (1970–2030, optional)'));
   body.appendChild(yearField.root);
+  body.appendChild(el('label', { class: 'tag-edit-label' }, 'Playtime (optional)'));
+  body.appendChild(playtimeField.root);
   body.appendChild(el('label', { class: 'tag-edit-label' }, 'Tags'));
   body.appendChild(tagEditor.root);
 
@@ -4401,17 +4434,22 @@ function editCustomItem(item, id) {
       if (!v) return;
       const yr = yearField.commit();
       if (yr === undefined) { toast('Year invalid — must be 1970–2030 or empty', 'error'); return; }
+      const pt = playtimeField.commit();
+      // Mutate, run migrateItem to lift embedded year/playtime from raw name
+      // and strip them, then recompute index keys from the POST-migrate name.
       list.index.remove(item);
       item.name = v;
-      item._norm = normalize(v);
-      item._ts = tokenSort(v);
-      item._lower = v.toLowerCase();
       item.tags = tagEditor.getTags();
       if (yr === null) delete item.year; else item.year = yr;
+      if (pt === null) delete item.playtime; else item.playtime = pt;
+      migrateItem(item);
+      item._norm = normalize(item.name);
+      item._ts = tokenSort(item.name);
+      item._lower = item.name.toLowerCase();
       list.index.add(item);
       scheduleCustomSave(id);
       state.yearsDirty = true;
-      if (typeof yr === 'number') { pushRecentYear(state.recentYears, yr); persistRecentYears(); }
+      if (typeof item.year === 'number') { pushRecentYear(state.recentYears, item.year); persistRecentYears(); }
       refreshTagState();
       renderCustomDbView(id);
       toast('Updated', 'success');
@@ -5045,6 +5083,7 @@ function editItem(item, source) {
   const workTags = Array.isArray(item.tags) ? item.tags.slice() : [];
   const tagEditor = buildTagEditor(workTags);
   const yearField = buildYearField(item.year);
+  const playtimeField = buildPlaytimeField(item.playtime);
 
   const body = el('div', { style: 'display:flex; flex-direction:column; gap:14px;' });
   const nameLabel = el('label', { class: 'tag-edit-label' }, 'Name');
@@ -5052,6 +5091,8 @@ function editItem(item, source) {
   body.appendChild(inputBox);
   body.appendChild(el('label', { class: 'tag-edit-label' }, 'Release year (1970–2030, optional)'));
   body.appendChild(yearField.root);
+  body.appendChild(el('label', { class: 'tag-edit-label' }, 'Playtime (optional)'));
+  body.appendChild(playtimeField.root);
   const tagsLabel = el('label', { class: 'tag-edit-label' }, 'Tags');
   body.appendChild(tagsLabel);
   body.appendChild(tagEditor.root);
@@ -5065,21 +5106,26 @@ function editItem(item, source) {
       if (!v) return;
       const yr = yearField.commit();
       if (yr === undefined) { toast('Year invalid — must be 1970–2030 or empty', 'error'); return; }
+      const pt = playtimeField.commit();
       const idx = source === 'vault' ? state.vIndex : state.pIndex;
 
-      // Remove old version from index, mutate, re-add — keeps insertion order via items array
+      // Mutate, run migrateItem to lift embedded year/playtime from raw name
+      // and strip them, then recompute index keys from the POST-migrate name
+      // so the cleaned form is what gets searched.
       idx.remove(item);
       item.name = v;
-      item._norm = normalize(v);
-      item._ts = tokenSort(v);
-      item._lower = v.toLowerCase();
       item.tags = tagEditor.getTags();
       if (yr === null) delete item.year; else item.year = yr;
+      if (pt === null) delete item.playtime; else item.playtime = pt;
+      migrateItem(item);
+      item._norm = normalize(item.name);
+      item._ts = tokenSort(item.name);
+      item._lower = item.name.toLowerCase();
       idx.add(item);
 
       scheduleSave(source);
       state.yearsDirty = true;
-      if (typeof yr === 'number') { pushRecentYear(state.recentYears, yr); persistRecentYears(); }
+      if (typeof item.year === 'number') { pushRecentYear(state.recentYears, item.year); persistRecentYears(); }
       refreshTagState();
       if (source === 'vault') renderVault(); else renderPlayed();
       toast('Updated', 'success');
@@ -5120,6 +5166,45 @@ function buildYearField(initialYear) {
     return v; // int or null
   }
   return { root, input, commit };
+}
+
+// Playtime input widget — twin number fields (hours, minutes) with Bengali
+// hint. commit() returns { hours, minutes } or null (cleared/invalid). No
+// inline error path — invalid input silently clears per Step 1C spec.
+function buildPlaytimeField(initialPlaytime) {
+  const hoursInput = el('input', {
+    type: 'number', class: 'input',
+    min: '0', max: '999', step: '0.5',
+    inputmode: 'decimal', autocomplete: 'off',
+    placeholder: 'hours',
+    style: 'flex:1; min-width:0;'
+  });
+  const minutesInput = el('input', {
+    type: 'number', class: 'input',
+    min: '0', max: '59', step: '1',
+    inputmode: 'numeric', autocomplete: 'off',
+    placeholder: 'minutes',
+    style: 'flex:1; min-width:0;'
+  });
+  if (initialPlaytime && typeof initialPlaytime.hours === 'number' && initialPlaytime.hours > 0) {
+    hoursInput.value = String(initialPlaytime.hours);
+  }
+  if (initialPlaytime && typeof initialPlaytime.minutes === 'number' && initialPlaytime.minutes > 0) {
+    minutesInput.value = String(initialPlaytime.minutes);
+  }
+  const row = el('div', { style: 'display:flex; gap:8px;' });
+  row.appendChild(hoursInput);
+  row.appendChild(minutesInput);
+  const hint = el('div', {
+    style: 'font-size:0.85em; color:var(--muted); margin-top:4px;'
+  }, 'যেমন 5 hours 30 minutes');
+  const root = el('div');
+  root.appendChild(row);
+  root.appendChild(hint);
+  function commit() {
+    return parsePlaytimeInput(hoursInput.value, minutesInput.value);
+  }
+  return { root, hoursInput, minutesInput, commit };
 }
 
 /* ─── Tag editor widget (chip strip + autocomplete input) ───

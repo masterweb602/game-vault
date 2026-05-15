@@ -2848,3 +2848,57 @@ describe('getPlaytimeForItem', () => {
     expect(getPlaytimeForItem(it)).toBeNull();
   });
 });
+
+// ── parsePlaytimeInput — verbatim copy from game-vault.html ──
+function parsePlaytimeInput(hoursStr, minutesStr) {
+  const h = String(hoursStr == null ? '' : hoursStr).trim();
+  const m = String(minutesStr == null ? '' : minutesStr).trim();
+  if (h === '' && m === '') return null;
+  let hF = 0, mI = 0;
+  if (h !== '') {
+    const n = Number(h);
+    if (!isFinite(n) || n < 0) return null;
+    hF = n;
+  }
+  if (m !== '') {
+    const n = Number(m);
+    if (!isFinite(n) || n < 0 || !Number.isInteger(n)) return null;
+    mI = n;
+  }
+  const totalMin = Math.round(hF * 60) + mI;
+  if (totalMin === 0) return null;
+  return { hours: Math.floor(totalMin / 60), minutes: totalMin % 60 };
+}
+
+describe('parsePlaytimeInput', () => {
+  test('both empty → null', () => {
+    expect(parsePlaytimeInput('', '')).toBeNull();
+    expect(parsePlaytimeInput('  ', '  ')).toBeNull();
+    expect(parsePlaytimeInput(null, undefined)).toBeNull();
+  });
+  test('hours only, valid int → {hours, minutes:0}', () => {
+    expect(parsePlaytimeInput('5', '')).toEqual({ hours: 5, minutes: 0 });
+  });
+  test('minutes only, valid → {hours:0, minutes}', () => {
+    expect(parsePlaytimeInput('', '30')).toEqual({ hours: 0, minutes: 30 });
+  });
+  test('both filled → combined', () => {
+    expect(parsePlaytimeInput('2', '15')).toEqual({ hours: 2, minutes: 15 });
+  });
+  test('decimal hours → fractional part becomes minutes', () => {
+    expect(parsePlaytimeInput('5.5', '')).toEqual({ hours: 5, minutes: 30 });
+  });
+  test('decimal hours + minutes → carry into next hour', () => {
+    expect(parsePlaytimeInput('5.5', '30')).toEqual({ hours: 6, minutes: 0 });
+  });
+  test('minutes overflow → carry into hours', () => {
+    expect(parsePlaytimeInput('5', '90')).toEqual({ hours: 6, minutes: 30 });
+  });
+  test('invalid / negative input → null (silent)', () => {
+    expect(parsePlaytimeInput('abc', '')).toBeNull();
+    expect(parsePlaytimeInput('', 'xyz')).toBeNull();
+    expect(parsePlaytimeInput('-1', '0')).toBeNull();
+    expect(parsePlaytimeInput('5', '-10')).toBeNull();
+    expect(parsePlaytimeInput('5', '30.5')).toBeNull(); // decimal minutes rejected
+  });
+});
