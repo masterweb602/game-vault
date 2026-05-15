@@ -2883,7 +2883,9 @@ async function saveList(name, items) {
   const oldMeta = await Storage.get(`${name}-meta`);
   if (oldMeta) { try { oldChunks = JSON.parse(oldMeta).chunks || 0; } catch(e){} }
 
-  // Strip computed fields before save. year is optional — only persisted if set.
+  // Strip computed fields before save. year + playtime are optional —
+  // only persisted if set. playtime is normalized to {hours, minutes}
+  // (numbers) regardless of incoming shape, defending against bad input.
   const lean = items.map(it => {
     const o = {
       id: it.id,
@@ -2892,6 +2894,11 @@ async function saveList(name, items) {
       tags: Array.isArray(it.tags) ? it.tags.slice() : []
     };
     if (typeof it.year === 'number') o.year = it.year;
+    if (it.playtime) {
+      const h = Number(it.playtime.hours) || 0;
+      const m = Number(it.playtime.minutes) || 0;
+      if (h > 0 || m > 0) o.playtime = { hours: h, minutes: m };
+    }
     return o;
   });
 
@@ -3106,7 +3113,7 @@ function totalPlaytimeHours(items) {
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
     if (!it) continue;
-    const p = extractPlaytimeFromName(it.name);
+    const p = getPlaytimeForItem(it);
     if (!p) continue;
     total += p.hours + p.minutes / 60;
   }
@@ -3149,7 +3156,7 @@ function formatGamePlaytime(playtime) {
 // Total playtime as fractional hours, suitable for sort comparators.
 // Items with no extractable playtime contribute 0 (sort to top in asc, bottom in desc).
 function getPlaytimeForSort(item) {
-  const p = extractPlaytimeFromName(item && item.name);
+  const p = getPlaytimeForItem(item);
   return p ? p.hours + p.minutes / 60 : 0;
 }
 
@@ -3208,6 +3215,52 @@ function parseYearInput(raw) {
 function resolveItemYear(item) {
   if (item && typeof item.year === 'number') return item.year;
   return extractYearFromName(item ? item.name : '');
+}
+
+// Field-first playtime read. Falls back to extracting from name for legacy
+// items that haven't been migrated (no item.playtime). Treats {0,0} as null
+// so sort/display behave identically to pre-field code.
+function getPlaytimeForItem(item) {
+  if (!item) return null;
+  const p = item.playtime;
+  if (p && (typeof p.hours === 'number' || typeof p.minutes === 'number')) {
+    const h = Number(p.hours) || 0;
+    const mn = Number(p.minutes) || 0;
+    if (h === 0 && mn === 0) return null;
+    return { hours: h, minutes: mn };
+  }
+  return extractPlaytimeFromName(item.name);
+}
+
+// One-time migration: lift year + playtime from item.name into structured
+// fields, then strip them from name. Idempotent — the cleaned name has no
+// year/playtime tail, so a second pass returns changed=false.
+// Conflict policy: when item.year is already set AND name contains a
+// DIFFERENT year, keep item.year (manual wins) but still strip name —
+// the embedded text is stale display noise once the field is canonical.
+// Returns { changed, conflict }. Mutates item in place.
+function migrateItem(item) {
+  if (!item || typeof item.name !== 'string') return { changed: false, conflict: false };
+  let changed = false, conflict = false;
+
+  const nameYear = extractYearFromName(item.name);
+  const namePlaytime = extractPlaytimeFromName(item.name);
+
+  if (typeof item.year !== 'number') {
+    if (nameYear !== null) { item.year = nameYear; changed = true; }
+  } else if (nameYear !== null && nameYear !== item.year) {
+    conflict = true;
+  }
+
+  if (!item.playtime && namePlaytime) {
+    item.playtime = namePlaytime;
+    changed = true;
+  }
+
+  const cleaned = stripDisplayMetadata(item.name);
+  if (cleaned !== item.name) { item.name = cleaned; changed = true; }
+
+  return { changed, conflict };
 }
 
 // Pure: dedupe + unshift + cap at 5. Invalid years are dropped silently.
@@ -3986,7 +4039,7 @@ function makeRow(item, idx, source) {
   const yr = resolveItemYear(item);
   if (yr !== null) cluster.appendChild(el('span', { class: 'row-year' }, '[' + yr + ']'));
 
-  const ptTxt = formatGamePlaytime(extractPlaytimeFromName(item.name));
+  const ptTxt = formatGamePlaytime(getPlaytimeForItem(item));
   if (ptTxt) cluster.appendChild(el('span', { class: 'row-playtime' }, '[' + ptTxt + ']'));
   row.appendChild(cluster);
 
@@ -4222,7 +4275,7 @@ function makeCustomRow(item, idx, id) {
   const yr = resolveItemYear(item);
   if (yr !== null) cluster.appendChild(el('span', { class: 'row-year' }, '[' + yr + ']'));
 
-  const ptTxt = formatGamePlaytime(extractPlaytimeFromName(item.name));
+  const ptTxt = formatGamePlaytime(getPlaytimeForItem(item));
   if (ptTxt) cluster.appendChild(el('span', { class: 'row-playtime' }, '[' + ptTxt + ']'));
   row.appendChild(cluster);
 
@@ -5620,7 +5673,7 @@ function makeYearRow(row, serial, isUnknown) {
     name.appendChild(em);
   }
   cluster.appendChild(name);
-  const ptTxt = formatGamePlaytime(extractPlaytimeFromName(row.item.name));
+  const ptTxt = formatGamePlaytime(getPlaytimeForItem(row.item));
   if (ptTxt) {
     const ptEl = document.createElement('span');
     ptEl.className = 'row-playtime';
@@ -6061,7 +6114,7 @@ function makeMotherRow(row, idx) {
   const yr = resolveItemYear(row.item);
   if (yr !== null) cluster.appendChild(el('span', { class: 'row-year' }, '[' + yr + ']'));
 
-  const ptTxt = formatGamePlaytime(extractPlaytimeFromName(row.item.name));
+  const ptTxt = formatGamePlaytime(getPlaytimeForItem(row.item));
   if (ptTxt) cluster.appendChild(el('span', { class: 'row-playtime' }, '[' + ptTxt + ']'));
   div.appendChild(cluster);
 
@@ -7244,6 +7297,11 @@ $('#export-json').addEventListener('click', () => {
   const exportItem = (it) => {
     const o = { name: it.name, dateAdded: it.dateAdded, tags: Array.isArray(it.tags) ? it.tags.slice() : [] };
     if (typeof it.year === 'number') o.year = it.year;
+    if (it.playtime) {
+      const h = Number(it.playtime.hours) || 0;
+      const m = Number(it.playtime.minutes) || 0;
+      if (h > 0 || m > 0) o.playtime = { hours: h, minutes: m };
+    }
     return o;
   };
   const data = {
@@ -7267,9 +7325,17 @@ $('#export-csv').addEventListener('click', () => {
   }
   const tagsCell = (it) => Array.isArray(it.tags) ? it.tags.join(';') : '';
   const yearCell = (it) => (typeof it.year === 'number') ? String(it.year) : '';
-  const rows = [['list','name','date_added','tags','year']];
-  for (const it of state.vault) rows.push(['vault', it.name, new Date(it.dateAdded).toISOString(), tagsCell(it), yearCell(it)]);
-  for (const it of state.played) rows.push(['played', it.name, new Date(it.dateAdded).toISOString(), tagsCell(it), yearCell(it)]);
+  // Decimal hours, up to 2 places, trailing zeros stripped: "5", "5.5", "0.75".
+  const playtimeCell = (it) => {
+    if (!it.playtime) return '';
+    const h = Number(it.playtime.hours) || 0;
+    const m = Number(it.playtime.minutes) || 0;
+    if (h === 0 && m === 0) return '';
+    return parseFloat((h + m / 60).toFixed(2)).toString();
+  };
+  const rows = [['list','name','date_added','tags','year','playtime_hours']];
+  for (const it of state.vault) rows.push(['vault', it.name, new Date(it.dateAdded).toISOString(), tagsCell(it), yearCell(it), playtimeCell(it)]);
+  for (const it of state.played) rows.push(['played', it.name, new Date(it.dateAdded).toISOString(), tagsCell(it), yearCell(it), playtimeCell(it)]);
   const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
   // BOM for Excel UTF-8 detection (Bengali names display correctly)
   const ok = downloadFile(
@@ -7317,6 +7383,11 @@ async function exportHtml({ embedData }) {
       const o = { name: it.name, dateAdded: it.dateAdded };
       if (Array.isArray(it.tags) && it.tags.length) o.tags = it.tags.slice();
       if (typeof it.year === 'number') o.year = it.year;
+      if (it.playtime) {
+        const h = Number(it.playtime.hours) || 0;
+        const m = Number(it.playtime.minutes) || 0;
+        if (h > 0 || m > 0) o.playtime = { hours: h, minutes: m };
+      }
       return o;
     };
     const payload = {
@@ -7432,7 +7503,7 @@ function bulkAddRich(richItems, target) {
   let counter = 0;
 
   for (const raw of richItems) {
-    let name, dateAdded, rawTags, rawYear;
+    let name, dateAdded, rawTags, rawYear, rawPlaytime;
     if (typeof raw === 'string') {
       name = raw.trim();
       dateAdded = Date.now() + counter;
@@ -7442,6 +7513,7 @@ function bulkAddRich(richItems, target) {
       dateAdded = (Number.isFinite(d) && d > 0) ? d : Date.now() + counter;
       rawTags = raw.tags;
       rawYear = raw.year;
+      rawPlaytime = raw.playtime;
     } else continue;
 
     if (!name) continue;
@@ -7481,6 +7553,13 @@ function bulkAddRich(richItems, target) {
     const item = { id: newId(), name, dateAdded, tags };
     const yr = isValidYear(rawYear);
     if (yr !== null) item.year = yr;
+    if (rawPlaytime && typeof rawPlaytime === 'object') {
+      const ph = Number(rawPlaytime.hours);
+      const pm = Number(rawPlaytime.minutes);
+      const hv = Number.isFinite(ph) && ph >= 0 ? ph : 0;
+      const mv = Number.isFinite(pm) && pm >= 0 ? pm : 0;
+      if (hv > 0 || mv > 0) item.playtime = { hours: hv, minutes: mv };
+    }
     item._norm = n;
     item._ts = tokenSort(name);
 
@@ -7660,7 +7739,7 @@ function parseCsvSmart(text) {
 
   const firstCells = parseCsvRow(rows[0]);
   const lowered = firstCells.map(c => c.trim().toLowerCase());
-  const hasHeader = lowered.some(h => /^(name|title|game|list|category|date_added|added|tags|year)$/i.test(h));
+  const hasHeader = lowered.some(h => /^(name|title|game|list|category|date_added|added|tags|year|playtime_hours)$/i.test(h));
 
   if (hasHeader) {
     const nameIdx = lowered.findIndex(h => /^(name|title|game)$/i.test(h));
@@ -7668,6 +7747,7 @@ function parseCsvSmart(text) {
     const dateIdx = lowered.findIndex(h => /^(date_added|added|created|timestamp)$/i.test(h));
     const tagsIdx = lowered.findIndex(h => /^tags$/i.test(h));
     const yearIdx = lowered.findIndex(h => /^year$/i.test(h));
+    const playtimeIdx = lowered.findIndex(h => /^playtime_hours$/i.test(h));
 
     const parseTagsCell = (cell) => {
       if (!cell) return [];
@@ -7677,6 +7757,17 @@ function parseCsvSmart(text) {
       if (cell == null || String(cell).trim() === '') return undefined;
       const v = isValidYear(String(cell).trim());
       return v === null ? undefined : v;
+    };
+    // Decimal hours → {hours: floor, minutes: round(frac * 60)}.
+    // Empty / invalid / zero → undefined (no field set).
+    const parsePlaytimeCell = (cell) => {
+      if (cell == null || String(cell).trim() === '') return undefined;
+      const n = parseFloat(String(cell).trim());
+      if (!Number.isFinite(n) || n < 0) return undefined;
+      const hours = Math.floor(n);
+      const minutes = Math.round((n - hours) * 60);
+      if (hours === 0 && minutes === 0) return undefined;
+      return { hours, minutes };
     };
 
     if (nameIdx >= 0 && listIdx >= 0) {
@@ -7690,8 +7781,10 @@ function parseCsvSmart(text) {
         const date = dateIdx >= 0 ? Date.parse(cells[dateIdx]) : NaN;
         const tags = tagsIdx >= 0 ? parseTagsCell(cells[tagsIdx]) : [];
         const year = yearIdx >= 0 ? parseYearCell(cells[yearIdx]) : undefined;
+        const playtime = playtimeIdx >= 0 ? parsePlaytimeCell(cells[playtimeIdx]) : undefined;
         const item = { name, dateAdded: Number.isFinite(date) ? date : undefined, tags };
         if (year !== undefined) item.year = year;
+        if (playtime !== undefined) item.playtime = playtime;
         if (listVal === 'played') played.push(item);
         else vault.push(item); // default to vault
       }
@@ -7699,7 +7792,7 @@ function parseCsvSmart(text) {
     }
 
     if (nameIdx >= 0) {
-      // Single-list import — extract name + optional date + tags + year
+      // Single-list import — extract name + optional date + tags + year + playtime
       const lines = [];
       for (let i = 1; i < rows.length; i++) {
         const cells = parseCsvRow(rows[i]);
@@ -7708,8 +7801,10 @@ function parseCsvSmart(text) {
         const date = dateIdx >= 0 ? Date.parse(cells[dateIdx]) : NaN;
         const tags = tagsIdx >= 0 ? parseTagsCell(cells[tagsIdx]) : [];
         const year = yearIdx >= 0 ? parseYearCell(cells[yearIdx]) : undefined;
+        const playtime = playtimeIdx >= 0 ? parsePlaytimeCell(cells[playtimeIdx]) : undefined;
         const item = { name, dateAdded: Number.isFinite(date) ? date : undefined, tags };
         if (year !== undefined) item.year = year;
+        if (playtime !== undefined) item.playtime = playtime;
         lines.push(item);
       }
       return { routed: false, lines };
@@ -8129,6 +8224,75 @@ async function init() {
     state.vault = v;
     state.played = p;
     const totalItems = v.length + p.length;
+
+    // One-time structured-field migration. Lifts year + playtime out of
+    // item.name into fields and strips them from name. Runs BEFORE index
+    // build so index keys come from cleaned names. Flag-gated; never repeats.
+    try {
+      const migFlag = await Storage.get('migration-structured-v1');
+      if (!migFlag) {
+        // One-shot pre-migration snapshot. Kept forever (never auto-overwritten
+        // by subsequent runs — the flag guards both backup and migration).
+        try {
+          const snapshot = {
+            version: 1,
+            savedAt: Date.now(),
+            vault: state.vault.map(it => ({ ...it })),
+            played: state.played.map(it => ({ ...it })),
+            customLists: Object.keys(state.customLists).map(id => ({
+              id, name: state.customLists[id].name,
+              items: state.customLists[id].items.map(it => ({ ...it }))
+            }))
+          };
+          await Storage.set('pre-migration-backup', JSON.stringify(snapshot));
+        } catch (e) { console.warn('pre-migration backup failed:', e); }
+
+        let migrated = 0, conflicts = 0;
+        let touchedVault = false, touchedPlayed = false;
+        for (const it of state.vault) {
+          const r = migrateItem(it);
+          if (r.changed) { migrated++; touchedVault = true; }
+          if (r.conflict) conflicts++;
+        }
+        for (const it of state.played) {
+          const r = migrateItem(it);
+          if (r.changed) { migrated++; touchedPlayed = true; }
+          if (r.conflict) conflicts++;
+        }
+        const touchedCustom = [];
+        for (const id of Object.keys(state.customLists)) {
+          const cl = state.customLists[id];
+          let touched = false;
+          for (const it of cl.items) {
+            const r = migrateItem(it);
+            if (r.changed) { migrated++; touched = true; }
+            if (r.conflict) conflicts++;
+          }
+          if (touched) touchedCustom.push(id);
+        }
+
+        const saves = [];
+        if (touchedVault) saves.push(saveList('vault', state.vault));
+        if (touchedPlayed) saves.push(saveList('played', state.played));
+        for (const id of touchedCustom) saves.push(saveList('cl-' + id, state.customLists[id].items));
+        if (saves.length) await Promise.all(saves);
+
+        // Custom DB indexes were already built on load — rebuild any that changed.
+        // vault/played indexes are built fresh below, no action needed here.
+        for (const id of touchedCustom) {
+          state.customLists[id].index.rebuild(state.customLists[id].items);
+        }
+
+        await Storage.set('migration-structured-v1', '1');
+        if (migrated > 0) {
+          const msg = '✓ ' + migrated + ' গেম structured format-এ migrate হয়েছে'
+            + (conflicts > 0 ? ' (' + conflicts + ' year conflict)' : '');
+          toast(msg, 'success', 4000);
+        }
+      }
+    } catch (e) {
+      console.error('Structured migration failed:', e);
+    }
 
     const _tIdx = performance.now();
     if (totalItems > 10000) {

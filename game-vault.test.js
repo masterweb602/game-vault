@@ -2685,3 +2685,166 @@ describe('stripDisplayMetadata', () => {
     expect(stripDisplayMetadata('FIFA 1999 2000 2001 5h')).toBe('FIFA 1999 2000');
   });
 });
+
+// ── Field-first reader + migration — verbatim copy from game-vault.html ──
+function getPlaytimeForItem(item) {
+  if (!item) return null;
+  const p = item.playtime;
+  if (p && (typeof p.hours === 'number' || typeof p.minutes === 'number')) {
+    const h = Number(p.hours) || 0;
+    const mn = Number(p.minutes) || 0;
+    if (h === 0 && mn === 0) return null;
+    return { hours: h, minutes: mn };
+  }
+  return extractPlaytimeFromName(item.name);
+}
+
+function migrateItem(item) {
+  if (!item || typeof item.name !== 'string') return { changed: false, conflict: false };
+  let changed = false, conflict = false;
+
+  const nameYear = extractYearFromName(item.name);
+  const namePlaytime = extractPlaytimeFromName(item.name);
+
+  if (typeof item.year !== 'number') {
+    if (nameYear !== null) { item.year = nameYear; changed = true; }
+  } else if (nameYear !== null && nameYear !== item.year) {
+    conflict = true;
+  }
+
+  if (!item.playtime && namePlaytime) {
+    item.playtime = namePlaytime;
+    changed = true;
+  }
+
+  const cleaned = stripDisplayMetadata(item.name);
+  if (cleaned !== item.name) { item.name = cleaned; changed = true; }
+
+  return { changed, conflict };
+}
+
+describe('migrateItem', () => {
+  test('extracts year + playtime, strips name, marks changed', () => {
+    const it = { name: 'Halo Infinite 2024 5h' };
+    const r = migrateItem(it);
+    expect(r).toEqual({ changed: true, conflict: false });
+    expect(it.year).toBe(2024);
+    expect(it.playtime).toEqual({ hours: 5, minutes: 0 });
+    expect(it.name).toBe('Halo Infinite');
+  });
+  test('manual item.year wins; playtime still extracted; name still stripped; conflict flagged', () => {
+    const it = { name: 'Halo 2024 45 min', year: 2023 };
+    const r = migrateItem(it);
+    expect(r.conflict).toBe(true);
+    expect(r.changed).toBe(true);
+    expect(it.year).toBe(2023);
+    expect(it.playtime).toEqual({ hours: 0, minutes: 45 });
+    expect(it.name).toBe('Halo');
+  });
+  test('plain name with no year/playtime — no-op', () => {
+    const it = { name: 'Just a name' };
+    const r = migrateItem(it);
+    expect(r).toEqual({ changed: false, conflict: false });
+    expect(it.year).toBeUndefined();
+    expect(it.playtime).toBeUndefined();
+    expect(it.name).toBe('Just a name');
+  });
+  test('year-only name → year extracted, no playtime field, name stripped', () => {
+    const it = { name: 'Tetris 1984' };
+    const r = migrateItem(it);
+    expect(r.changed).toBe(true);
+    expect(r.conflict).toBe(false);
+    expect(it.year).toBe(1984);
+    expect(it.playtime).toBeUndefined();
+    expect(it.name).toBe('Tetris');
+  });
+  test('playtime without year anchor → no extraction (year is the anchor)', () => {
+    const it = { name: 'No Year Game 5h' };
+    const r = migrateItem(it);
+    expect(r).toEqual({ changed: false, conflict: false });
+    expect(it.year).toBeUndefined();
+    expect(it.playtime).toBeUndefined();
+    expect(it.name).toBe('No Year Game 5h');
+  });
+  test('item already structured (year set, plain name) — no-op', () => {
+    const it = { name: 'Halo', year: 2024 };
+    const r = migrateItem(it);
+    expect(r).toEqual({ changed: false, conflict: false });
+    expect(it.year).toBe(2024);
+    expect(it.name).toBe('Halo');
+  });
+  test('idempotent — second call returns changed=false', () => {
+    const it = { name: 'Halo Infinite 2024 5h' };
+    migrateItem(it);
+    const r2 = migrateItem(it);
+    expect(r2).toEqual({ changed: false, conflict: false });
+    expect(it.year).toBe(2024);
+    expect(it.playtime).toEqual({ hours: 5, minutes: 0 });
+    expect(it.name).toBe('Halo Infinite');
+  });
+  test('bare fractional number after year → hours-only playtime', () => {
+    const it = { name: 'X 2024 0.75' };
+    const r = migrateItem(it);
+    expect(r.changed).toBe(true);
+    expect(it.playtime).toEqual({ hours: 0.75, minutes: 0 });
+    expect(it.year).toBe(2024);
+    expect(it.name).toBe('X');
+  });
+  test('manual playtime wins; year still extracted; name still stripped', () => {
+    const it = { name: 'X 2024 5h', playtime: { hours: 10, minutes: 0 } };
+    const r = migrateItem(it);
+    expect(r.changed).toBe(true);
+    expect(it.playtime).toEqual({ hours: 10, minutes: 0 });
+    expect(it.year).toBe(2024);
+    expect(it.name).toBe('X');
+  });
+  test('empty / null / non-string name — no throw, no-op', () => {
+    expect(migrateItem({ name: '' })).toEqual({ changed: false, conflict: false });
+    expect(migrateItem(null)).toEqual({ changed: false, conflict: false });
+    expect(migrateItem({ name: 2024 })).toEqual({ changed: false, conflict: false });
+    expect(migrateItem(undefined)).toEqual({ changed: false, conflict: false });
+  });
+  test('whitespace-only trim counts as changed', () => {
+    const it = { name: '  Halo  ' };
+    const r = migrateItem(it);
+    expect(r.changed).toBe(true);
+    expect(it.name).toBe('Halo');
+  });
+  test('manual year matches name year — no conflict flagged', () => {
+    const it = { name: 'Halo 2024 5h', year: 2024 };
+    const r = migrateItem(it);
+    expect(r.conflict).toBe(false);
+    expect(r.changed).toBe(true);
+    expect(it.year).toBe(2024);
+    expect(it.playtime).toEqual({ hours: 5, minutes: 0 });
+    expect(it.name).toBe('Halo');
+  });
+});
+
+describe('getPlaytimeForItem', () => {
+  test('field wins over name extraction', () => {
+    const it = { name: 'X 2024 5h', playtime: { hours: 10, minutes: 0 } };
+    expect(getPlaytimeForItem(it)).toEqual({ hours: 10, minutes: 0 });
+  });
+  test('falls back to name when no field set', () => {
+    const it = { name: 'X 2024 5h' };
+    expect(getPlaytimeForItem(it)).toEqual({ hours: 5, minutes: 0 });
+  });
+  test('treats {hours:0, minutes:0} field as null', () => {
+    const it = { name: 'X', playtime: { hours: 0, minutes: 0 } };
+    expect(getPlaytimeForItem(it)).toBeNull();
+  });
+  test('null when both field and name lack playtime', () => {
+    expect(getPlaytimeForItem({ name: 'Plain' })).toBeNull();
+  });
+  test('null / undefined input returns null', () => {
+    expect(getPlaytimeForItem(null)).toBeNull();
+    expect(getPlaytimeForItem(undefined)).toBeNull();
+  });
+  test('non-number field shape falls back to name extraction', () => {
+    // hours:'5' and minutes:undefined both fail the typeof===number guard,
+    // so the reader falls back to extractPlaytimeFromName(item.name) — null here.
+    const it = { name: 'X', playtime: { hours: '5', minutes: undefined } };
+    expect(getPlaytimeForItem(it)).toBeNull();
+  });
+});
