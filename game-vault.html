@@ -1839,6 +1839,13 @@ body {
         <span class="input-icon">⌕</span>
         <input class="input" id="years-search" placeholder="search years (fuzzy)..." autocomplete="off">
       </div>
+      <select class="select" id="years-item-sort" title="প্রতি year-এর ভিতরে games sort করো">
+        <option value="default">Default</option>
+        <option value="playtime-desc">Playtime: High → Low</option>
+        <option value="playtime-asc">Playtime: Low → High</option>
+        <option value="az">A → Z</option>
+        <option value="za">Z → A</option>
+      </select>
     </div>
   </div>
 
@@ -3842,6 +3849,7 @@ const state = {
   yearsCache: null,              // { byYear: Map<int, Row[]>, unknown: Row[], detected: int, total: int }
   yearsDirty: true,
   yearsFilter: '',
+  yearsItemSort: 'default',
   // Years tab — Phase 2C smart features
   unknownSelections: new Set(),  // item ids selected in Unknown section (session-only, persists across tab switches)
   recentYears: [],               // last 5 manually-set years, MRU first; persisted via Storage('recent-years')
@@ -5735,6 +5743,30 @@ function filterYearRows(rows, q) {
   });
 }
 
+// Pure sort for rows within a single year bucket. Returns a new array;
+// 'default' preserves the aggregation order (vault → played → customs,
+// each in insertion order). Playtime modes use getPlaytimeForSort for
+// consistency with vault/played/custom/mother sort sites.
+function sortYearItems(rows, mode) {
+  const out = rows.slice();
+  if (mode === 'playtime-desc') {
+    out.sort((a, b) => {
+      const d = getPlaytimeForSort(b.item) - getPlaytimeForSort(a.item);
+      return d !== 0 ? d : a.item.name.localeCompare(b.item.name);
+    });
+  } else if (mode === 'playtime-asc') {
+    out.sort((a, b) => {
+      const d = getPlaytimeForSort(a.item) - getPlaytimeForSort(b.item);
+      return d !== 0 ? d : a.item.name.localeCompare(b.item.name);
+    });
+  } else if (mode === 'az') {
+    out.sort((a, b) => a.item.name.localeCompare(b.item.name));
+  } else if (mode === 'za') {
+    out.sort((a, b) => b.item.name.localeCompare(a.item.name));
+  }
+  return out;
+}
+
 function makeYearRow(row, serial, isUnknown) {
   const div = document.createElement('div');
   div.className = 'year-row';
@@ -5903,7 +5935,8 @@ function renderYears() {
 
   for (const y of visibleYears) {
     const rows = filteredByYear.get(y);
-    sectionsHost.appendChild(buildYearSection(String(y), y, rows, openSet.has(y)));
+    const sorted = sortYearItems(rows, state.yearsItemSort);
+    sectionsHost.appendChild(buildYearSection(String(y), y, sorted, openSet.has(y)));
   }
   if (filteredUnknown.length > 0) {
     // Bars live INSIDE #years-sections, immediately above the Unknown details,
@@ -5914,7 +5947,8 @@ function renderYears() {
     sticky.appendChild(buildRecentYearsBar());
     sticky.appendChild(buildBulkYearToolbar());
     sectionsHost.appendChild(sticky);
-    sectionsHost.appendChild(buildYearSection('Unknown', 'unknown', filteredUnknown, openSet.has('unknown')));
+    const sortedUnknown = sortYearItems(filteredUnknown, state.yearsItemSort);
+    sectionsHost.appendChild(buildYearSection('Unknown', 'unknown', sortedUnknown, openSet.has('unknown')));
     refreshBulkToolbar();
   }
 }
@@ -6836,6 +6870,10 @@ $('#years-search').addEventListener('input', e => {
   _yearsSearchTimer = setTimeout(() => {
     if (state.currentTab === 'years') renderYears();
   }, 100);
+});
+$('#years-item-sort').addEventListener('change', e => {
+  state.yearsItemSort = e.target.value;
+  if (state.currentTab === 'years') renderYears();
 });
 
 /* ─── Startup data cleanup (pure helper) ────────────────

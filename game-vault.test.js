@@ -2902,3 +2902,75 @@ describe('parsePlaytimeInput', () => {
     expect(parsePlaytimeInput('5', '30.5')).toBeNull(); // decimal minutes rejected
   });
 });
+
+// ── sortYearItems — verbatim copy from game-vault.html ──
+function sortYearItems(rows, mode) {
+  const out = rows.slice();
+  if (mode === 'playtime-desc') {
+    out.sort((a, b) => {
+      const d = getPlaytimeForSort(b.item) - getPlaytimeForSort(a.item);
+      return d !== 0 ? d : a.item.name.localeCompare(b.item.name);
+    });
+  } else if (mode === 'playtime-asc') {
+    out.sort((a, b) => {
+      const d = getPlaytimeForSort(a.item) - getPlaytimeForSort(b.item);
+      return d !== 0 ? d : a.item.name.localeCompare(b.item.name);
+    });
+  } else if (mode === 'az') {
+    out.sort((a, b) => a.item.name.localeCompare(b.item.name));
+  } else if (mode === 'za') {
+    out.sort((a, b) => b.item.name.localeCompare(a.item.name));
+  }
+  return out;
+}
+
+describe('sortYearItems', () => {
+  const mk = (name) => ({
+    item: { name },
+    sourceLabel: 'V',
+    sourceClass: 'src-vault',
+    sourceKind: 'vault',
+    sourceId: null,
+  });
+
+  test('default preserves input order', () => {
+    const rows = [mk('Zelda 2024 5h'), mk('Aero 2024 10h'), mk('Doom 2024')];
+    expect(sortYearItems(rows, 'default').map(r => r.item.name))
+      .toEqual(['Zelda 2024 5h', 'Aero 2024 10h', 'Doom 2024']);
+  });
+
+  test('playtime-desc orders by hours desc, ties by name asc', () => {
+    const rows = [mk('Zelda 2024 5h'), mk('Halo 2024 10h'), mk('Aero 2024 5h'), mk('Doom 2024')];
+    expect(sortYearItems(rows, 'playtime-desc').map(r => r.item.name))
+      .toEqual(['Halo 2024 10h', 'Aero 2024 5h', 'Zelda 2024 5h', 'Doom 2024']);
+  });
+
+  test('playtime-asc puts no-playtime items first', () => {
+    const rows = [mk('Halo 2024 10h'), mk('Doom 2024'), mk('Aero 2024 5h')];
+    expect(sortYearItems(rows, 'playtime-asc').map(r => r.item.name))
+      .toEqual(['Doom 2024', 'Aero 2024 5h', 'Halo 2024 10h']);
+  });
+
+  test('az sorts by item.name', () => {
+    const rows = [mk('Zelda'), mk('Aero'), mk('Mario')];
+    expect(sortYearItems(rows, 'az').map(r => r.item.name))
+      .toEqual(['Aero', 'Mario', 'Zelda']);
+  });
+
+  test('za reverses az', () => {
+    const rows = [mk('Aero'), mk('Zelda'), mk('Mario')];
+    expect(sortYearItems(rows, 'za').map(r => r.item.name))
+      .toEqual(['Zelda', 'Mario', 'Aero']);
+  });
+
+  test('empty array returns empty', () => {
+    expect(sortYearItems([], 'playtime-desc')).toEqual([]);
+  });
+
+  test('does not mutate caller array', () => {
+    const rows = [mk('Zelda'), mk('Aero')];
+    const before = rows.map(r => r.item.name);
+    sortYearItems(rows, 'az');
+    expect(rows.map(r => r.item.name)).toEqual(before);
+  });
+});
