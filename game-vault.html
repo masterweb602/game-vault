@@ -6539,7 +6539,12 @@ function renderCloudSyncStateA(host) {
   const row = el('div', { class: 'setting-row' });
   row.appendChild(el('button', {
     class: 'btn btn-primary', id: 'cloud-sync-create',
-    onClick: () => console.log('[cloud-sync] create stub')
+    onClick: () => {
+      const id = generateVaultId();
+      try { localStorage.setItem('vault-id', id); } catch (_) {}
+      renderCloudSync();
+      toast('Vault ID তৈরি হয়েছে — কপি করে অন্য device-এ পেস্ট করো।', 'success');
+    }
   }, 'নতুন Vault ID তৈরি করো'));
   row.appendChild(el('button', {
     class: 'btn', id: 'cloud-sync-use',
@@ -6559,7 +6564,17 @@ function renderCloudSyncStateA(host) {
   }));
   pasteRow.appendChild(el('button', {
     class: 'btn btn-primary', id: 'cloud-sync-paste-save',
-    onClick: () => console.log('[cloud-sync] save stub')
+    onClick: () => {
+      const input = $('#cloud-sync-paste-input');
+      const v = (input && input.value || '').trim().toLowerCase();
+      if (!v || !isValidVaultId(v)) {
+        toast('Vault ID format ঠিক নেই। vault-xxxx-xxxx-xxxx-xxxx এই format-এ দাও।', 'error');
+        return;
+      }
+      try { localStorage.setItem('vault-id', v); } catch (_) {}
+      renderCloudSync();
+      toast('Vault ID সেভ হয়েছে।', 'success');
+    }
   }, 'সেভ করো'));
   paste.appendChild(pasteRow);
   host.appendChild(paste);
@@ -6589,11 +6604,27 @@ function renderCloudSyncStateB(host, vaultId) {
   actions.appendChild(revealBtn);
   actions.appendChild(el('button', {
     class: 'btn btn-sm', id: 'cloud-sync-copy',
-    onClick: () => console.log('[cloud-sync] copy stub')
+    onClick: () => {
+      navigator.clipboard.writeText(vaultId)
+        .then(() => toast('কপি হয়েছে।', 'success'))
+        .catch(() => toast('কপি ব্যর্থ — manually select করে copy করো।', 'error'));
+    }
   }, 'কপি'));
   actions.appendChild(el('button', {
     class: 'btn btn-sm btn-danger', id: 'cloud-sync-stop',
-    onClick: () => console.log('[cloud-sync] stop stub')
+    onClick: () => {
+      modal({
+        title: 'সিঙ্ক বন্ধ করো?',
+        body: 'সিঙ্ক বন্ধ করলে এই device আর cloud-এর সাথে sync হবে না। তোমার local data কিছু হবে না। নিশ্চিত?',
+        confirmLabel: 'বন্ধ করো',
+        confirmKind: 'btn-danger',
+        onConfirm: () => {
+          try { localStorage.removeItem('vault-id'); } catch (_) {}
+          renderCloudSync();
+          toast('সিঙ্ক বন্ধ হয়েছে।', 'info');
+        }
+      });
+    }
   }, 'সিঙ্ক বন্ধ করো'));
   host.appendChild(actions);
 }
@@ -6608,6 +6639,22 @@ function maskVaultId(id) {
   }
   if (id.length <= 8) return id;
   return id.slice(0, 4) + '••••' + id.slice(-4);
+}
+
+function generateVaultId() {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  let s = '';
+  for (let i = 0; i < 16; i++) {
+    s += alphabet[bytes[i] % 36];
+    if (i === 3 || i === 7 || i === 11) s += '-';
+  }
+  return 'vault-' + s;
+}
+
+function isValidVaultId(str) {
+  return typeof str === 'string' && /^vault-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$/.test(str);
 }
 
 function openCreateCustomDbDialog() {
