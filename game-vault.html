@@ -2935,6 +2935,7 @@ async function saveList(name, items) {
     await Storage.del(`${name}-chunk-${i}`);
   }
   Profiler.record('save.' + name, performance.now() - _tProf, { n: items.length });
+  if (typeof schedulePush === 'function') schedulePush();
 }
 
 async function loadList(name) {
@@ -2976,6 +2977,7 @@ async function loadCustomListsRegistry() {
 async function saveCustomListsRegistry(entries) {
   // entries: array of { id, name, createdAt }
   await Storage.set('customLists-registry', JSON.stringify(entries));
+  if (typeof schedulePush === 'function') schedulePush();
 }
 
 /* ─── Fuzzy matching engine ──────────────────────────────── */
@@ -3328,6 +3330,7 @@ function pushRecentYear(arr, year) {
 function persistRecentYears() {
   try { Storage.set('recent-years', JSON.stringify(state.recentYears)); }
   catch (e) { /* quota / disabled — non-fatal, list survives in memory */ }
+  if (typeof schedulePush === 'function') schedulePush();
 }
 
 /* ─── Tag helpers (pure) ──────────────────────────────────
@@ -6544,6 +6547,7 @@ function renderCloudSyncStateA(host) {
       try { localStorage.setItem('vault-id', id); } catch (_) {}
       renderCloudSync();
       toast('Vault ID তৈরি হয়েছে — কপি করে অন্য device-এ পেস্ট করো।', 'success');
+      schedulePush();
     }
   }, 'নতুন Vault ID তৈরি করো'));
   row.appendChild(el('button', {
@@ -6574,6 +6578,7 @@ function renderCloudSyncStateA(host) {
       try { localStorage.setItem('vault-id', v); } catch (_) {}
       renderCloudSync();
       toast('Vault ID সেভ হয়েছে।', 'success');
+      schedulePush();
     }
   }, 'সেভ করো'));
   paste.appendChild(pasteRow);
@@ -6591,6 +6596,16 @@ function renderCloudSyncStateB(host, vaultId) {
   const displayRow = el('div', { class: 'setting-row' });
   displayRow.appendChild(display);
   host.appendChild(displayRow);
+
+  let lastSynced = null;
+  try { lastSynced = localStorage.getItem('last-synced'); } catch (_) {}
+  const statusText = lastSynced
+    ? 'শেষ সিঙ্ক: ' + formatRelativeTime(lastSynced)
+    : 'এখনো সিঙ্ক হয়নি';
+  host.appendChild(el('div', {
+    class: 'setting-row',
+    style: 'font-size:12px;color:var(--muted);margin-top:4px;'
+  }, statusText));
 
   const actions = el('div', { class: 'setting-row', style: 'gap:10px;margin-top:10px;' });
   const revealBtn = el('button', {
@@ -6655,6 +6670,111 @@ function generateVaultId() {
 
 function isValidVaultId(str) {
   return typeof str === 'string' && /^vault-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$/.test(str);
+}
+
+let _pushDebounceTimer = null;
+let _pushInFlight = false;
+let _pushQueued = false;
+
+function schedulePush() {
+  if (!state.loaded) return;
+  let vaultId = null;
+  try { vaultId = localStorage.getItem('vault-id'); } catch (_) {}
+  if (!vaultId || !supabaseClient) return;
+  if (_pushDebounceTimer) clearTimeout(_pushDebounceTimer);
+  _pushDebounceTimer = setTimeout(() => {
+    _pushDebounceTimer = null;
+    _doPush();
+  }, 2000);
+}
+
+async function _doPush() {
+  if (_pushInFlight) { _pushQueued = true; return; }
+  _pushInFlight = true;
+  try { await pushToCloud(); } finally {
+    _pushInFlight = false;
+    if (_pushQueued) { _pushQueued = false; schedulePush(); }
+  }
+}
+
+async function pushToCloud() {
+  let vaultId = null;
+  try { vaultId = localStorage.getItem('vault-id'); } catch (_) {}
+  if (!vaultId || !supabaseClient) return;
+
+  const projectItem = (it) => {
+    const o = { id: it.id, name: it.name, dateAdded: it.dateAdded,
+                tags: Array.isArray(it.tags) ? it.tags.slice() : [] };
+    if (typeof it.year === 'number') o.year = it.year;
+    if (it.playtime) {
+      const h = Number(it.playtime.hours) || 0;
+      const m = Number(it.playtime.minutes) || 0;
+      if (h > 0 || m > 0) o.playtime = { hours: h, minutes: m };
+    }
+    return o;
+  };
+
+  const customLists = {};
+  for (const id of state.customListsOrder) {
+    const l = state.customLists[id];
+    if (!l) continue;
+    customLists[id] = {
+      id: l.id, name: l.name, createdAt: l.createdAt,
+      items: Array.isArray(l.items) ? l.items.map(projectItem) : []
+    };
+  }
+
+  let version = 1;
+  try {
+    const v = parseInt(localStorage.getItem('sync-version') || '0', 10);
+    version = (isNaN(v) ? 0 : v) + 1;
+    localStorage.setItem('sync-version', String(version));
+  } catch (_) {}
+
+  const data = {
+    version: 2,
+    vault: state.vault.map(projectItem),
+    played: state.played.map(projectItem),
+    customLists,
+    customListsOrder: state.customListsOrder.slice(),
+    notes: (typeof state.notes === 'string') ? state.notes : '',
+    recentYears: Array.isArray(state.recentYears) ? state.recentYears.slice() : []
+  };
+
+  const hadPrevSync = !!localStorage.getItem('last-synced');
+  const hadPrevFail = localStorage.getItem('sync-failed') === '1';
+
+  try {
+    const { error } = await supabaseClient
+      .from('vault_data')
+      .upsert({ vault_id: vaultId, data, version, updated_at: new Date().toISOString() });
+    if (error) throw error;
+    try {
+      localStorage.setItem('last-synced', new Date().toISOString());
+      localStorage.removeItem('sync-failed');
+    } catch (_) {}
+    if (!hadPrevSync) toast('Cloud sync চালু — data ক্লাউডে saved।', 'success');
+  } catch (e) {
+    console.log('[cloud-sync] push failed:', e && e.message ? e.message : e);
+    try { localStorage.setItem('sync-failed', '1'); } catch (_) {}
+    if (!hadPrevFail) toast('Cloud sync ব্যর্থ — পরে আবার চেষ্টা করবে।', 'error');
+  }
+}
+
+function formatRelativeTime(iso) {
+  if (!iso) return '';
+  const t = Date.parse(iso);
+  if (isNaN(t)) return '';
+  const diffSec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (diffSec < 30) return 'এইমাত্র';
+  if (diffSec < 60) return diffSec + ' সেকেন্ড আগে';
+  const min = Math.floor(diffSec / 60);
+  if (min < 60) return min + ' মিনিট আগে';
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return hr + ' ঘন্টা আগে';
+  const d = Math.floor(hr / 24);
+  if (d < 7) return d + ' দিন আগে';
+  return iso.slice(0, 10);
 }
 
 function openCreateCustomDbDialog() {
@@ -8351,6 +8471,7 @@ async function saveNotesNow() {
     state.notesLastSaved = Date.now();
     refreshNotesStatus();
     updateNotesBadge();
+    if (typeof schedulePush === 'function') schedulePush();
   } catch (e) {
     refreshNotesStatus({ kind: 'error', msg: 'save failed: ' + (e && e.message ? e.message : e) });
   }
@@ -8401,6 +8522,7 @@ function clearNotes() {
       refreshNotesStats();
       refreshNotesStatus();
       toast('Notes cleared', 'success');
+      if (typeof schedulePush === 'function') schedulePush();
     }
   });
 }
