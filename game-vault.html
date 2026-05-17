@@ -1921,6 +1921,11 @@ body {
     <div id="import-info" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:10px;min-height:14px;"></div>
   </div>
 
+  <div class="setting-card" id="cloud-sync-card">
+    <h4>Cloud Sync — ক্লাউড সিঙ্ক</h4>
+    <div id="cloud-sync-body"></div>
+  </div>
+
   <div class="setting-card">
     <h4>Fuzzy threshold</h4>
     <p>কতটুকু similarity হলে fuzzy match হবে (0.5 = loose, 0.95 = strict)।</p>
@@ -6517,6 +6522,94 @@ function renderCustomDbsSettings() {
   }
 }
 
+/* ─── Cloud Sync settings card (Phase 4.2 — UI scaffold, no logic) ─── */
+function renderCloudSync() {
+  const body = $('#cloud-sync-body');
+  if (!body) return;
+  body.innerHTML = '';
+  let vaultId = null;
+  try { vaultId = localStorage.getItem('vault-id'); } catch (_) {}
+  if (!vaultId) renderCloudSyncStateA(body);
+  else renderCloudSyncStateB(body, vaultId);
+}
+
+function renderCloudSyncStateA(host) {
+  host.appendChild(el('p', {}, 'একটি Vault ID তৈরি করো এবং অন্য device-এ পেস্ট করো — দুই device-এর data sync হবে। ID-টা password-এর মতো, কাউকে দিও না।'));
+
+  const row = el('div', { class: 'setting-row' });
+  row.appendChild(el('button', {
+    class: 'btn btn-primary', id: 'cloud-sync-create',
+    onClick: () => console.log('[cloud-sync] create stub')
+  }, 'নতুন Vault ID তৈরি করো'));
+  row.appendChild(el('button', {
+    class: 'btn', id: 'cloud-sync-use',
+    onClick: () => {
+      const paste = $('#cloud-sync-paste');
+      if (paste) paste.style.display = (paste.style.display === 'none' ? 'block' : 'none');
+    }
+  }, 'বিদ্যমান Vault ID ব্যবহার করো'));
+  host.appendChild(row);
+
+  const paste = el('div', { id: 'cloud-sync-paste', style: 'display:none;margin-top:12px;' });
+  const pasteRow = el('div', { class: 'setting-row', style: 'gap:10px;' });
+  pasteRow.appendChild(el('input', {
+    type: 'password', class: 'input', id: 'cloud-sync-paste-input',
+    placeholder: 'vault-xxxx-xxxx-xxxx-xxxx', autocomplete: 'off',
+    style: 'flex:1;'
+  }));
+  pasteRow.appendChild(el('button', {
+    class: 'btn btn-primary', id: 'cloud-sync-paste-save',
+    onClick: () => console.log('[cloud-sync] save stub')
+  }, 'সেভ করো'));
+  paste.appendChild(pasteRow);
+  host.appendChild(paste);
+}
+
+function renderCloudSyncStateB(host, vaultId) {
+  host.appendChild(el('p', {}, 'এই device সিঙ্ক চালু — অন্য device-এ একই Vault ID দিলে data এক হবে।'));
+
+  let revealed = false;
+  const display = el('span', {
+    id: 'cloud-sync-id-display',
+    style: 'font-family:var(--mono);font-size:13px;color:var(--text);'
+  }, maskVaultId(vaultId));
+  const displayRow = el('div', { class: 'setting-row' });
+  displayRow.appendChild(display);
+  host.appendChild(displayRow);
+
+  const actions = el('div', { class: 'setting-row', style: 'gap:10px;margin-top:10px;' });
+  const revealBtn = el('button', {
+    class: 'btn btn-sm', id: 'cloud-sync-reveal',
+    onClick: () => {
+      revealed = !revealed;
+      display.textContent = revealed ? vaultId : maskVaultId(vaultId);
+      revealBtn.textContent = revealed ? 'লুকাও' : 'দেখাও';
+    }
+  }, 'দেখাও');
+  actions.appendChild(revealBtn);
+  actions.appendChild(el('button', {
+    class: 'btn btn-sm', id: 'cloud-sync-copy',
+    onClick: () => console.log('[cloud-sync] copy stub')
+  }, 'কপি'));
+  actions.appendChild(el('button', {
+    class: 'btn btn-sm btn-danger', id: 'cloud-sync-stop',
+    onClick: () => console.log('[cloud-sync] stop stub')
+  }, 'সিঙ্ক বন্ধ করো'));
+  host.appendChild(actions);
+}
+
+function maskVaultId(id) {
+  if (typeof id !== 'string' || !id) return '';
+  const parts = id.split('-');
+  if (parts.length >= 4) {
+    const first = parts[1] !== undefined ? parts[0] + '-' + parts[1] : parts[0];
+    const last = parts[parts.length - 1];
+    return first + '-••••-••••-' + last;
+  }
+  if (id.length <= 8) return id;
+  return id.slice(0, 4) + '••••' + id.slice(-4);
+}
+
 function openCreateCustomDbDialog() {
   const overlay = $('#custom-db-modal');
   const input = $('#custom-db-name');
@@ -8343,6 +8436,7 @@ async function init() {
   }
   renderCustomTabs();
   renderCustomDbsSettings();
+  renderCloudSync();
   refreshTargetDropdowns();
 
   // Load user notes (separate Storage key, independent of vault/played).
