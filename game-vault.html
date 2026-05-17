@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -2017,6 +2018,13 @@ body {
    Storage: Anthropic artifact persistent storage (window.storage)
    Falls back to in-memory if unavailable.
    ════════════════════════════════════════════════════════════════ */
+
+/* ─── Supabase config (cloud sync foundation, idle) ──────── */
+const SUPABASE_URL = 'https://gnwavemusyiboexfobgy.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdud2F2ZW11c3lpYm9leGZvYmd5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5MjgyMjksImV4cCI6MjA5NDUwNDIyOX0.1z6VTn60mqLxSm9B3ZagjBvWcIJBh-7_xWisY6bmrvs';
+const supabaseClient = (window.supabase && typeof window.supabase.createClient === 'function')
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
 
 /* ─── PWA manifest (inline data URI, no SW) ─────────────── */
 function buildPwaIcon() {
