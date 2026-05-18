@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1337,6 +1338,30 @@ body {
 .setting-card p { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
 .setting-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 
+/* ─── Analytics ──────────────────────────────────────────── */
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+.analytics-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+}
+.analytics-card-title { font-size: 14px; margin-bottom: 4px; }
+.analytics-card-sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+.analytics-canvas-wrap { position: relative; height: 280px; }
+.analytics-empty {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  padding: 80px 12px;
+}
+
 /* ─── Status bar ─────────────────────────────────────────── */
 .status-bar {
   font-family: var(--mono);
@@ -1459,6 +1484,7 @@ body {
   <button class="tab" data-tab="bulk-add">Bulk Add</button>
   <button class="tab" data-tab="bulk-check">Bulk Check</button>
   <button class="tab" data-tab="years">Years</button>
+  <button class="tab" data-tab="analytics">Analytics</button>
   <button class="tab" data-tab="notes">📝 Notes <span class="tab-count" id="tc-notes"></span></button>
   <button class="tab" data-tab="settings">Settings</button>
 </nav>
@@ -1852,6 +1878,24 @@ body {
 
   <div class="years-stats" id="years-stats"></div>
   <div id="years-sections"></div>
+</section>
+
+<!-- ──── ANALYTICS VIEW ──────────────────────────────────── -->
+<section class="view" id="view-analytics">
+  <h2 class="section-title">analytics</h2>
+  <p class="section-desc">📊 তোমার collection-এর pattern, growth, ও activity trends।</p>
+
+  <div class="analytics-grid">
+    <div class="analytics-card">
+      <h3 class="analytics-card-title">প্রতি বছরে যোগ করা games</h3>
+      <p class="analytics-card-sub">কোন বছরে কতগুলো games তুমি ভল্টে/played-এ যোগ করেছ</p>
+      <div class="analytics-canvas-wrap">
+        <canvas id="chart-activity"></canvas>
+      </div>
+      <div class="analytics-empty" id="chart-activity-empty" hidden>এখনো কোনো data নেই — কিছু games add করো।</div>
+    </div>
+    <!-- Future cards: cumulative growth (8B), forecast (8C) -->
+  </div>
 </section>
 
 <!-- ──── NOTES VIEW ──────────────────────────────────────── -->
@@ -3080,6 +3124,26 @@ function extractYearFromName(name) {
   let last = null, m;
   while ((m = YEAR_DETECT_RX.exec(name)) !== null) last = m[1];
   return last === null ? null : parseInt(last, 10);
+}
+
+// Pure helper: group items by year-of-dateAdded. Returns
+// [{year, count}, ...] sorted ascending. Items with missing/invalid
+// dateAdded are skipped silently. dateAdded is a Date.now() timestamp.
+function groupItemsByYearAdded(items) {
+  const counts = new Map();
+  if (!Array.isArray(items)) return [];
+  for (const it of items) {
+    if (!it) continue;
+    const ts = Number(it.dateAdded);
+    if (!Number.isFinite(ts) || ts <= 0) continue;
+    const y = new Date(ts).getFullYear();
+    if (!Number.isFinite(y)) continue;
+    counts.set(y, (counts.get(y) || 0) + 1);
+  }
+  const out = [];
+  for (const [year, count] of counts) out.push({ year, count });
+  out.sort((a, b) => a.year - b.year);
+  return out;
 }
 
 // Pure helper: parse raw input lines into game entries, applying any
@@ -5909,6 +5973,69 @@ function fillYearSection(sectionEl, rows, isUnknown) {
   host.dataset.filled = '1';
 }
 
+function renderAnalytics() {
+  const canvas = document.getElementById('chart-activity');
+  const empty  = document.getElementById('chart-activity-empty');
+  if (!canvas || !empty) return;
+
+  const items = state.vault.concat(state.played);
+  const buckets = groupItemsByYearAdded(items);
+
+  // Tear down previous chart instance to prevent canvas redraw stacking.
+  if (state.charts && state.charts.activity) {
+    try { state.charts.activity.destroy(); } catch (_) {}
+    state.charts.activity = null;
+  }
+
+  if (buckets.length === 0 || typeof window.Chart !== 'function') {
+    empty.hidden = false;
+    canvas.style.display = 'none';
+    empty.textContent = (typeof window.Chart !== 'function')
+      ? 'Chart library load হয়নি — internet check করো।'
+      : 'এখনো কোনো data নেই — কিছু games add করো।';
+    return;
+  }
+
+  empty.hidden = true;
+  canvas.style.display = '';
+
+  const labels = buckets.map(b => String(b.year));
+  const data   = buckets.map(b => b.count);
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#f5a623';
+
+  if (!state.charts) state.charts = {};
+  state.charts.activity = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'games যোগ',
+        data,
+        backgroundColor: accent,
+        borderRadius: 4,
+        maxBarThickness: 48
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (ctx) => ctx[0].label + ' সালে',
+            label: (ctx) => ctx.parsed.y + ' games যোগ হয়েছে'
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#76716a' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { beginAtZero: true, ticks: { color: '#76716a', precision: 0 }, grid: { color: 'rgba(255,255,255,0.04)' } }
+      }
+    }
+  });
+}
+
 function renderYears() {
   const sectionsHost = $('#years-sections');
   const statsHost = $('#years-stats');
@@ -6486,6 +6613,7 @@ function switchTab(name) {
   if (name === 'vault') renderVault();
   if (name === 'played') renderPlayed();
   if (name === 'years') renderYears();
+  if (name === 'analytics') renderAnalytics();
   if (name === 'notes') refreshNotesStatus();
   if (name === 'mother') renderMotherView();
 }
