@@ -6575,10 +6575,44 @@ function renderCloudSyncStateA(host) {
         toast('Vault ID format ঠিক নেই। vault-xxxx-xxxx-xxxx-xxxx এই format-এ দাও।', 'error');
         return;
       }
-      try { localStorage.setItem('vault-id', v); } catch (_) {}
-      renderCloudSync();
-      toast('Vault ID সেভ হয়েছে।', 'success');
-      schedulePush();
+      const hasLocal =
+        (state.vault.length + state.played.length) > 0 ||
+        (Array.isArray(state.customListsOrder) && state.customListsOrder.length > 0) ||
+        (typeof state.notes === 'string' && state.notes.length > 0);
+
+      const proceed = async () => {
+        try { localStorage.setItem('vault-id', v); } catch (_) {}
+        renderCloudSync();
+        const r = await pullFromCloud();
+        if (r.status === 'applied')          toast('Cloud থেকে data এসেছে।', 'success');
+        else if (r.status === 'no-record') { toast('নতুন vault — local data আপলোড হবে।', 'info'); schedulePush(); }
+        else if (r.status === 'no-change') { toast('Vault ID সেভ হয়েছে।', 'success'); schedulePush(); }
+        else if (r.status === 'error')       toast('Pull ব্যর্থ — পরে আবার চেষ্টা হবে।', 'error');
+      };
+
+      if (!hasLocal || !supabaseClient) { proceed(); return; }
+
+      // Local has data — peek cloud to see if a destructive replace is about to happen.
+      toast('Cloud check করছি…', 'info');
+      (async () => {
+        let cloudHasData = false;
+        try {
+          const { data: row } = await supabaseClient
+            .from('vault_data')
+            .select('version')
+            .eq('vault_id', v)
+            .maybeSingle();
+          cloudHasData = !!row;
+        } catch (_) {}
+        if (!cloudHasData) { proceed(); return; }
+        modal({
+          title: 'Local data replace করব?',
+          body: 'এই Vault ID-এর cloud-এ data আছে। সেভ করলে এই device-এর local data মুছে যাবে এবং cloud-এর data আসবে। নিশ্চিত?',
+          confirmLabel: 'হ্যাঁ, replace করো',
+          confirmKind: 'btn-danger',
+          onConfirm: proceed
+        });
+      })();
     }
   }, 'সেভ করো'));
   paste.appendChild(pasteRow);
@@ -6625,6 +6659,19 @@ function renderCloudSyncStateB(host, vaultId) {
         .catch(() => toast('কপি ব্যর্থ — manually select করে copy করো।', 'error'));
     }
   }, 'কপি'));
+  actions.appendChild(el('button', {
+    class: 'btn btn-sm', id: 'cloud-sync-pull',
+    onClick: async () => {
+      const btn = $('#cloud-sync-pull');
+      if (btn) { btn.disabled = true; btn.textContent = 'আনছি…'; }
+      const r = await pullFromCloud();
+      if (btn) { btn.disabled = false; btn.textContent = 'Cloud থেকে আনো'; }
+      if (r.status === 'applied')         toast('Cloud থেকে নতুন data এসেছে।', 'success');
+      else if (r.status === 'no-change')  toast('কোনো নতুন আপডেট নেই।', 'info');
+      else if (r.status === 'no-record')  toast('Cloud-এ এই vault-এর কোনো data নেই।', 'info');
+      else if (r.status === 'error')      toast('Pull ব্যর্থ — পরে চেষ্টা করো।', 'error');
+    }
+  }, 'Cloud থেকে আনো'));
   actions.appendChild(el('button', {
     class: 'btn btn-sm btn-danger', id: 'cloud-sync-stop',
     onClick: () => {
@@ -6678,6 +6725,7 @@ let _pushQueued = false;
 
 function schedulePush() {
   if (!state.loaded) return;
+  if (_applyingPull) return;
   let vaultId = null;
   try { vaultId = localStorage.getItem('vault-id'); } catch (_) {}
   if (!vaultId || !supabaseClient) return;
@@ -6758,6 +6806,135 @@ async function pushToCloud() {
     console.log('[cloud-sync] push failed:', e && e.message ? e.message : e);
     try { localStorage.setItem('sync-failed', '1'); } catch (_) {}
     if (!hadPrevFail) toast('Cloud sync ব্যর্থ — পরে আবার চেষ্টা করবে।', 'error');
+  }
+}
+
+/* ─── Phase 6 — Pull from cloud ───────────────────────────── */
+let _applyingPull = false;
+
+async function pullFromCloud() {
+  let vaultId = null;
+  try { vaultId = localStorage.getItem('vault-id'); } catch (_) {}
+  if (!vaultId || !supabaseClient) return { status: 'no-id' };
+
+  try {
+    const { data: row, error } = await supabaseClient
+      .from('vault_data')
+      .select('data, version, updated_at')
+      .eq('vault_id', vaultId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) return { status: 'no-record' };
+
+    let localVersion = 0;
+    try { localVersion = parseInt(localStorage.getItem('sync-version') || '0', 10) || 0; } catch (_) {}
+
+    if (row.version <= localVersion) return { status: 'no-change', cloudVersion: row.version };
+
+    await applyCloudData(row.data);
+    try {
+      localStorage.setItem('sync-version', String(row.version));
+      localStorage.setItem('last-synced', new Date().toISOString());
+      localStorage.removeItem('sync-failed');
+    } catch (_) {}
+    return { status: 'applied', cloudVersion: row.version };
+  } catch (e) {
+    console.log('[cloud-sync] pull failed:', e && e.message ? e.message : e);
+    return { status: 'error', error: e };
+  }
+}
+
+function _normalizeIncoming(o) {
+  const out = {
+    id: o.id,
+    name: o.name,
+    dateAdded: o.dateAdded,
+    tags: Array.isArray(o.tags) ? o.tags.slice() : []
+  };
+  if (typeof o.year === 'number') out.year = o.year;
+  if (o.playtime) {
+    const h = Number(o.playtime.hours) || 0;
+    const m = Number(o.playtime.minutes) || 0;
+    if (h > 0 || m > 0) out.playtime = { hours: h, minutes: m };
+  }
+  return out;
+}
+
+async function applyCloudData(data) {
+  if (!data || data.version !== 2) throw new Error('unsupported cloud data version');
+  _applyingPull = true;
+  try {
+    state.vault  = Array.isArray(data.vault)  ? data.vault.map(_normalizeIncoming)  : [];
+    state.played = Array.isArray(data.played) ? data.played.map(_normalizeIncoming) : [];
+
+    state.customLists = {};
+    state.customListsOrder = Array.isArray(data.customListsOrder) ? data.customListsOrder.slice() : [];
+    if (data.customLists && typeof data.customLists === 'object') {
+      for (const id of state.customListsOrder) {
+        const l = data.customLists[id];
+        if (!l) continue;
+        state.customLists[id] = {
+          id: l.id,
+          name: l.name,
+          createdAt: l.createdAt,
+          items: Array.isArray(l.items) ? l.items.map(_normalizeIncoming) : [],
+          index: new SearchIndex()
+        };
+      }
+    }
+    state.notes = (typeof data.notes === 'string') ? data.notes : '';
+    state.recentYears = Array.isArray(data.recentYears) ? data.recentYears.slice() : [];
+
+    // Persist everything (saveList/saveCustomListsRegistry/persistRecentYears call
+    // schedulePush internally — guarded by _applyingPull above, so no echo upload).
+    await saveList('vault', state.vault);
+    await saveList('played', state.played);
+    for (const id of state.customListsOrder) {
+      const l = state.customLists[id];
+      if (l) await saveList('cl-' + id, l.items);
+    }
+    await saveCustomListsRegistry(state.customListsOrder.map(id => {
+      const l = state.customLists[id];
+      return { id: l.id, name: l.name, createdAt: l.createdAt };
+    }));
+    try { await Storage.set('user-notes', state.notes); } catch (_) {}
+    persistRecentYears();
+
+    // Reindex
+    const total = state.vault.length + state.played.length;
+    if (total > 10000) await rebuildIndexesAsync(() => {}); else rebuildIndexes();
+
+    // Reseed tag display labels from new items
+    for (const list of [state.vault, state.played]) {
+      for (const it of list) {
+        if (!Array.isArray(it.tags)) continue;
+        for (const t of it.tags) if (!state.tagLabels.has(t)) state.tagLabels.set(t, t);
+      }
+    }
+
+    // Refresh UI
+    refreshTagState();
+    renderCustomTabs();
+    const ta = document.getElementById('notes-textarea');
+    if (ta) ta.value = state.notes;
+    if (typeof refreshNotesStats === 'function') refreshNotesStats();
+    if (typeof refreshNotesStatus === 'function') refreshNotesStatus();
+    updateStats();
+    renderCloudSync();
+
+    // Re-render the currently active tab. If it pointed at a removed custom list, fall back to vault.
+    if (state.currentTab && state.currentTab.startsWith('cl-')) {
+      const cid = state.currentTab.slice(3);
+      if (!state.customLists[cid]) state.currentTab = 'vault';
+    }
+    if (typeof switchTab === 'function' && state.currentTab) {
+      switchTab(state.currentTab);
+    } else {
+      renderVault();
+      renderPlayed();
+    }
+  } finally {
+    _applyingPull = false;
   }
 }
 
@@ -8729,6 +8906,11 @@ async function init() {
   // Restore debug panel visibility
   const dbg = await Storage.get('debug-panel');
   if (dbg === '1') showDebugPanel();
+
+  // Phase 6: silent cloud pull at boot (non-blocking). Applies only if cloud is newer.
+  if (supabaseClient) {
+    try { if (localStorage.getItem('vault-id')) pullFromCloud(); } catch (_) {}
+  }
 }
 
 init();
