@@ -1894,7 +1894,24 @@ body {
       </div>
       <div class="analytics-empty" id="chart-activity-empty" hidden>এখনো কোনো data নেই — কিছু games add করো।</div>
     </div>
-    <!-- Future cards: cumulative growth (8B), forecast (8C) -->
+    <div class="analytics-card">
+      <h3 class="analytics-card-title">Library growth — Vault vs Played</h3>
+      <p class="analytics-card-sub">কতটা library জমছে বছর বছর</p>
+      <div class="analytics-canvas-wrap">
+        <canvas id="chart-growth"></canvas>
+      </div>
+      <div class="analytics-empty" id="chart-growth-empty" hidden>এখনো কোনো data নেই — কিছু games add করো।</div>
+    </div>
+    <div class="analytics-card">
+      <h3 class="analytics-card-title">প্রতি বছরে complete করা games</h3>
+      <p class="analytics-card-sub">তোমার playing pace — Phase 8C forecast-এর foundation</p>
+      <div class="analytics-canvas-wrap">
+        <canvas id="chart-velocity"></canvas>
+      </div>
+      <div class="analytics-empty" id="chart-velocity-empty" hidden>এখনো কোনো game played list-এ নেই।</div>
+      <p class="analytics-card-sub" id="chart-velocity-avg" hidden style="margin: 12px 0 0; text-align: center;"></p>
+    </div>
+    <!-- Future cards: forecast (8C) -->
   </div>
 </section>
 
@@ -3143,6 +3160,37 @@ function groupItemsByYearAdded(items) {
   const out = [];
   for (const [year, count] of counts) out.push({ year, count });
   out.sort((a, b) => a.year - b.year);
+  return out;
+}
+
+// Pure helper: cumulative count of items by year-of-dateAdded.
+// Returns [{year, total}, ...] sorted ascending. Items with
+// missing/invalid dateAdded are skipped silently. Years without
+// new additions are NOT filled in — the chart's x-axis union
+// fills gaps visually.
+function cumulativeGrowth(items) {
+  if (!Array.isArray(items)) return [];
+  const years = [];
+  for (const it of items) {
+    if (!it) continue;
+    const ts = Number(it.dateAdded);
+    if (!Number.isFinite(ts) || ts <= 0) continue;
+    const y = new Date(ts).getFullYear();
+    if (!Number.isFinite(y)) continue;
+    years.push(y);
+  }
+  years.sort((a, b) => a - b);
+  const out = [];
+  let running = 0;
+  let i = 0;
+  while (i < years.length) {
+    const y = years[i];
+    let j = i;
+    while (j < years.length && years[j] === y) j++;
+    running += (j - i);
+    out.push({ year: y, total: running });
+    i = j;
+  }
   return out;
 }
 
@@ -6036,6 +6084,160 @@ function renderAnalytics() {
   });
 }
 
+function renderGrowthChart() {
+  const canvas = document.getElementById('chart-growth');
+  const empty  = document.getElementById('chart-growth-empty');
+  if (!canvas || !empty) return;
+
+  const vaultGrowth  = cumulativeGrowth(state.vault);
+  const playedGrowth = cumulativeGrowth(state.played);
+
+  if (!state.charts) state.charts = {};
+  if (state.charts.growth) {
+    try { state.charts.growth.destroy(); } catch (_) {}
+    state.charts.growth = null;
+  }
+
+  const bothEmpty = vaultGrowth.length === 0 && playedGrowth.length === 0;
+  if (bothEmpty || typeof window.Chart !== 'function') {
+    empty.hidden = false;
+    canvas.style.display = 'none';
+    empty.textContent = (typeof window.Chart !== 'function')
+      ? 'Chart library load হয়নি — internet check করো।'
+      : 'এখনো কোনো data নেই — কিছু games add করো।';
+    return;
+  }
+
+  empty.hidden = true;
+  canvas.style.display = '';
+
+  const labelSet = new Set();
+  for (const p of vaultGrowth)  labelSet.add(p.year);
+  for (const p of playedGrowth) labelSet.add(p.year);
+  const labelYears = Array.from(labelSet).sort((a, b) => a - b);
+
+  const alignTo = (series) => {
+    if (series.length === 0) return null;
+    const map = new Map(series.map(p => [p.year, p.total]));
+    const out = [];
+    let running = 0;
+    for (const y of labelYears) {
+      if (map.has(y)) running = map.get(y);
+      out.push(running);
+    }
+    return out;
+  };
+
+  const accentColor  = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()  || '#f5a623';
+  const successColor = getComputedStyle(document.documentElement).getPropertyValue('--success').trim() || '#4ade80';
+
+  const datasets = [];
+  const vaultData = alignTo(vaultGrowth);
+  if (vaultData) datasets.push({
+    label: 'Vault', data: vaultData,
+    borderColor: accentColor, backgroundColor: accentColor,
+    tension: 0, pointRadius: 3, borderWidth: 2
+  });
+  const playedData = alignTo(playedGrowth);
+  if (playedData) datasets.push({
+    label: 'Played', data: playedData,
+    borderColor: successColor, backgroundColor: successColor,
+    tension: 0, pointRadius: 3, borderWidth: 2
+  });
+
+  state.charts.growth = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels: labelYears.map(String), datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { color: '#76716a' } },
+        tooltip: {
+          callbacks: {
+            title: (ctx) => ctx[0].label + ' পর্যন্ত',
+            label: (ctx) => ctx.dataset.label + ': ' + ctx.parsed.y
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#76716a' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { beginAtZero: true, ticks: { color: '#76716a', precision: 0 }, grid: { color: 'rgba(255,255,255,0.04)' } }
+      }
+    }
+  });
+}
+
+function renderVelocityChart() {
+  const canvas = document.getElementById('chart-velocity');
+  const empty  = document.getElementById('chart-velocity-empty');
+  const avgEl  = document.getElementById('chart-velocity-avg');
+  if (!canvas || !empty) return;
+
+  const buckets = groupItemsByYearAdded(state.played);
+
+  if (!state.charts) state.charts = {};
+  if (state.charts.velocity) {
+    try { state.charts.velocity.destroy(); } catch (_) {}
+    state.charts.velocity = null;
+  }
+  if (avgEl) avgEl.hidden = true;
+
+  if (buckets.length === 0 || typeof window.Chart !== 'function') {
+    empty.hidden = false;
+    canvas.style.display = 'none';
+    empty.textContent = (typeof window.Chart !== 'function')
+      ? 'Chart library load হয়নি — internet check করো।'
+      : 'এখনো কোনো game played list-এ নেই।';
+    return;
+  }
+
+  empty.hidden = true;
+  canvas.style.display = '';
+
+  const labels = buckets.map(b => String(b.year));
+  const data   = buckets.map(b => b.count);
+  const successColor = getComputedStyle(document.documentElement).getPropertyValue('--success').trim() || '#4ade80';
+
+  state.charts.velocity = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'games complete',
+        data,
+        backgroundColor: successColor,
+        borderRadius: 4,
+        maxBarThickness: 48
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (ctx) => ctx[0].label + ' সালে',
+            label: (ctx) => ctx.parsed.y + ' games complete'
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#76716a' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { beginAtZero: true, ticks: { color: '#76716a', precision: 0 }, grid: { color: 'rgba(255,255,255,0.04)' } }
+      }
+    }
+  });
+
+  if (avgEl && buckets.length >= 2) {
+    const total = buckets.reduce((s, b) => s + b.count, 0);
+    const avg = Math.round(total / buckets.length);
+    avgEl.textContent = 'গড়: ' + avg + ' games/year';
+    avgEl.hidden = false;
+  }
+}
+
 function renderYears() {
   const sectionsHost = $('#years-sections');
   const statsHost = $('#years-stats');
@@ -6613,7 +6815,7 @@ function switchTab(name) {
   if (name === 'vault') renderVault();
   if (name === 'played') renderPlayed();
   if (name === 'years') renderYears();
-  if (name === 'analytics') renderAnalytics();
+  if (name === 'analytics') { renderAnalytics(); renderGrowthChart(); renderVelocityChart(); }
   if (name === 'notes') refreshNotesStatus();
   if (name === 'mother') renderMotherView();
 }
