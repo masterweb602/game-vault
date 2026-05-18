@@ -1673,7 +1673,7 @@ body {
 <!-- ──── BULK ADD VIEW ───────────────────────────────────── -->
 <section class="view" id="view-bulk-add">
   <h2 class="section-title">bulk add</h2>
-  <p class="section-desc">এক লাইনে এক গেম। ১ লাখ পর্যন্ত একসাথে। duplicate auto skip হবে।</p>
+  <p class="section-desc">এক লাইনে এক গেম। ১ লাখ পর্যন্ত একসাথে। duplicate auto skip হবে।<br>💡 শুধু বছর (যেমন <code>2013</code>) থাকা লাইন header — পরের গেমগুলো ওই বছরে যাবে। নাম যদি "1984" হয় তাহলে header হিসেবে নেবে।</p>
 
   <div class="toolbar">
     <textarea class="textarea" id="bulk-add-text" placeholder="Max Payne&#10;Assassin's Creed: Brotherhood&#10;Prince of Persia&#10;..."></textarea>
@@ -1736,7 +1736,7 @@ body {
 <!-- ──── BULK CHECK VIEW ─────────────────────────────────── -->
 <section class="view" id="view-bulk-check">
   <h2 class="section-title">bulk check</h2>
-  <p class="section-desc">তোমার list-এর প্রতিটা item ভল্টে আছে কি না, কোনগুলো নেই, আর ভল্টে কোনগুলো extra আছে — সব এক সাথে।</p>
+  <p class="section-desc">তোমার list-এর প্রতিটা item ভল্টে আছে কি না, কোনগুলো নেই, আর ভল্টে কোনগুলো extra আছে — সব এক সাথে।<br>💡 শুধু বছর (যেমন <code>2013</code>) থাকা লাইন header — missing গেমগুলোকে পরে Add করলে ওই বছর apply হবে।</p>
 
   <div class="toolbar">
     <textarea class="textarea" id="bulk-check-text" placeholder="যেই list চেক করতে চাও সেগুলো paste করো, এক লাইনে এক গেম..."></textarea>
@@ -3080,6 +3080,28 @@ function extractYearFromName(name) {
   let last = null, m;
   while ((m = YEAR_DETECT_RX.exec(name)) !== null) last = m[1];
   return last === null ? null : parseInt(last, 10);
+}
+
+// Pure helper: parse raw input lines into game entries, applying any
+// preceding year-only "header" lines (1970-2030) to subsequent items.
+// Year-headers are consumed (not emitted as entries). Blank lines are
+// skipped without resetting the current year. Items before any header
+// have year=null (caller treats null as "no year").
+function parseLinesWithYearHeaders(rawLines) {
+  const HEADER_RX = /^\s*(19[7-9]\d|20[0-2]\d|2030)\s*$/;
+  const entries = [];
+  let currentYear = null;
+  let headers = 0;
+  for (const raw of rawLines) {
+    if (typeof raw !== 'string') continue;
+    const line = raw.replace(/^﻿/, '');
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const m = HEADER_RX.exec(trimmed);
+    if (m) { currentYear = parseInt(m[1], 10); headers++; continue; }
+    entries.push({ name: trimmed, year: currentYear });
+  }
+  return { entries, headers };
 }
 
 // Pure helper: strip year + trailing playtime from a name for DISPLAY.
@@ -4998,7 +5020,7 @@ function addItem(name, target = 'vault', { allowDup = false } = {}) {
   return { added: true, item };
 }
 
-function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
+function bulkAdd(names, target = 'vault', { dedupe = true, years = null } = {}) {
   const _tProf = performance.now();
   const t = resolveTarget(target);
   if (!t) return { added: 0, addedItems: [], skipped: [], flagged: [] };
@@ -5008,7 +5030,9 @@ function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
   const skipped = [];            // {input: string, existing: Item}  — NOT added
   const flagged = [];            // {item, neighbors: Item[]}        — ADDED but has fuzzy siblings
 
-  for (const raw of names) {
+  for (let i = 0; i < names.length; i++) {
+    const raw = names[i];
+    if (typeof raw !== 'string') continue;
     const trimmed = raw.trim();
     if (!trimmed) continue;
     const nd = normalizeDedup(trimmed);
@@ -5042,6 +5066,10 @@ function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
 
     // ── Add ──
     const item = { id: newId(), name: trimmed, dateAdded: Date.now() + addedItems.length, tags: [] };
+    if (years && years[i] != null) {
+      const yr = isValidYear(years[i]);
+      if (yr !== null) item.year = yr;
+    }
     item._norm = n;
     item._ts = tokenSort(trimmed);
     t.items.push(item);
@@ -5362,13 +5390,16 @@ function moveToVault(item) {
 /* ─── Bulk check engine ──────────────────────────────────── */
 async function runBulkCheck(inputText, target, useFuzzy, onProgress) {
   const _tProf = performance.now();
-  const lines = inputText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const rawLines = inputText.split(/\r?\n/);
+  const parsed = parseLinesWithYearHeaders(rawLines);
+  const lines = parsed.entries.map(e => e.name);
+  const lineYears = parsed.entries.map(e => e.year);
   if (lines.length === 0) return null;
 
   // Worker fast-path: index-build + matchOne happen off the main thread.
   // Output shape and dedup semantics are identical to the main-thread path below.
   if (state.useWorker && Storage.workerAvailable) {
-    return await _runBulkCheckWorker(lines, target, useFuzzy, onProgress, _tProf);
+    return await _runBulkCheckWorker(lines, lineYears, target, useFuzzy, onProgress, _tProf);
   }
 
   const t = resolveTarget(target);
@@ -5379,15 +5410,17 @@ async function runBulkCheck(inputText, target, useFuzzy, onProgress) {
   // Build line list with norms; matching is cached per unique norm but
   // every input line gets its own Found/Missing row (no auto-dedup of output).
   const lineNorms = [];
-  for (const line of lines) {
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
     const n = normalize(line);
     if (!n) continue;
-    lineNorms.push({ line, norm: n });
+    lineNorms.push({ line, norm: n, year: lineYears[li] });
   }
 
   const matchCache = new Map();
   const found = [];
   const missing = [];
+  const missingYears = [];
   const matchedItemIds = new Set();
   const total = lineNorms.length;
 
@@ -5395,7 +5428,7 @@ async function runBulkCheck(inputText, target, useFuzzy, onProgress) {
   for (let i = 0; i < lineNorms.length; i += CHUNK) {
     const end = Math.min(i + CHUNK, lineNorms.length);
     for (let j = i; j < end; j++) {
-      const { line, norm } = lineNorms[j];
+      const { line, norm, year } = lineNorms[j];
       let m;
       if (matchCache.has(norm)) {
         m = matchCache.get(norm);
@@ -5408,6 +5441,7 @@ async function runBulkCheck(inputText, target, useFuzzy, onProgress) {
         matchedItemIds.add(m.item.id);
       } else {
         missing.push(line);
+        missingYears.push(year);
       }
     }
     if (onProgress) onProgress(end, total);
@@ -5426,6 +5460,7 @@ async function runBulkCheck(inputText, target, useFuzzy, onProgress) {
     target,
     found,
     missing,
+    missingYears,
     extras,
     totalInput: lines.length,
     uniqueInput: matchCache.size,
@@ -5433,7 +5468,7 @@ async function runBulkCheck(inputText, target, useFuzzy, onProgress) {
   };
 }
 
-async function _runBulkCheckWorker(lines, target, useFuzzy, onProgress, _tProf) {
+async function _runBulkCheckWorker(lines, lineYears, target, useFuzzy, onProgress, _tProf) {
   const t = resolveTarget(target);
   if (!t) return null;
   const items = t.items;
@@ -5442,10 +5477,11 @@ async function _runBulkCheckWorker(lines, target, useFuzzy, onProgress, _tProf) 
   // (perf), but per-line output is preserved (no auto-dedup).
   const lineNorms = [];
   const uniqueNorms = new Map(); // norm -> firstLine (representative for matching)
-  for (const line of lines) {
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
     const n = normalize(line);
     if (!n) continue;
-    lineNorms.push({ line, norm: n });
+    lineNorms.push({ line, norm: n, year: lineYears ? lineYears[li] : null });
     if (!uniqueNorms.has(n)) uniqueNorms.set(n, line);
   }
   const uniqueLines = [...uniqueNorms.values()];
@@ -5496,14 +5532,16 @@ async function _runBulkCheckWorker(lines, target, useFuzzy, onProgress, _tProf) 
   // Expand to per-line Found/Missing using the cached matches by norm.
   const found = [];
   const missing = [];
+  const missingYears = [];
   const matchedItemIds = new Set();
-  for (const { line, norm } of lineNorms) {
+  for (const { line, norm, year } of lineNorms) {
     const m = matchByNorm.get(norm);
     if (m) {
       found.push({ input: line, match: m });
       matchedItemIds.add(m.item.id);
     } else {
       missing.push(line);
+      missingYears.push(year);
     }
   }
 
@@ -5517,6 +5555,7 @@ async function _runBulkCheckWorker(lines, target, useFuzzy, onProgress, _tProf) 
     target,
     found,
     missing,
+    missingYears,
     extras,
     totalInput: lines.length,
     uniqueInput: uniqueLines.length,
@@ -7554,10 +7593,13 @@ $('#bulk-add-go').addEventListener('click', () => {
   const dedupe = $('#bulk-add-dedupe').checked;
   const trim = $('#bulk-add-trim').checked;
 
-  const lines = text.split(/\r?\n/);
-  const cleaned = trim ? lines.map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean) : lines.filter(l => l.trim());
+  const rawLines = text.split(/\r?\n/);
+  const preCleaned = trim ? rawLines.map(l => l.replace(/\s+/g, ' ')) : rawLines;
+  const parsed = parseLinesWithYearHeaders(preCleaned);
+  const names = parsed.entries.map(e => e.name);
+  const years = parsed.entries.map(e => e.year);
 
-  const result = bulkAdd(cleaned, target, { dedupe });
+  const result = bulkAdd(names, target, { dedupe, years });
   state.lastBulkAddResult = { result, target };
 
   renderBulkAddResult(state.lastBulkAddResult);
@@ -7818,7 +7860,7 @@ $('[data-add-missing]')?.addEventListener('click', () => {
     body: r.missing.length + ' items ' + r.target + ' list-এ যোগ হবে।',
     confirmLabel: 'Add all',
     onConfirm: async () => {
-      const res = bulkAdd(r.missing, r.target, { dedupe: true });
+      const res = bulkAdd(r.missing, r.target, { dedupe: true, years: r.missingYears });
       renderVault(); renderPlayed(); updateStats();
       // Re-run check so result UI reflects the additions
       const newR = await runBulkCheck($('#bulk-check-text').value, r.target, $('#bulk-check-fuzzy').checked);
@@ -8268,8 +8310,21 @@ $('#import-file').addEventListener('change', async (e) => {
     }
 
     // ─── Plain text path ────────────────────────────────
-    const lines = parseTextLines(text);
-    await runImportToTarget(lines, target, 'text', info);
+    // Strip BOM + comments first, then parse year-headers so we get
+    // rich {name, year} items piped through bulkAddRich (which honors .year).
+    const filtered = text.split(/\r?\n/)
+      .map(l => l.replace(/^﻿/, ''))
+      .filter(l => {
+        const t = l.trim();
+        return t && !t.startsWith('#') && !t.startsWith('//');
+      });
+    const parsed = parseLinesWithYearHeaders(filtered);
+    const richItems = parsed.entries.map(e => {
+      const o = { name: e.name };
+      if (e.year != null) o.year = e.year;
+      return o;
+    });
+    await runImportToTarget(richItems, target, 'text', info);
     e.target.value = '';
   } catch (err) {
     info.style.color = 'var(--danger)';
