@@ -1911,7 +1911,46 @@ body {
       <div class="analytics-empty" id="chart-velocity-empty" hidden>এখনো কোনো game played list-এ নেই।</div>
       <p class="analytics-card-sub" id="chart-velocity-avg" hidden style="margin: 12px 0 0; text-align: center;"></p>
     </div>
-    <!-- Future cards: forecast (8C) -->
+    <div class="analytics-card">
+      <h3 class="analytics-card-title">Vault burndown — কবে শেষ হবে?</h3>
+      <p class="analytics-card-sub">Current realistic pace-এ vault clear-এর projection</p>
+      <p id="chart-burndown-eta" hidden style="font-family: var(--mono); color: var(--accent); font-size: 14px; margin-bottom: 12px; font-weight: 600;"></p>
+      <div class="analytics-canvas-wrap">
+        <canvas id="chart-burndown"></canvas>
+      </div>
+      <div class="analytics-empty" id="chart-burndown-empty" hidden>Played-এ অন্তত ১ বছরের data দরকার forecast-এর জন্য।</div>
+    </div>
+    <div class="analytics-card">
+      <h3 class="analytics-card-title">তিনটা scenario</h3>
+      <p class="analytics-card-sub">তোমার best, realistic, worst year-এর pace অনুযায়ী estimate</p>
+      <div class="setting-row" id="scenario-best" hidden>
+        <span>🏆 Best (<span id="scenario-best-rate"></span> games/year):</span>
+        <span id="scenario-best-eta" style="color: var(--success); font-family: var(--mono); font-size: 13px;"></span>
+      </div>
+      <div class="setting-row" id="scenario-realistic" hidden>
+        <span>🎯 Realistic (<span id="scenario-realistic-rate"></span> games/year):</span>
+        <span id="scenario-realistic-eta" style="color: var(--accent); font-family: var(--mono); font-size: 13px;"></span>
+      </div>
+      <div class="setting-row" id="scenario-worst" hidden>
+        <span>🐢 Worst (<span id="scenario-worst-rate"></span> games/year):</span>
+        <span id="scenario-worst-eta" style="color: var(--muted); font-family: var(--mono); font-size: 13px;"></span>
+      </div>
+      <div class="analytics-empty" id="scenario-empty" hidden>Played-এ অন্তত ১ বছরের data দরকার forecast-এর জন্য।</div>
+    </div>
+    <div class="analytics-card">
+      <h3 class="analytics-card-title">তুমি কতো খেলবে?</h3>
+      <p class="analytics-card-sub">Slider drag করো — তোমার target pace-এ ETA দেখাও</p>
+      <div class="setting-row">
+        <input type="range" id="explorer-slider" min="1" max="100" step="1" value="10" style="flex: 1; accent-color: var(--accent);">
+        <span id="explorer-slider-val" style="font-family: var(--mono); color: var(--accent); min-width: 32px; text-align: right;">10</span>
+      </div>
+      <div id="explorer-display" hidden style="margin-top: 16px;">
+        <p style="font-size: 24px; font-family: var(--mono); color: var(--accent); text-align: center; margin: 0 0 8px;"><span id="explorer-rate">10</span> games/year</p>
+        <p style="text-align: center; color: var(--muted); font-size: 13px; margin: 0 0 4px;">ETA: <span id="explorer-eta" style="color: var(--accent);"></span></p>
+        <p style="text-align: center; color: var(--muted); font-size: 12px; margin: 0;" id="explorer-compare"></p>
+      </div>
+      <div class="analytics-empty" id="explorer-empty" hidden>Played-এ অন্তত ১ বছরের data দরকার forecast-এর জন্য।</div>
+    </div>
   </div>
 </section>
 
@@ -3192,6 +3231,39 @@ function cumulativeGrowth(items) {
     i = j;
   }
   return out;
+}
+
+// Pure helper: stats over per-year played counts.
+// Returns { avg, best, worst, years, total } or null when no
+// played items have valid dateAdded.
+function computeVelocityStats(playedItems) {
+  const buckets = groupItemsByYearAdded(playedItems);
+  if (buckets.length === 0) return null;
+  const counts = buckets.map(b => b.count);
+  const total = counts.reduce((s, n) => s + n, 0);
+  return {
+    avg:   total / buckets.length,
+    best:  Math.max(...counts),
+    worst: Math.min(...counts),
+    years: buckets.length,
+    total
+  };
+}
+
+// Pure helper: years remaining to clear `vaultSize` at `gamesPerYear`.
+// 0 vault → 0. Non-positive rate → Infinity.
+function etaYears(vaultSize, gamesPerYear) {
+  if (!Number.isFinite(vaultSize) || vaultSize <= 0) return 0;
+  if (!Number.isFinite(gamesPerYear) || gamesPerYear <= 0) return Infinity;
+  return vaultSize / gamesPerYear;
+}
+
+// Pure helper: Bengali-friendly ETA string.
+function formatEta(years) {
+  if (!Number.isFinite(years) || years > 100) return '১০০+ বছর';
+  if (years === 0) return 'শেষ!';
+  if (years >= 1) return '~' + Math.round(years) + ' বছর';
+  return '~' + Math.round(years * 12) + ' মাস';
 }
 
 // Pure helper: parse raw input lines into game entries, applying any
@@ -6238,6 +6310,197 @@ function renderVelocityChart() {
   }
 }
 
+function renderBurndownChart() {
+  const canvas   = document.getElementById('chart-burndown');
+  const empty    = document.getElementById('chart-burndown-empty');
+  const etaBadge = document.getElementById('chart-burndown-eta');
+  if (!canvas || !empty) return;
+
+  if (!state.charts) state.charts = {};
+  if (state.charts.burndown) {
+    try { state.charts.burndown.destroy(); } catch (_) {}
+    state.charts.burndown = null;
+  }
+  if (etaBadge) etaBadge.hidden = true;
+
+  if (typeof window.Chart !== 'function') {
+    empty.hidden = false;
+    canvas.style.display = 'none';
+    empty.textContent = 'Chart library load হয়নি — internet check করো।';
+    return;
+  }
+
+  const stats = computeVelocityStats(state.played);
+  const vaultSize = state.vault.length;
+
+  if (stats === null) {
+    empty.hidden = false;
+    canvas.style.display = 'none';
+    empty.textContent = 'Played-এ অন্তত ১ বছরের data দরকার forecast-এর জন্য।';
+    return;
+  }
+
+  if (vaultSize === 0) {
+    empty.hidden = false;
+    canvas.style.display = 'none';
+    empty.textContent = 'Vault খালি — সব complete!';
+    return;
+  }
+
+  empty.hidden = true;
+  canvas.style.display = '';
+
+  const currentYear = new Date().getFullYear();
+  const eta = etaYears(vaultSize, stats.avg);
+  const endYear = currentYear + Math.ceil(Number.isFinite(eta) ? eta : 0);
+
+  if (etaBadge) {
+    etaBadge.textContent = 'ETA: ' + formatEta(eta) +
+      (Number.isFinite(eta) ? ' (year ' + endYear + '-এ shesh)' : '');
+    etaBadge.hidden = false;
+  }
+
+  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#f5a623';
+
+  state.charts.burndown = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: [String(currentYear), String(endYear)],
+      datasets: [{
+        label: 'Vault remaining',
+        data: [vaultSize, 0],
+        borderColor: accentColor,
+        backgroundColor: accentColor,
+        tension: 0,
+        pointRadius: 4,
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (ctx) => 'year ' + ctx[0].label,
+            label: (ctx) => ctx.parsed.y + ' games remaining'
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#76716a' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { beginAtZero: true, ticks: { color: '#76716a', precision: 0 }, grid: { color: 'rgba(255,255,255,0.04)' } }
+      }
+    }
+  });
+}
+
+function renderScenarios() {
+  const empty     = document.getElementById('scenario-empty');
+  const rowBest   = document.getElementById('scenario-best');
+  const rowReal   = document.getElementById('scenario-realistic');
+  const rowWorst  = document.getElementById('scenario-worst');
+  if (!rowBest || !rowReal || !rowWorst || !empty) return;
+
+  const rateBest  = document.getElementById('scenario-best-rate');
+  const rateReal  = document.getElementById('scenario-realistic-rate');
+  const rateWorst = document.getElementById('scenario-worst-rate');
+  const etaBest   = document.getElementById('scenario-best-eta');
+  const etaReal   = document.getElementById('scenario-realistic-eta');
+  const etaWorst  = document.getElementById('scenario-worst-eta');
+
+  const stats = computeVelocityStats(state.played);
+  if (stats === null) {
+    empty.hidden = false;
+    rowBest.hidden = true;
+    rowReal.hidden = true;
+    rowWorst.hidden = true;
+    return;
+  }
+
+  empty.hidden = true;
+  rowBest.hidden = false;
+  rowReal.hidden = false;
+  rowWorst.hidden = false;
+
+  const vaultSize = state.vault.length;
+  const currentYear = new Date().getFullYear();
+
+  const fill = (rateSpan, etaSpan, rate) => {
+    rateSpan.textContent = String(Math.round(rate));
+    if (vaultSize === 0) {
+      etaSpan.textContent = 'শেষ!';
+      return;
+    }
+    const eta = etaYears(vaultSize, rate);
+    const endYear = currentYear + Math.ceil(Number.isFinite(eta) ? eta : 0);
+    etaSpan.textContent = formatEta(eta) +
+      (Number.isFinite(eta) ? ' · year ' + endYear + '-এ shesh' : '');
+  };
+
+  fill(rateBest,  etaBest,  stats.best);
+  fill(rateReal,  etaReal,  stats.avg);
+  fill(rateWorst, etaWorst, stats.worst);
+}
+
+function renderScenarioExplorer() {
+  const slider      = document.getElementById('explorer-slider');
+  const sliderVal   = document.getElementById('explorer-slider-val');
+  const display     = document.getElementById('explorer-display');
+  const rateSpan    = document.getElementById('explorer-rate');
+  const etaSpan     = document.getElementById('explorer-eta');
+  const compareSpan = document.getElementById('explorer-compare');
+  const empty       = document.getElementById('explorer-empty');
+  if (!slider || !sliderVal || !display || !rateSpan || !etaSpan || !compareSpan || !empty) return;
+
+  const stats = computeVelocityStats(state.played);
+  const currentYear = new Date().getFullYear();
+
+  if (stats === null) {
+    empty.hidden = false;
+    display.hidden = true;
+    slider.disabled = true;
+    return;
+  }
+
+  empty.hidden = true;
+  display.hidden = false;
+  slider.disabled = false;
+  slider.max   = String(Math.max(1, Math.ceil(stats.best * 3)));
+  slider.value = String(Math.round(stats.avg));
+
+  const refresh = (raw) => {
+    let rate = parseInt(raw, 10);
+    if (!Number.isFinite(rate) || rate < 1) rate = 1;
+    sliderVal.textContent = String(rate);
+    rateSpan.textContent  = String(rate);
+
+    const vaultSize = state.vault.length;
+    const eta = etaYears(vaultSize, rate);
+    const endYear = currentYear + Math.ceil(Number.isFinite(eta) ? eta : 0);
+    etaSpan.textContent = formatEta(eta) +
+      (vaultSize > 0 && Number.isFinite(eta) ? ' (year ' + endYear + '-এ shesh)' : '');
+
+    const avgRounded = Math.round(stats.avg);
+    let compare;
+    if (rate === avgRounded) {
+      compare = 'current pace-এর সমান';
+    } else if (rate > stats.avg) {
+      compare = 'current pace-এর চেয়ে ' + Math.round((rate - stats.avg) / stats.avg * 100) + '% faster';
+    } else {
+      compare = 'current pace-এর চেয়ে ' + Math.round((stats.avg - rate) / stats.avg * 100) + '% slower';
+    }
+    compareSpan.textContent = compare;
+  };
+
+  if (!slider.dataset.bound) {
+    slider.addEventListener('input', (e) => refresh(e.target.value));
+    slider.dataset.bound = '1';
+  }
+  refresh(slider.value);
+}
+
 function renderYears() {
   const sectionsHost = $('#years-sections');
   const statsHost = $('#years-stats');
@@ -6815,7 +7078,10 @@ function switchTab(name) {
   if (name === 'vault') renderVault();
   if (name === 'played') renderPlayed();
   if (name === 'years') renderYears();
-  if (name === 'analytics') { renderAnalytics(); renderGrowthChart(); renderVelocityChart(); }
+  if (name === 'analytics') {
+    renderAnalytics(); renderGrowthChart(); renderVelocityChart();
+    renderBurndownChart(); renderScenarios(); renderScenarioExplorer();
+  }
   if (name === 'notes') refreshNotesStatus();
   if (name === 'mother') renderMotherView();
 }
