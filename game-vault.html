@@ -1361,6 +1361,46 @@ body {
   text-align: center;
   padding: 80px 12px;
 }
+.analytics-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.analytics-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-top: 24px;
+}
+.stat-tile {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+.stat-tile-num {
+  font-size: 28px;
+  font-family: var(--mono);
+  color: var(--accent);
+  font-weight: 600;
+}
+.stat-tile-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.insights-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.insight-row {
+  padding: 8px 0;
+  font-size: 13px;
+}
 
 /* ─── Status bar ─────────────────────────────────────────── */
 .status-bar {
@@ -1882,8 +1922,20 @@ body {
 
 <!-- ──── ANALYTICS VIEW ──────────────────────────────────── -->
 <section class="view" id="view-analytics">
-  <h2 class="section-title">analytics</h2>
+  <div class="analytics-header">
+    <h2 class="section-title">analytics</h2>
+    <button class="btn btn-sm" id="analytics-refresh" type="button">🔄 Refresh</button>
+  </div>
   <p class="section-desc">📊 তোমার collection-এর pattern, growth, ও activity trends।</p>
+
+  <section class="analytics-stats">
+    <div class="stat-tile"><div class="stat-tile-num" id="stat-total">0</div><div class="stat-tile-label">মোট games</div></div>
+    <div class="stat-tile"><div class="stat-tile-num" id="stat-vault">0</div><div class="stat-tile-label">Vault</div></div>
+    <div class="stat-tile"><div class="stat-tile-num" id="stat-played">0</div><div class="stat-tile-label">Complete</div></div>
+    <div class="stat-tile"><div class="stat-tile-num" id="stat-completion">—</div><div class="stat-tile-label">Completion %</div></div>
+    <div class="stat-tile"><div class="stat-tile-num" id="stat-years">0</div><div class="stat-tile-label">Active years</div></div>
+    <div class="stat-tile" id="stat-playtime-tile" hidden><div class="stat-tile-num" id="stat-playtime">0 hrs</div><div class="stat-tile-label">মোট playtime</div></div>
+  </section>
 
   <div class="analytics-grid">
     <div class="analytics-card">
@@ -1950,6 +2002,20 @@ body {
         <p style="text-align: center; color: var(--muted); font-size: 12px; margin: 0;" id="explorer-compare"></p>
       </div>
       <div class="analytics-empty" id="explorer-empty" hidden>Played-এ অন্তত ১ বছরের data দরকার forecast-এর জন্য।</div>
+    </div>
+    <div class="analytics-card">
+      <h3 class="analytics-card-title">Collection-এর decades</h3>
+      <p class="analytics-card-sub">তোমার games কোন era থেকে এসেছে</p>
+      <div class="analytics-canvas-wrap">
+        <canvas id="chart-decades"></canvas>
+      </div>
+      <div class="analytics-empty" id="chart-decades-empty" hidden>কোনো games-এ year set নেই — Years tab-এ year add করো।</div>
+    </div>
+    <div class="analytics-card">
+      <h3 class="analytics-card-title">💡 Insights</h3>
+      <p class="analytics-card-sub">তোমার collection-এর highlights</p>
+      <div class="insights-list" id="insights-list"></div>
+      <div class="analytics-empty" id="insights-empty" hidden>এখনো যথেষ্ট data নেই insights generate করতে।</div>
     </div>
   </div>
 </section>
@@ -3264,6 +3330,85 @@ function formatEta(years) {
   if (years === 0) return 'শেষ!';
   if (years >= 1) return '~' + Math.round(years) + ' বছর';
   return '~' + Math.round(years * 12) + ' মাস';
+}
+
+// Pure helper: bucket items by decade-of-release (item.year).
+// Returns [{decade, count, label}, ...] sorted ascending.
+// Items without finite item.year are skipped.
+function groupByDecade(items) {
+  if (!Array.isArray(items)) return [];
+  const counts = new Map();
+  for (const it of items) {
+    if (!it) continue;
+    const y = Number(it.year);
+    if (!Number.isFinite(y)) continue;
+    const decade = Math.floor(y / 10) * 10;
+    counts.set(decade, (counts.get(decade) || 0) + 1);
+  }
+  const out = [];
+  for (const [decade, count] of counts) {
+    out.push({ decade, count, label: decade + 's' });
+  }
+  out.sort((a, b) => a.decade - b.decade);
+  return out;
+}
+
+// Pure helper: build text insights from state. Each rule is gated on
+// data sufficiency — rules with insufficient data are silently skipped.
+// Returns [{emoji, text}, ...] (possibly empty).
+function computeInsights(stateRef) {
+  const vault  = Array.isArray(stateRef && stateRef.vault)  ? stateRef.vault  : [];
+  const played = Array.isArray(stateRef && stateRef.played) ? stateRef.played : [];
+  const all = vault.concat(played);
+  const out = [];
+
+  const allBuckets    = groupItemsByYearAdded(all);
+  const playedBuckets = groupItemsByYearAdded(played);
+
+  if (allBuckets.length > 0) {
+    let top = allBuckets[0];
+    for (const b of allBuckets) if (b.count > top.count) top = b;
+    out.push({ emoji: '🏆', text: 'Most productive year: ' + top.year + ' (' + top.count + ' games added)' });
+  }
+
+  if (playedBuckets.length > 0) {
+    let top = playedBuckets[0];
+    for (const b of playedBuckets) if (b.count > top.count) top = b;
+    out.push({ emoji: '🎯', text: 'Best completion year: ' + top.year + ' (' + top.count + ' games complete)' });
+  }
+
+  const allStats    = computeVelocityStats(all);
+  const playedStats = computeVelocityStats(played);
+  if (allStats && playedStats && allStats.years >= 2 && playedStats.years >= 2) {
+    const addRate      = Math.round(allStats.avg);
+    const completeRate = Math.round(playedStats.avg);
+    const net = addRate - completeRate;
+    const sign = net >= 0 ? '+' : '';
+    out.push({ emoji: '⚖️', text: 'তুমি প্রতি বছর গড়ে ' + addRate + ' games add করো, ' + completeRate + ' complete করো → net ' + sign + net });
+  }
+
+  if (allBuckets.length > 0) {
+    const earliest = allBuckets[0].year;
+    out.push({ emoji: '📅', text: earliest + ' সালে তোমার প্রথম game add' });
+  }
+
+  const decades = groupByDecade(all);
+  if (decades.length > 0) {
+    const total = decades.reduce((s, d) => s + d.count, 0);
+    let top = decades[0];
+    for (const d of decades) if (d.count > top.count) top = d;
+    const pct = total > 0 ? (top.count / total) * 100 : 0;
+    if (pct > 20) {
+      out.push({ emoji: '🎮', text: 'Most common decade: ' + top.label + ' (' + Math.round(pct) + '%)' });
+    }
+  }
+
+  const hours = totalPlaytimeHours(all);
+  if (hours > 0) {
+    out.push({ emoji: '📚', text: 'Library volume: ' + all.length + ' games, sum playtime ' + Math.round(hours).toLocaleString('en-US') + ' hours' });
+  }
+
+  return out;
 }
 
 // Pure helper: parse raw input lines into game entries, applying any
@@ -6501,6 +6646,130 @@ function renderScenarioExplorer() {
   refresh(slider.value);
 }
 
+function renderQuickStats() {
+  const totalEl      = document.getElementById('stat-total');
+  const vaultEl      = document.getElementById('stat-vault');
+  const playedEl     = document.getElementById('stat-played');
+  const completionEl = document.getElementById('stat-completion');
+  const yearsEl      = document.getElementById('stat-years');
+  const playtimeEl   = document.getElementById('stat-playtime');
+  const playtimeTile = document.getElementById('stat-playtime-tile');
+  if (!totalEl || !vaultEl || !playedEl || !completionEl || !yearsEl) return;
+
+  const vault  = state.vault;
+  const played = state.played;
+  const total  = vault.length + played.length;
+
+  totalEl.textContent  = String(total);
+  vaultEl.textContent  = String(vault.length);
+  playedEl.textContent = String(played.length);
+  completionEl.textContent = total > 0 ? Math.round(played.length / total * 100) + '%' : '—';
+
+  const yearsSet = new Set();
+  for (const it of vault.concat(played)) {
+    if (!it) continue;
+    const ts = Number(it.dateAdded);
+    if (!Number.isFinite(ts) || ts <= 0) continue;
+    const y = new Date(ts).getFullYear();
+    if (Number.isFinite(y)) yearsSet.add(y);
+  }
+  yearsEl.textContent = String(yearsSet.size);
+
+  if (playtimeTile && playtimeEl) {
+    const hours = totalPlaytimeHours(vault.concat(played));
+    if (hours > 0) {
+      playtimeTile.hidden = false;
+      playtimeEl.textContent = Math.round(hours).toLocaleString('en-US') + ' hrs';
+    } else {
+      playtimeTile.hidden = true;
+    }
+  }
+}
+
+function renderDecadeChart() {
+  const canvas = document.getElementById('chart-decades');
+  const empty  = document.getElementById('chart-decades-empty');
+  if (!canvas || !empty) return;
+
+  if (!state.charts) state.charts = {};
+  if (state.charts.decades) {
+    try { state.charts.decades.destroy(); } catch (_) {}
+    state.charts.decades = null;
+  }
+
+  if (typeof window.Chart !== 'function') {
+    empty.hidden = false;
+    canvas.style.display = 'none';
+    empty.textContent = 'Chart library load হয়নি — internet check করো।';
+    return;
+  }
+
+  const decades = groupByDecade(state.vault.concat(state.played));
+  if (decades.length === 0) {
+    empty.hidden = false;
+    canvas.style.display = 'none';
+    empty.textContent = 'কোনো games-এ year set নেই — Years tab-এ year add করো।';
+    return;
+  }
+
+  empty.hidden = true;
+  canvas.style.display = '';
+
+  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#f5a623';
+
+  state.charts.decades = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: decades.map(d => d.label),
+      datasets: [{
+        label: 'games',
+        data: decades.map(d => d.count),
+        backgroundColor: accentColor,
+        borderRadius: 4,
+        maxBarThickness: 48
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ctx.label + ': ' + ctx.parsed.y + ' games'
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#76716a' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { beginAtZero: true, ticks: { color: '#76716a', precision: 0 }, grid: { color: 'rgba(255,255,255,0.04)' } }
+      }
+    }
+  });
+}
+
+function renderInsights() {
+  const list  = document.getElementById('insights-list');
+  const empty = document.getElementById('insights-empty');
+  if (!list || !empty) return;
+
+  const insights = computeInsights(state);
+  list.innerHTML = '';
+
+  if (insights.length === 0) {
+    empty.hidden = false;
+    return;
+  }
+
+  empty.hidden = true;
+  for (const ins of insights) {
+    const row = document.createElement('div');
+    row.className = 'insight-row';
+    row.textContent = ins.emoji + ' ' + ins.text;
+    list.appendChild(row);
+  }
+}
+
 function renderYears() {
   const sectionsHost = $('#years-sections');
   const statsHost = $('#years-stats');
@@ -7079,14 +7348,26 @@ function switchTab(name) {
   if (name === 'played') renderPlayed();
   if (name === 'years') renderYears();
   if (name === 'analytics') {
+    renderQuickStats();
     renderAnalytics(); renderGrowthChart(); renderVelocityChart();
     renderBurndownChart(); renderScenarios(); renderScenarioExplorer();
+    renderDecadeChart(); renderInsights();
   }
   if (name === 'notes') refreshNotesStatus();
   if (name === 'mother') renderMotherView();
 }
 
 $$('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+const _analyticsRefreshBtn = document.getElementById('analytics-refresh');
+if (_analyticsRefreshBtn) {
+  _analyticsRefreshBtn.addEventListener('click', () => {
+    renderQuickStats();
+    renderAnalytics(); renderGrowthChart(); renderVelocityChart();
+    renderBurndownChart(); renderScenarios(); renderScenarioExplorer();
+    renderDecadeChart(); renderInsights();
+  });
+}
 
 /* ─── Custom databases (Step 1: foundation + create UI) ─── */
 function renderCustomTabs() {
