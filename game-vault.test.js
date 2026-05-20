@@ -2974,3 +2974,178 @@ describe('sortYearItems', () => {
     expect(rows.map(r => r.item.name)).toEqual(before);
   });
 });
+
+// ── Phase 9A: parseLinesWithYearHeaders + parseTrailingDate ───────────────
+// Verbatim copy from game-vault.html (Phase 9A)
+
+const _DATE_NUM_PREFIX_RX  = /^\s*\d+\.?(?:\s+|$)/;
+const _DATE_PLUS_SUFFIX_RX = /\s*\++\s*$/;
+const _DATE_URL_RX         = /^\s*https?:\/\//i;
+const _DATE_LICENSE_RX     = /^\s*[A-Za-z0-9]+(?:-[A-Za-z0-9]+){2,}\b/;
+const _DATE_YEAR_ONLY_RX   = /^\s*(?:19|20)\d{2}\s*$/;
+const _DATE_WORD_YEAR_RX   = /^[A-Za-z]+\s+(?:19|20)\d{2}$/;
+const _DATE_ONLY_PUNCT_RX  = /^[\s,.\-_:]*$/;
+const _MONTHS = {
+  jan:1, january:1, feb:2, february:2, mar:3, march:3, apr:4, april:4,
+  may:5, jun:6, june:6, jul:7, july:7, aug:8, august:8,
+  sep:9, sept:9, september:9, oct:10, october:10, nov:11, november:11,
+  dec:12, december:12
+};
+const _MONTH_TOKEN_RX = /\b(january|february|march|april|may|june|july|august|september|sept|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b/i;
+
+function parseTrailingDate(name) {
+  if (typeof name !== 'string' || !name) return { cleanedName: name, month: null, day: null };
+  const firstMatch = _MONTH_TOKEN_RX.exec(name);
+  if (!firstMatch) return { cleanedName: name, month: null, day: null };
+  const month = _MONTHS[firstMatch[0].toLowerCase()];
+  if (!month) return { cleanedName: name, month: null, day: null };
+
+  const cut = firstMatch.index;
+  let cleaned = name.slice(0, cut);
+  if (cleaned.trim() === '') {
+    return { cleanedName: name.trim(), month: null, day: null };
+  }
+  const tail = name.slice(cut);
+
+  let day = null;
+  let dayBeforeMatched = false;
+  const ma = /^[A-Za-z]+[\s,.\-]*(\d{1,2})\b/.exec(tail);
+  if (ma) {
+    const d = parseInt(ma[1], 10);
+    if (d >= 1 && d <= 31) day = d;
+  }
+  if (day === null) {
+    const mb = /(?:^|[,.\-])\s*(\d{1,2})\s*[,.\-\s]*$/.exec(cleaned);
+    if (mb) {
+      const d = parseInt(mb[1], 10);
+      if (d >= 1 && d <= 31) { day = d; dayBeforeMatched = true; }
+    }
+  }
+
+  cleaned = cleaned.replace(/\s*(?:19|20)\d{2}\s*$/, '');
+  if (dayBeforeMatched) {
+    cleaned = cleaned.replace(/[\s,.\-]+\d{1,2}\s*[,.\-\s]*$/, '');
+  }
+  cleaned = cleaned.replace(/[\s,.\-]+$/, '').trim();
+  if (!cleaned) cleaned = name.trim();
+  return { cleanedName: cleaned, month, day };
+}
+
+function parseLinesWithYearHeaders(rawLines) {
+  const HEADER_RX = /^\s*(19[7-9]\d|20[0-2]\d|2030)\s*$/;
+  const entries = [];
+  let currentYear = null;
+  let headers = 0;
+  for (const raw of rawLines) {
+    if (typeof raw !== 'string') continue;
+    const line = raw.replace(/^﻿/, '');
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const hm = HEADER_RX.exec(trimmed);
+    if (hm) { currentYear = parseInt(hm[1], 10); headers++; continue; }
+
+    if (_DATE_URL_RX.test(trimmed)) continue;
+    if (_DATE_LICENSE_RX.test(trimmed)) continue;
+
+    let work = trimmed.replace(_DATE_NUM_PREFIX_RX, '').replace(_DATE_PLUS_SUFFIX_RX, '').trim();
+    if (!work) continue;
+
+    const { cleanedName, month, day } = parseTrailingDate(work);
+    const name = cleanedName.trim();
+    if (!name) continue;
+    if (_DATE_ONLY_PUNCT_RX.test(name)) continue;
+    if (_DATE_YEAR_ONLY_RX.test(name)) continue;
+    if (_DATE_WORD_YEAR_RX.test(name)) continue;
+
+    entries.push({ name, date: { year: currentYear, month, day } });
+  }
+  return { entries, headers };
+}
+
+describe('parseLinesWithYearHeaders (Phase 9A)', () => {
+  const parse = (lines) => parseLinesWithYearHeaders(lines).entries;
+
+  test('strips number prefix and trailing + under year header', () => {
+    expect(parse(['2013', '1. Far Cry +'])).toEqual([
+      { name: 'Far Cry', date: { year: 2013, month: null, day: null } }
+    ]);
+  });
+
+  test('parses month + day after game name (dots separator)', () => {
+    expect(parse(['2020', '168. The Amazing Spiderman 2......Oct 12'])).toEqual([
+      { name: 'The Amazing Spiderman 2', date: { year: 2020, month: 10, day: 12 } }
+    ]);
+  });
+
+  test('parses day before month (dots separator)', () => {
+    expect(parse(['2020', '169. Warhammer 40,000: Space Marine....13 oct'])).toEqual([
+      { name: 'Warhammer 40,000: Space Marine', date: { year: 2020, month: 10, day: 13 } }
+    ]);
+  });
+
+  test('parses full month name with dash separator', () => {
+    expect(parse(['2021', '184. Transformers: Fall of Cybertron - january 12'])).toEqual([
+      { name: 'Transformers: Fall of Cybertron', date: { year: 2021, month: 1, day: 12 } }
+    ]);
+  });
+
+  test('parses date with comma + multiple dashes', () => {
+    expect(parse(['2020', '176. Rage ,december--- 2'])).toEqual([
+      { name: 'Rage', date: { year: 2020, month: 12, day: 2 } }
+    ]);
+  });
+
+  test('month appears twice — takes first occurrence', () => {
+    expect(parse(['2021', '189. Recore january 24 january'])).toEqual([
+      { name: 'Recore', date: { year: 2021, month: 1, day: 24 } }
+    ]);
+  });
+
+  test('header year wins over inline year', () => {
+    expect(parse(['2025', '276. Eternal dread 2 2019 dec 15'])).toEqual([
+      { name: 'Eternal dread 2', date: { year: 2025, month: 12, day: 15 } }
+    ]);
+  });
+
+  test('parses short month + day', () => {
+    expect(parse(['2021', '207. Transformers: The Game Nov 20'])).toEqual([
+      { name: 'Transformers: The Game', date: { year: 2021, month: 11, day: 20 } }
+    ]);
+  });
+
+  test('skips one-word + year line', () => {
+    expect(parse(['abanson 2007'])).toEqual([]);
+  });
+
+  test('skips URL line', () => {
+    expect(parse(['https://mrantifun.net/threads/1234'])).toEqual([]);
+  });
+
+  test('skips license key line (3+ dashed segments + trailing junk)', () => {
+    expect(parse(['3xwg7-rwzpn-Ltb2q-4yzq4 ----idm key'])).toEqual([]);
+  });
+
+  test('skips bare number prefix (empty after strip)', () => {
+    expect(parse(['1.'])).toEqual([]);
+  });
+
+  test('plain game without date under year header', () => {
+    expect(parse(['2019', 'Halo Reach'])).toEqual([
+      { name: 'Halo Reach', date: { year: 2019, month: null, day: null } }
+    ]);
+  });
+
+  test('number prefix without period', () => {
+    expect(parse(['2013', '3 Far Cry'])).toEqual([
+      { name: 'Far Cry', date: { year: 2013, month: null, day: null } }
+    ]);
+  });
+
+  test('back-compat: year header applies year to subsequent items', () => {
+    const r = parse(['2013', 'Crysis 2', 'Bioshock Infinite']);
+    expect(r).toEqual([
+      { name: 'Crysis 2', date: { year: 2013, month: null, day: null } },
+      { name: 'Bioshock Infinite', date: { year: 2013, month: null, day: null } }
+    ]);
+  });
+});
