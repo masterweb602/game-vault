@@ -3268,6 +3268,31 @@ function groupItemsByYearAdded(items) {
   return out;
 }
 
+// Pure helper: group items by item.year (release year), summing count
+// and playtime hours per year. Items without finite item.year are
+// skipped. Returns [{year, count, hours}, ...] sorted ascending.
+// Caller is responsible for any list-membership filtering (e.g. excluding
+// items already in Played) before passing items in.
+function groupByReleaseYear(items) {
+  if (!Array.isArray(items)) return [];
+  const counts = new Map();
+  const hours  = new Map();
+  for (const it of items) {
+    if (!it) continue;
+    const y = Number(it.year);
+    if (!Number.isFinite(y)) continue;
+    counts.set(y, (counts.get(y) || 0) + 1);
+    const p = getPlaytimeForItem(it);
+    if (p) hours.set(y, (hours.get(y) || 0) + p.hours + p.minutes / 60);
+  }
+  const out = [];
+  for (const [year, count] of counts) {
+    out.push({ year, count, hours: hours.get(year) || 0 });
+  }
+  out.sort((a, b) => a.year - b.year);
+  return out;
+}
+
 // Pure helper: cumulative count of items by year-of-dateAdded.
 // Returns [{year, total}, ...] sorted ascending. Items with
 // missing/invalid dateAdded are skipped silently. Years without
