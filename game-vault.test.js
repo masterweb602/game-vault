@@ -3149,3 +3149,81 @@ describe('parseLinesWithYearHeaders (Phase 9A)', () => {
     ]);
   });
 });
+
+// ── Phase 9C: groupByReleaseYear ──────────────────────────────────────────
+// Verbatim copy from game-vault.html (Phase 9C). Relies on getPlaytimeForItem
+// already defined earlier in the test file.
+
+function groupByReleaseYear(items) {
+  if (!Array.isArray(items)) return [];
+  const counts = new Map();
+  const hours  = new Map();
+  for (const it of items) {
+    if (!it) continue;
+    const y = Number(it.year);
+    if (!Number.isFinite(y)) continue;
+    counts.set(y, (counts.get(y) || 0) + 1);
+    const p = getPlaytimeForItem(it);
+    if (p) hours.set(y, (hours.get(y) || 0) + p.hours + p.minutes / 60);
+  }
+  const out = [];
+  for (const [year, count] of counts) {
+    out.push({ year, count, hours: hours.get(year) || 0 });
+  }
+  out.sort((a, b) => a.year - b.year);
+  return out;
+}
+
+describe('groupByReleaseYear (Phase 9C)', () => {
+  test('groups items by item.year, counting occurrences', () => {
+    const items = [
+      { name: 'A', year: 1999 },
+      { name: 'B', year: 1999 },
+      { name: 'C', year: 2010 }
+    ];
+    expect(groupByReleaseYear(items)).toEqual([
+      { year: 1999, count: 2, hours: 0 },
+      { year: 2010, count: 1, hours: 0 }
+    ]);
+  });
+
+  test('skips items without finite item.year', () => {
+    const items = [
+      { name: 'A', year: 2010 },
+      { name: 'B' },
+      { name: 'C', year: undefined },
+      { name: 'D', year: 'abc' }
+    ];
+    expect(groupByReleaseYear(items)).toEqual([
+      { year: 2010, count: 1, hours: 0 }
+    ]);
+  });
+
+  test('sums playtime hours per year', () => {
+    const items = [
+      { name: 'A', year: 2010, playtime: { hours: 5, minutes: 0  } },
+      { name: 'B', year: 2010, playtime: { hours: 0, minutes: 30 } },
+      { name: 'C', year: 2015, playtime: { hours: 2, minutes: 0  } }
+    ];
+    expect(groupByReleaseYear(items)).toEqual([
+      { year: 2010, count: 2, hours: 5.5 },
+      { year: 2015, count: 1, hours: 2   }
+    ]);
+  });
+
+  test('returns [] for empty input', () => {
+    expect(groupByReleaseYear([])).toEqual([]);
+    expect(groupByReleaseYear(null)).toEqual([]);
+    expect(groupByReleaseYear(undefined)).toEqual([]);
+  });
+
+  test('result is sorted ascending by year', () => {
+    const items = [
+      { name: 'A', year: 2010 },
+      { name: 'B', year: 1999 },
+      { name: 'C', year: 2020 }
+    ];
+    const years = groupByReleaseYear(items).map(b => b.year);
+    expect(years).toEqual([1999, 2010, 2020]);
+  });
+});

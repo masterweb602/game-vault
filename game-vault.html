@@ -2018,6 +2018,12 @@ body {
       <div class="analytics-empty" id="insights-empty" hidden>এখনো যথেষ্ট data নেই insights generate করতে।</div>
     </div>
   </div>
+
+  <div class="analytics-db-section" style="margin-top: 24px;">
+    <h3 class="analytics-card-title" style="font-size: 16px; margin-bottom: 8px;">প্রতি database — release year অনুযায়ী</h3>
+    <p class="section-desc" style="margin-bottom: 16px;">প্রতিটা list-এ কোন release year-এর কত games আর কত playtime। Played list-এ থাকা games তাদের source DB থেকে বাদ।</p>
+    <div class="analytics-grid" id="db-year-charts-grid"></div>
+  </div>
 </section>
 
 <!-- ──── NOTES VIEW ──────────────────────────────────────── -->
@@ -5016,6 +5022,9 @@ function updateStats() {
   $('#tc-played').textContent = '(' + state.played.length + ')';
   // Tag counts/labels follow item-set changes; called from every add/delete path.
   if (state.loaded) refreshTagState();
+  if (state.loaded && state.currentTab === 'analytics' && typeof renderDbYearCharts === 'function') {
+    renderDbYearCharts();
+  }
 }
 
 function refreshTagState() {
@@ -6872,6 +6881,133 @@ function renderInsights() {
   }
 }
 
+function renderDbYearCharts() {
+  const grid = document.getElementById('db-year-charts-grid');
+  if (!grid) return;
+
+  if (!state.charts) state.charts = {};
+  for (const k of Object.keys(state.charts)) {
+    if (k.indexOf('dbyear_') === 0 && state.charts[k]) {
+      try { state.charts[k].destroy(); } catch (_) {}
+      state.charts[k] = null;
+    }
+  }
+  grid.innerHTML = '';
+
+  const playedNorms = state.pIndex && state.pIndex.byNorm;
+  const excludePlayed = (arr) => playedNorms
+    ? (arr || []).filter(it => !playedNorms.has(it._norm))
+    : (arr || []).slice();
+
+  const dbs = [];
+  dbs.push({
+    key: 'vault', label: 'Vault',
+    sub: 'release year অনুযায়ী কত games বাকি + কত ঘণ্টা বাকি',
+    items: excludePlayed(state.vault)
+  });
+  dbs.push({
+    key: 'played', label: 'Played',
+    sub: 'release year অনুযায়ী complete করা games + spent hours',
+    items: (state.played || []).slice()
+  });
+  for (const id of (state.customListsOrder || [])) {
+    const list = state.customLists[id];
+    if (!list) continue;
+    dbs.push({
+      key: 'cl_' + id, label: list.name,
+      sub: 'release year অনুযায়ী count + playtime (Played বাদ)',
+      items: excludePlayed(list.items)
+    });
+  }
+
+  const accent  = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()  || '#f5a623';
+  const success = getComputedStyle(document.documentElement).getPropertyValue('--success').trim() || '#4ade80';
+
+  for (const db of dbs) {
+    const buckets = groupByReleaseYear(db.items);
+
+    const card = document.createElement('div');
+    card.className = 'analytics-card';
+    const h = document.createElement('h3');
+    h.className = 'analytics-card-title';
+    h.textContent = db.label;
+    card.appendChild(h);
+    const subEl = document.createElement('p');
+    subEl.className = 'analytics-card-sub';
+    subEl.textContent = db.sub;
+    card.appendChild(subEl);
+    const wrap = document.createElement('div');
+    wrap.className = 'analytics-canvas-wrap';
+    const canvas = document.createElement('canvas');
+    wrap.appendChild(canvas);
+    card.appendChild(wrap);
+    grid.appendChild(card);
+
+    if (buckets.length === 0 || typeof window.Chart !== 'function') {
+      wrap.style.display = 'none';
+      const empty = document.createElement('div');
+      empty.className = 'analytics-empty';
+      empty.textContent = (typeof window.Chart !== 'function')
+        ? 'Chart library load হয়নি — internet check করো।'
+        : 'এই database-এ কোনো item-এ release year set নেই।';
+      card.appendChild(empty);
+      continue;
+    }
+
+    const labels = buckets.map(b => String(b.year));
+    state.charts['dbyear_' + db.key] = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Count',
+            data: buckets.map(b => b.count),
+            borderColor: accent, backgroundColor: accent,
+            tension: 0.3, pointRadius: 3, borderWidth: 2,
+            yAxisID: 'yCount'
+          },
+          {
+            label: 'Playtime (hrs)',
+            data: buckets.map(b => Math.round(b.hours * 10) / 10),
+            borderColor: success, backgroundColor: success,
+            tension: 0.3, pointRadius: 3, borderWidth: 2,
+            yAxisID: 'yHours'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, position: 'bottom', labels: { color: '#76716a' } },
+          tooltip: {
+            callbacks: {
+              title: (ctx) => 'Release year ' + ctx[0].label,
+              label: (ctx) => ctx.dataset.label + ': ' + ctx.parsed.y
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { color: '#76716a' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+          yCount: {
+            type: 'linear', position: 'left', beginAtZero: true,
+            ticks: { color: '#76716a', precision: 0 },
+            grid: { color: 'rgba(255,255,255,0.04)' },
+            title: { display: true, text: 'count', color: '#76716a' }
+          },
+          yHours: {
+            type: 'linear', position: 'right', beginAtZero: true,
+            ticks: { color: '#76716a' },
+            grid: { drawOnChartArea: false },
+            title: { display: true, text: 'hours', color: '#76716a' }
+          }
+        }
+      }
+    });
+  }
+}
+
 function renderYears() {
   const sectionsHost = $('#years-sections');
   const statsHost = $('#years-stats');
@@ -7454,6 +7590,7 @@ function switchTab(name) {
     renderAnalytics(); renderGrowthChart(); renderVelocityChart();
     renderBurndownChart(); renderScenarios(); renderScenarioExplorer();
     renderDecadeChart(); renderInsights();
+    renderDbYearCharts();
   }
   if (name === 'notes') refreshNotesStatus();
   if (name === 'mother') renderMotherView();
@@ -7468,6 +7605,7 @@ if (_analyticsRefreshBtn) {
     renderAnalytics(); renderGrowthChart(); renderVelocityChart();
     renderBurndownChart(); renderScenarios(); renderScenarioExplorer();
     renderDecadeChart(); renderInsights();
+    renderDbYearCharts();
   });
 }
 
