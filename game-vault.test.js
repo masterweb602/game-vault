@@ -419,14 +419,17 @@ function resolveTarget(target) {
   return null;
 }
 
-function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
+function bulkAdd(names, target = 'vault', { dedupe = true, keepDupes = false } = {}) {
   const t = resolveTarget(target);
-  if (!t) return { added: 0, addedItems: [], skipped: [], flagged: [] };
+  if (!t) return { added: 0, addedItems: [], skipped: [], flagged: [], duplicates: [] };
   const idx = t.idx;
   const seenDedup = new Map();
   const addedItems = [];
   const skipped = [];
   const flagged = [];
+  const duplicates = [];
+
+  const detectDups = dedupe || keepDupes;
 
   for (const raw of names) {
     const trimmed = raw.trim();
@@ -435,7 +438,7 @@ function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
     const n  = normalize(trimmed);
 
     let exactDup = null;
-    if (dedupe && nd) {
+    if (detectDups && nd) {
       if (seenDedup.has(nd)) {
         exactDup = seenDedup.get(nd);
       } else if (n && idx.byNorm.has(n)) {
@@ -453,8 +456,11 @@ function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
     }
 
     if (exactDup) {
-      skipped.push({ input: trimmed, existing: exactDup });
-      continue;
+      duplicates.push({ input: trimmed, existing: exactDup });
+      if (!keepDupes) {
+        skipped.push({ input: trimmed, existing: exactDup });
+        continue;
+      }
     }
 
     const item = { id: newId(), name: trimmed, dateAdded: Date.now() + addedItems.length };
@@ -479,7 +485,7 @@ function bulkAdd(names, target = 'vault', { dedupe = true } = {}) {
   }
 
   t.save();
-  return { added: addedItems.length, addedItems, skipped, flagged };
+  return { added: addedItems.length, addedItems, skipped, flagged, duplicates };
 }
 
 // ── Startup cleanup helper (verbatim copy) ─────────────────────────────────
@@ -3225,5 +3231,48 @@ describe('groupByReleaseYear (Phase 9C)', () => {
     ];
     const years = groupByReleaseYear(items).map(b => b.year);
     expect(years).toEqual([1999, 2010, 2020]);
+  });
+});
+
+describe('bulkAdd keepDupes (Phase 11)', () => {
+  beforeEach(() => {
+    _idCounter = 0;
+    state = { vault: [], played: [], vIndex: new SearchIndex(), pIndex: new SearchIndex(), customLists: {} };
+  });
+
+  test('keepDupes=false: existing-DB match stays skipped (unchanged) and recorded in duplicates', () => {
+    bulkAdd(['Max Payne']);
+    const r = bulkAdd(['Max Payne']);
+    expect(r.added).toBe(0);
+    expect(r.skipped).toHaveLength(1);
+    expect(r.duplicates).toHaveLength(1);
+    expect(r.duplicates[0].input).toBe('Max Payne');
+    expect(r.duplicates[0].existing.name).toBe('Max Payne');
+  });
+
+  test('keepDupes=true: existing-DB match IS added; duplicates records it; skipped stays empty', () => {
+    bulkAdd(['Max Payne']);
+    const r = bulkAdd(['Max Payne'], 'vault', { keepDupes: true });
+    expect(r.added).toBe(1);
+    expect(r.skipped).toHaveLength(0);
+    expect(r.duplicates).toHaveLength(1);
+    expect(state.vault).toHaveLength(2);
+  });
+
+  test('within-paste dup with keepDupes=true: both added, 2nd in duplicates pointing at 1st', () => {
+    const r = bulkAdd(['Halo', 'Halo'], 'vault', { keepDupes: true });
+    expect(r.added).toBe(2);
+    expect(r.skipped).toHaveLength(0);
+    expect(r.duplicates).toHaveLength(1);
+    expect(r.duplicates[0].input).toBe('Halo');
+    expect(r.duplicates[0].existing).toBe(r.addedItems[0]);
+    expect(state.vault).toHaveLength(2);
+  });
+
+  test('brand-new games: added normally, duplicates stays empty', () => {
+    const r = bulkAdd(['Doom', 'Quake', 'Halo'], 'vault', { keepDupes: true });
+    expect(r.added).toBe(3);
+    expect(r.duplicates).toHaveLength(0);
+    expect(r.skipped).toHaveLength(0);
   });
 });

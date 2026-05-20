@@ -1756,6 +1756,10 @@ body {
         <input type="checkbox" id="bulk-add-trim" checked>
         Trim & clean lines
       </label>
+      <label class="checkbox">
+        <input type="checkbox" id="bulk-add-keep-dupes">
+        সব add করো — duplicate skip করো না
+      </label>
       <button class="btn btn-primary" id="bulk-add-go">Process & Add</button>
       <button class="btn" id="bulk-add-clear">Clear</button>
     </div>
@@ -1794,6 +1798,21 @@ body {
           <div class="result-count" id="ba-flagged-count">0</div>
         </div>
         <div class="result-list" id="ba-flagged-list"></div>
+      </div>
+    </div>
+
+    <div class="result-card" id="ba-duplicates-card" style="display:none; margin-top: 12px;">
+      <div class="result-header">
+        <div>
+          <span class="result-title">📋 duplicate report</span>
+          <span class="result-desc" id="ba-duplicates-desc">duplicate detect হলো — review-এর জন্য</span>
+        </div>
+        <div class="result-count" id="ba-duplicates-count">0</div>
+      </div>
+      <textarea id="ba-duplicates-text" class="textarea" readonly rows="6"
+                style="margin-top:12px;font-family:var(--mono);font-size:12px;"></textarea>
+      <div class="result-actions" style="margin-top:10px;">
+        <button class="btn btn-sm" id="ba-duplicates-copy">📋 Copy list</button>
       </div>
     </div>
   </div>
@@ -5451,15 +5470,20 @@ function addItem(name, target = 'vault', { allowDup = false } = {}) {
   return { added: true, item };
 }
 
-function bulkAdd(names, target = 'vault', { dedupe = true, dates = null } = {}) {
+function bulkAdd(names, target = 'vault', { dedupe = true, dates = null, keepDupes = false } = {}) {
   const _tProf = performance.now();
   const t = resolveTarget(target);
-  if (!t) return { added: 0, addedItems: [], skipped: [], flagged: [] };
+  if (!t) return { added: 0, addedItems: [], skipped: [], flagged: [], duplicates: [] };
   const idx = t.idx;
   const seenDedup = new Map();   // dedupNorm → first item seen this batch
   const addedItems = [];
-  const skipped = [];            // {input: string, existing: Item}  — NOT added
+  const skipped = [];            // {input: string, existing: Item}  — NOT added (when keepDupes=false)
   const flagged = [];            // {item, neighbors: Item[]}        — ADDED but has fuzzy siblings
+  const duplicates = [];         // {input: string, existing: Item}  — every detected dup (within-paste OR existing-DB)
+
+  // Detection runs when EITHER flag is on: keepDupes alone is enough to
+  // build the duplicates report even if the user unchecked "Skip duplicates".
+  const detectDups = dedupe || keepDupes;
 
   for (let i = 0; i < names.length; i++) {
     const raw = names[i];
@@ -5471,7 +5495,7 @@ function bulkAdd(names, target = 'vault', { dedupe = true, dates = null } = {}) 
 
     // ── Dedup check (exact match using light norm) ──
     let exactDup = null;
-    if (dedupe && nd) {
+    if (detectDups && nd) {
       if (seenDedup.has(nd)) {
         exactDup = seenDedup.get(nd);
       } else if (n && idx.byNorm.has(n)) {
@@ -5491,8 +5515,12 @@ function bulkAdd(names, target = 'vault', { dedupe = true, dates = null } = {}) 
     }
 
     if (exactDup) {
-      skipped.push({ input: trimmed, existing: exactDup });
-      continue;
+      duplicates.push({ input: trimmed, existing: exactDup });
+      if (!keepDupes) {
+        skipped.push({ input: trimmed, existing: exactDup });
+        continue;
+      }
+      // keepDupes=true → fall through and add this item anyway
     }
 
     // ── Add ──
@@ -5533,7 +5561,7 @@ function bulkAdd(names, target = 'vault', { dedupe = true, dates = null } = {}) 
 
   t.save();
   Profiler.record('bulkAdd', performance.now() - _tProf, { n: names.length });
-  return { added: addedItems.length, addedItems, skipped, flagged };
+  return { added: addedItems.length, addedItems, skipped, flagged, duplicates };
 }
 
 function deleteItem(item, source) {
@@ -8708,6 +8736,7 @@ $('#bulk-add-go').addEventListener('click', () => {
   if (!text.trim()) { toast('Textarea-এ কিছু paste করো', 'error'); return; }
   const target = $('#bulk-add-target').value;
   const dedupe = $('#bulk-add-dedupe').checked;
+  const keepDupes = $('#bulk-add-keep-dupes').checked;
   const trim = $('#bulk-add-trim').checked;
 
   const rawLines = text.split(/\r?\n/);
@@ -8716,14 +8745,18 @@ $('#bulk-add-go').addEventListener('click', () => {
   const names = parsed.entries.map(e => e.name);
   const dates = parsed.entries.map(e => e.date);
 
-  const result = bulkAdd(names, target, { dedupe, dates });
+  const result = bulkAdd(names, target, { dedupe, dates, keepDupes });
   state.lastBulkAddResult = { result, target };
 
   renderBulkAddResult(state.lastBulkAddResult);
   refreshAfterBulkChange(target);
   refreshTagState();
 
-  toast('Done — added ' + result.added + ', skipped ' + result.skipped.length +
+  const dupCount = (result.duplicates || []).length;
+  const dupNote = dupCount
+    ? ' · ' + dupCount + ' duplicate' + (keepDupes ? ' (added anyway)' : ' (skipped)')
+    : '';
+  toast('Done — added ' + result.added + dupNote +
         (result.flagged.length ? ', ' + result.flagged.length + ' to review' : ''),
         result.added > 0 ? 'success' : 'info');
 });
@@ -8842,6 +8875,27 @@ function renderBulkAddResult({ result, target }) {
       style: 'color:var(--muted);font-style:italic;font-size:12px;'
     }, '+ ' + (result.flagged.length - cap).toLocaleString() + ' more flagged'));
   }
+
+  // Duplicate report — shown whenever detection found anything (works in both
+  // keepDupes=true and keepDupes=false modes; description adapts).
+  const dupCard  = $('#ba-duplicates-card');
+  const dupCount = $('#ba-duplicates-count');
+  const dupText  = $('#ba-duplicates-text');
+  const dupDesc  = $('#ba-duplicates-desc');
+  const dups = result.duplicates || [];
+  if (dups.length > 0) {
+    dupCard.style.display = 'block';
+    dupCount.textContent = dups.length.toLocaleString();
+    const wasKept = result.skipped.length === 0;
+    dupDesc.textContent = wasKept
+      ? 'এই নামগুলো duplicate ছিল কিন্তু add হয়েছে — তোমার review-এর জন্য'
+      : 'এই নামগুলো duplicate বলে skip হয়েছে';
+    dupText.value = dups.map(d => d.input + ' → ' + d.existing.name).join('\n');
+  } else {
+    dupCard.style.display = 'none';
+    dupCount.textContent = '0';
+    dupText.value = '';
+  }
 }
 
 // Add all skipped — force-add ignoring dedup
@@ -8865,6 +8919,21 @@ $('#ba-add-all-skipped').addEventListener('click', () => {
       toast('Force-added ' + added, 'success');
     }
   });
+});
+
+$('#ba-duplicates-copy').addEventListener('click', () => {
+  const ta = $('#ba-duplicates-text');
+  if (!ta || !ta.value) { toast('কিছু copy করার নাই', 'info'); return; }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(ta.value).then(
+        () => toast('Copied to clipboard', 'success'),
+        () => { ta.select(); document.execCommand('copy'); toast('Copied', 'success'); }
+      );
+    } else {
+      ta.select(); document.execCommand('copy'); toast('Copied', 'success');
+    }
+  } catch (e) { toast('Copy failed: ' + (e && e.message ? e.message : e), 'error'); }
 });
 
 $('#bulk-add-clear').addEventListener('click', () => {
