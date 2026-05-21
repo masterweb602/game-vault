@@ -7037,7 +7037,7 @@ function renderDecadeChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      layout: { padding: { top: 16, bottom: 16 } },
+      layout: { padding: { top: 24, bottom: 24, left: 8, right: 8 } },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -7046,11 +7046,14 @@ function renderDecadeChart() {
           }
         },
         datalabels: {
-          anchor: 'end', align: 'top',
+          anchor: 'end', align: 'top', offset: 4,
           color: accentColor,
-          font: { size: 11, weight: 'bold' },
+          font: { size: 10, weight: 'bold' },
+          backgroundColor: 'rgba(20,20,20,0.75)',
+          borderRadius: 4,
+          padding: { top: 2, bottom: 2, left: 4, right: 4 },
           formatter: (v) => v > 0 ? v : '',
-          clamp: true
+          clamp: true, clip: false
         }
       },
       scales: {
@@ -7176,7 +7179,7 @@ function renderDbYearCharts() {
 
     const labels = buckets.map(b => String(b.year));
     const n = buckets.length;
-    const step = n <= 20 ? 1 : n <= 40 ? 2 : n <= 60 ? 3 : 4;
+    const step = n <= 12 ? 1 : n <= 24 ? 2 : n <= 40 ? 3 : Math.ceil(n / 14);
     state.charts['dbyear_' + db.key] = new Chart(canvas.getContext('2d'), {
       type: 'line',
       data: {
@@ -7189,10 +7192,14 @@ function renderDbYearCharts() {
             tension: 0.3, pointRadius: 3, borderWidth: 2,
             yAxisID: 'yCount',
             datalabels: {
-              anchor: 'end', align: 'top',
+              anchor: 'end', align: 'top', offset: 6,
               color: accent,
-              font: { size: 11, weight: 'bold' },
-              formatter: (v, ctx) => (v > 0 && ctx.dataIndex % step === 0) ? v : ''
+              font: { size: 10, weight: 'bold' },
+              backgroundColor: 'rgba(20,20,20,0.75)',
+              borderRadius: 4,
+              padding: { top: 2, bottom: 2, left: 4, right: 4 },
+              formatter: (v, ctx) => (v > 0 && ctx.dataIndex % step === 0) ? v : '',
+              clamp: true, clip: false
             }
           },
           {
@@ -7202,10 +7209,14 @@ function renderDbYearCharts() {
             tension: 0.3, pointRadius: 3, borderWidth: 2,
             yAxisID: 'yHours',
             datalabels: {
-              anchor: 'end', align: 'bottom',
+              anchor: 'end', align: 'bottom', offset: 6,
               color: success,
-              font: { size: 11, weight: 'bold' },
-              formatter: (v, ctx) => (v > 0 && ctx.dataIndex % step === 0) ? v : ''
+              font: { size: 10, weight: 'bold' },
+              backgroundColor: 'rgba(20,20,20,0.75)',
+              borderRadius: 4,
+              padding: { top: 2, bottom: 2, left: 4, right: 4 },
+              formatter: (v, ctx) => (v > 0 && ctx.dataIndex % step === 0) ? v : '',
+              clamp: true, clip: false
             }
           }
         ]
@@ -7214,7 +7225,7 @@ function renderDbYearCharts() {
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        layout: { padding: { top: 16, bottom: 16 } },
+        layout: { padding: { top: 24, bottom: 24, left: 8, right: 8 } },
         plugins: {
           legend: { display: true, position: 'bottom', labels: { color: '#76716a' } },
           tooltip: {
