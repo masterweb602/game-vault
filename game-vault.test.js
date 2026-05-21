@@ -3276,3 +3276,140 @@ describe('bulkAdd keepDupes (Phase 11)', () => {
     expect(r.skipped).toHaveLength(0);
   });
 });
+
+// ── Phase 10 — name-meta migration ───────────────────────────────────────────
+// Verbatim copies from game-vault.html so the helpers can be tested without
+// loading the full HTML script.
+
+function hoursToPlaytime(h) {
+  const n = Number(h);
+  if (!isFinite(n) || n <= 0) return null;
+  const totalMin = Math.round(n * 60);
+  if (totalMin === 0) return null;
+  return { hours: Math.floor(totalMin / 60), minutes: totalMin % 60 };
+}
+
+const _NAMEMETA_BRACKET_RX = /\[([^\]]*)\]/g;
+const _NAMEMETA_YEAR_RX    = /^\s*(19[7-9]\d|20[0-2]\d|2030)\s*$/;
+const _NAMEMETA_HOURS_RX   = /^\s*(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\s*$/i;
+const _NAMEMETA_MINUTES_RX = /^\s*(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m)\s*$/i;
+function parseNameMeta(name) {
+  if (typeof name !== 'string' || !name) {
+    return { cleanName: '', year: null, hours: null };
+  }
+  let year = null, hours = null;
+  let yearConsumed = false, ptConsumed = false;
+  const cleaned = name.replace(_NAMEMETA_BRACKET_RX, (full, inner) => {
+    if (!yearConsumed) {
+      const ym = _NAMEMETA_YEAR_RX.exec(inner);
+      if (ym) { year = parseInt(ym[1], 10); yearConsumed = true; return ' '; }
+    }
+    if (!ptConsumed) {
+      const hm = _NAMEMETA_HOURS_RX.exec(inner);
+      if (hm) { hours = parseFloat(hm[1]);          ptConsumed = true; return ' '; }
+      const mm = _NAMEMETA_MINUTES_RX.exec(inner);
+      if (mm) { hours = parseFloat(mm[1]) / 60;      ptConsumed = true; return ' '; }
+    }
+    return full;
+  });
+  const cleanName = cleaned.replace(/\s+/g, ' ').trim();
+  return { cleanName, year, hours };
+}
+
+// State-free per-item version of migrateNameMeta's inner `tryItem` helper.
+// The full migrateNameMeta touches state.vault / saveList / index rebuild
+// which aren't available in this isolated test harness, so the per-item
+// conservative logic is exercised directly here.
+function migrateOneItem(item) {
+  if (!item || typeof item.name !== 'string') return false;
+  const m = parseNameMeta(item.name);
+  const bracketMatched = m.year !== null || m.hours !== null;
+  let changed = false;
+  if (m.year !== null && typeof item.year !== 'number') {
+    item.year = m.year; changed = true;
+  }
+  if (m.hours !== null && !item.playtime) {
+    const pt = hoursToPlaytime(m.hours);
+    if (pt) { item.playtime = pt; changed = true; }
+  }
+  if (bracketMatched && m.cleanName && m.cleanName !== item.name) {
+    item.name = m.cleanName; changed = true;
+  }
+  return changed;
+}
+
+describe('hoursToPlaytime', () => {
+  test('decimal hours converts with proper rounding (3.4h → 3:24)', () => {
+    expect(hoursToPlaytime(3.4)).toEqual({ hours: 3, minutes: 24 });
+  });
+  test('sub-hour fractional rounds to minutes (57 min ≈ 0.95h → 0:57)', () => {
+    expect(hoursToPlaytime(57 / 60)).toEqual({ hours: 0, minutes: 57 });
+  });
+  test('60-rollover + guards for 0 / negative / non-finite / non-numeric', () => {
+    expect(hoursToPlaytime(1)).toEqual({ hours: 1, minutes: 0 });
+    expect(hoursToPlaytime(0.999)).toEqual({ hours: 1, minutes: 0 }); // 59.94→60→1:00
+    expect(hoursToPlaytime(0)).toBeNull();
+    expect(hoursToPlaytime(-1)).toBeNull();
+    expect(hoursToPlaytime(NaN)).toBeNull();
+    expect(hoursToPlaytime('foo')).toBeNull();
+  });
+});
+
+describe('parseNameMeta', () => {
+  test('year + hours brackets, year-first', () => {
+    expect(parseNameMeta('The Caribou Trail[2026][3.4 hours]'))
+      .toEqual({ cleanName: 'The Caribou Trail', year: 2026, hours: 3.4 });
+  });
+  test('minutes + year brackets, reversed order works', () => {
+    const r = parseNameMeta('Better Than Dead[57 minutes][2026]');
+    expect(r.cleanName).toBe('Better Than Dead');
+    expect(r.year).toBe(2026);
+    expect(r.hours).toBeCloseTo(57 / 60, 5);
+  });
+  test('year only', () => {
+    expect(parseNameMeta('Halo[2024]'))
+      .toEqual({ cleanName: 'Halo', year: 2024, hours: null });
+  });
+  test('hours only, no year', () => {
+    expect(parseNameMeta('Mystery[5h]'))
+      .toEqual({ cleanName: 'Mystery', year: null, hours: 5 });
+  });
+  test('minutes only — fractional hours via /60', () => {
+    expect(parseNameMeta('Game[45 min]'))
+      .toEqual({ cleanName: 'Game', year: null, hours: 0.75 });
+  });
+  test('non-matching brackets preserved; parens untouched', () => {
+    expect(parseNameMeta('Game (PC)[2024][some note]'))
+      .toEqual({ cleanName: 'Game (PC) [some note]', year: 2024, hours: null });
+  });
+  test('out-of-range year stays in name as a non-matching bracket', () => {
+    expect(parseNameMeta('Old[1969]'))
+      .toEqual({ cleanName: 'Old[1969]', year: null, hours: null });
+  });
+  test('no brackets / null / empty / non-string', () => {
+    expect(parseNameMeta('Just A Name'))
+      .toEqual({ cleanName: 'Just A Name', year: null, hours: null });
+    expect(parseNameMeta('')).toEqual({ cleanName: '', year: null, hours: null });
+    expect(parseNameMeta(null)).toEqual({ cleanName: '', year: null, hours: null });
+    expect(parseNameMeta(undefined)).toEqual({ cleanName: '', year: null, hours: null });
+    expect(parseNameMeta(2024)).toEqual({ cleanName: '', year: null, hours: null });
+  });
+});
+
+describe('migrateNameMeta — per-item conservative apply', () => {
+  test('full migrate: bracket name → year + playtime fields set, name cleaned', () => {
+    const it = { name: 'The Caribou Trail[2026][3.4 hours]' };
+    expect(migrateOneItem(it)).toBe(true);
+    expect(it).toEqual({
+      name: 'The Caribou Trail',
+      year: 2026,
+      playtime: { hours: 3, minutes: 24 }
+    });
+  });
+  test('manual data preserved: pre-set item.year is NOT overwritten by bracket; bracket still stripped', () => {
+    const it = { name: 'Halo[2024]', year: 2020 };
+    expect(migrateOneItem(it)).toBe(true);
+    expect(it.year).toBe(2020);
+    expect(it.name).toBe('Halo');
+  });
+});

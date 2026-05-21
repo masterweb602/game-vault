@@ -1354,6 +1354,17 @@ body {
 .analytics-card-title { font-size: 14px; margin-bottom: 4px; }
 .analytics-card-sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
 .analytics-canvas-wrap { position: relative; height: 280px; }
+/* Phase 10: per-DB release-year charts get full-width single column + taller canvas */
+#db-year-charts-grid { grid-template-columns: 1fr; }
+#db-year-charts-grid .analytics-canvas-wrap { height: 380px; }
+.analytics-card-summary {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 12px;
+  text-align: center;
+  line-height: 1.6;
+}
 .analytics-empty {
   font-family: var(--mono);
   font-size: 12px;
@@ -2131,6 +2142,14 @@ body {
     <p>Profile timing দেখাও — startup, search, save/load latency। Real operations only, no synthetic benchmark।</p>
     <div class="setting-row">
       <button class="btn" id="toggle-debug-panel">Show debug panel</button>
+    </div>
+  </div>
+
+  <div class="setting-card">
+    <h4>নামের meta migrate</h4>
+    <p>পুরোনো bulk-add থেকে আসা game-name-এ <span style="font-family:var(--mono);">[2026][3.4 hours]</span> বা <span style="font-family:var(--mono);">[57 minutes]</span> embedded থাকলে সেগুলো structured field-এ তুলে আনে। চালানোর আগে Export backup নিয়ে নাও। Manual ভাবে set করা year/playtime overwrite হবে না।</p>
+    <div class="setting-row">
+      <button class="btn" id="migrate-name-meta">🧹 [year][playtime] structured field-এ আনো</button>
     </div>
   </div>
 
@@ -3782,6 +3801,123 @@ function migrateItem(item) {
   if (cleaned !== item.name) { item.name = cleaned; changed = true; }
 
   return { changed, conflict };
+}
+
+// Convert decimal hours → {hours:int, minutes:0–59} matching the stored
+// playtime shape. Rounds to whole minutes; handles 60-rollover. Returns
+// null for 0 / negative / non-finite input so callers can guard cleanly.
+//   3.4   → {hours: 3, minutes: 24}
+//   0.95  → {hours: 0, minutes: 57}   (57/60 = 0.95)
+//   1.0   → {hours: 1, minutes: 0}
+//   0     → null
+//   -1    → null
+function hoursToPlaytime(h) {
+  const n = Number(h);
+  if (!isFinite(n) || n <= 0) return null;
+  const totalMin = Math.round(n * 60);
+  if (totalMin === 0) return null;
+  return { hours: Math.floor(totalMin / 60), minutes: totalMin % 60 };
+}
+
+// Phase 10 parser for the BRACKET name format used by the user's bulk
+// imports: "Some Game[2026][3.4 hours]", "Other[57 minutes][2026]". Scans
+// every [...] token; consumes the FIRST that matches a year (1970–2030)
+// and the FIRST that matches a playtime unit. Order-independent. Brackets
+// that don't match either pattern are kept verbatim. Parens / braces are
+// never touched. Returns {cleanName, year, hours} with hours as fractional
+// hours (minutes converted via /60).
+//   "Halo[2024][5h]"        → {cleanName:'Halo',         year:2024, hours:5}
+//   "Game[45 min][2024]"    → {cleanName:'Game',         year:2024, hours:0.75}
+//   "Game (PC)[2024][note]" → {cleanName:'Game (PC) [note]', year:2024, hours:null}
+//   "Old[1969]"             → {cleanName:'Old[1969]',    year:null, hours:null}
+const _NAMEMETA_BRACKET_RX = /\[([^\]]*)\]/g;
+const _NAMEMETA_YEAR_RX    = /^\s*(19[7-9]\d|20[0-2]\d|2030)\s*$/;
+const _NAMEMETA_HOURS_RX   = /^\s*(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\s*$/i;
+const _NAMEMETA_MINUTES_RX = /^\s*(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m)\s*$/i;
+function parseNameMeta(name) {
+  if (typeof name !== 'string' || !name) {
+    return { cleanName: '', year: null, hours: null };
+  }
+  let year = null, hours = null;
+  let yearConsumed = false, ptConsumed = false;
+  const cleaned = name.replace(_NAMEMETA_BRACKET_RX, (full, inner) => {
+    if (!yearConsumed) {
+      const ym = _NAMEMETA_YEAR_RX.exec(inner);
+      if (ym) { year = parseInt(ym[1], 10); yearConsumed = true; return ' '; }
+    }
+    if (!ptConsumed) {
+      const hm = _NAMEMETA_HOURS_RX.exec(inner);
+      if (hm) { hours = parseFloat(hm[1]);          ptConsumed = true; return ' '; }
+      const mm = _NAMEMETA_MINUTES_RX.exec(inner);
+      if (mm) { hours = parseFloat(mm[1]) / 60;      ptConsumed = true; return ' '; }
+    }
+    return full;
+  });
+  const cleanName = cleaned.replace(/\s+/g, ' ').trim();
+  return { cleanName, year, hours };
+}
+
+// Re-runnable migration for the bracket format. Walks vault + played +
+// every custom DB. Per item: lift year only if item.year is unset; lift
+// playtime only if item.playtime is absent; rewrite name to cleanName
+// whenever any bracket matched. Manual data is never overwritten.
+// Idempotent — once brackets are stripped, a second pass changes nothing.
+// No flag: this is exposed as a Settings button and can be run any time.
+async function migrateNameMeta() {
+  let updated = 0, total = 0;
+  let touchedVault = false, touchedPlayed = false;
+  const touchedCustom = new Set();
+
+  const tryItem = (item) => {
+    if (!item || typeof item.name !== 'string') return false;
+    total++;
+    const m = parseNameMeta(item.name);
+    const bracketMatched = m.year !== null || m.hours !== null;
+    let changed = false;
+    if (m.year !== null && typeof item.year !== 'number') {
+      item.year = m.year; changed = true;
+    }
+    if (m.hours !== null && !item.playtime) {
+      const pt = hoursToPlaytime(m.hours);
+      if (pt) { item.playtime = pt; changed = true; }
+    }
+    if (bracketMatched && m.cleanName && m.cleanName !== item.name) {
+      item.name = m.cleanName; changed = true;
+    }
+    if (changed) updated++;
+    return changed;
+  };
+
+  for (const it of (state.vault  || [])) if (tryItem(it)) touchedVault  = true;
+  for (const it of (state.played || [])) if (tryItem(it)) touchedPlayed = true;
+  for (const id of Object.keys(state.customLists || {})) {
+    const cl = state.customLists[id];
+    if (!cl) continue;
+    for (const it of (cl.items || [])) if (tryItem(it)) touchedCustom.add(id);
+  }
+
+  const saves = [];
+  if (touchedVault)  saves.push(saveList('vault',  state.vault));
+  if (touchedPlayed) saves.push(saveList('played', state.played));
+  for (const id of touchedCustom) saves.push(saveList('cl-' + id, state.customLists[id].items));
+  if (saves.length) await Promise.all(saves);
+
+  if (touchedVault || touchedPlayed) rebuildIndexes();
+  for (const id of touchedCustom) {
+    const cl = state.customLists[id];
+    if (cl && cl.index) cl.index.rebuild(cl.items);
+  }
+
+  if (updated > 0) {
+    state.motherDirty = true;
+    if (typeof renderVault       === 'function') renderVault();
+    if (typeof renderPlayed      === 'function') renderPlayed();
+    if (typeof renderAnalytics   === 'function') renderAnalytics();
+    if (typeof renderDbYearCharts === 'function') renderDbYearCharts();
+    if (typeof updateStats       === 'function') updateStats();
+  }
+
+  return { updated, total };
 }
 
 // Pure: dedupe + unshift + cap at 5. Invalid years are dropped silently.
@@ -6982,6 +7118,24 @@ function renderDbYearCharts() {
       continue;
     }
 
+    // Per-DB summary: totals computed over buckets (items with release year
+    // set), so the numbers always agree with the chart points above. Peak
+    // year is the year with most games; ties resolve to the latest year
+    // because buckets are sorted ascending and the >= comparison overwrites.
+    let totalGames = 0, totalHours = 0;
+    let peakYear = buckets[0].year, peakCount = buckets[0].count;
+    for (const b of buckets) {
+      totalGames += b.count;
+      totalHours += b.hours;
+      if (b.count >= peakCount) { peakYear = b.year; peakCount = b.count; }
+    }
+    const avgRaw = totalGames / buckets.length;
+    const avg = avgRaw.toFixed(1).replace(/\.0$/, '');
+    const summary = document.createElement('p');
+    summary.className = 'analytics-card-summary';
+    summary.textContent = 'মোট ' + totalGames + ' games · ' + Math.round(totalHours) + ' ঘণ্টা · peak year ' + peakYear + ' · ~' + avg + ' games/year';
+    card.appendChild(summary);
+
     const labels = buckets.map(b => String(b.year));
     state.charts['dbyear_' + db.key] = new Chart(canvas.getContext('2d'), {
       type: 'line',
@@ -9795,6 +9949,27 @@ function hideDebugPanel() {
 $('#toggle-debug-panel').addEventListener('click', () => {
   if ($('#debug-panel').classList.contains('show')) hideDebugPanel();
   else showDebugPanel();
+});
+$('#migrate-name-meta').addEventListener('click', () => {
+  modal({
+    title: 'নামের meta migrate করবো?',
+    body: 'পুরোনো নামের ভেতরে থাকা [2026] / [3.4 hours] / [57 minutes] structured field-এ তোলা হবে এবং bracket-গুলো নাম থেকে strip হবে। ভুল হলে undo নেই — চালানোর আগে Settings → Export data থেকে JSON backup নিয়ে রাখো। Manual ভাবে set করা year/playtime overwrite হবে না।',
+    confirmLabel: 'Migrate করো',
+    confirmKind: 'btn-primary',
+    onConfirm: async () => {
+      try {
+        const { updated, total } = await migrateNameMeta();
+        if (updated > 0) {
+          toast('✓ ' + updated + ' / ' + total + ' games updated', 'success', 4000);
+        } else {
+          toast('কিছু change হয়নি — ' + total + ' games scan হয়েছে', 'info', 3000);
+        }
+      } catch (e) {
+        console.error('migrateNameMeta failed:', e);
+        toast('Migrate ব্যর্থ: ' + e.message, 'error', 5000);
+      }
+    }
+  });
 });
 $('#debug-panel-close').addEventListener('click', hideDebugPanel);
 $('#debug-copy-stats').addEventListener('click', async () => {
