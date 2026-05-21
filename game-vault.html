@@ -10,6 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -7032,15 +7033,24 @@ function renderDecadeChart() {
         maxBarThickness: 48
       }]
     },
+    plugins: (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : [],
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      layout: { padding: { top: 16, bottom: 16 } },
       plugins: {
         legend: { display: false },
         tooltip: {
           callbacks: {
             label: (ctx) => ctx.label + ': ' + ctx.parsed.y + ' games'
           }
+        },
+        datalabels: {
+          anchor: 'end', align: 'top',
+          color: accentColor,
+          font: { size: 11, weight: 'bold' },
+          formatter: (v) => v > 0 ? v : '',
+          clamp: true
         }
       },
       scales: {
@@ -7165,6 +7175,8 @@ function renderDbYearCharts() {
     card.appendChild(summary);
 
     const labels = buckets.map(b => String(b.year));
+    const n = buckets.length;
+    const step = n <= 20 ? 1 : n <= 40 ? 2 : n <= 60 ? 3 : 4;
     state.charts['dbyear_' + db.key] = new Chart(canvas.getContext('2d'), {
       type: 'line',
       data: {
@@ -7175,20 +7187,34 @@ function renderDbYearCharts() {
             data: buckets.map(b => b.count),
             borderColor: accent, backgroundColor: accent,
             tension: 0.3, pointRadius: 3, borderWidth: 2,
-            yAxisID: 'yCount'
+            yAxisID: 'yCount',
+            datalabels: {
+              anchor: 'end', align: 'top',
+              color: accent,
+              font: { size: 11, weight: 'bold' },
+              formatter: (v, ctx) => (v > 0 && ctx.dataIndex % step === 0) ? v : ''
+            }
           },
           {
             label: 'Playtime (hrs)',
             data: buckets.map(b => Math.round(b.hours * 10) / 10),
             borderColor: success, backgroundColor: success,
             tension: 0.3, pointRadius: 3, borderWidth: 2,
-            yAxisID: 'yHours'
+            yAxisID: 'yHours',
+            datalabels: {
+              anchor: 'end', align: 'bottom',
+              color: success,
+              font: { size: 11, weight: 'bold' },
+              formatter: (v, ctx) => (v > 0 && ctx.dataIndex % step === 0) ? v : ''
+            }
           }
         ]
       },
+      plugins: (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : [],
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        layout: { padding: { top: 16, bottom: 16 } },
         plugins: {
           legend: { display: true, position: 'bottom', labels: { color: '#76716a' } },
           tooltip: {
