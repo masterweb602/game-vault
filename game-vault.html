@@ -1357,7 +1357,18 @@ body {
 .analytics-canvas-wrap { position: relative; height: 280px; }
 /* Phase 10: per-DB release-year charts get full-width single column + taller canvas */
 #db-year-charts-grid { grid-template-columns: 1fr; }
-#db-year-charts-grid .analytics-canvas-wrap { height: 380px; }
+#db-year-charts-grid .analytics-canvas-wrap {
+  height: 450px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.db-chart-scroll-inner { height: 100%; position: relative; }
+.analytics-scroll-hint {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 6px;
+  text-align: center;
+}
 .analytics-card-summary {
   font-family: var(--mono);
   font-size: 12px;
@@ -7143,8 +7154,11 @@ function renderDbYearCharts() {
     card.appendChild(subEl);
     const wrap = document.createElement('div');
     wrap.className = 'analytics-canvas-wrap';
+    const inner = document.createElement('div');
+    inner.className = 'db-chart-scroll-inner';
     const canvas = document.createElement('canvas');
-    wrap.appendChild(canvas);
+    inner.appendChild(canvas);
+    wrap.appendChild(inner);
     card.appendChild(wrap);
     grid.appendChild(card);
 
@@ -7178,6 +7192,17 @@ function renderDbYearCharts() {
     card.appendChild(summary);
 
     const labels = buckets.map(b => String(b.year));
+    const containerWidth = wrap.clientWidth || 600;
+    const minWidth = Math.max(containerWidth, buckets.length * 85);
+    inner.style.width   = minWidth + 'px';
+    canvas.style.width  = minWidth + 'px';
+    canvas.style.height = '450px';
+    if (minWidth > containerWidth) {
+      const hint = document.createElement('p');
+      hint.className = 'analytics-scroll-hint';
+      hint.textContent = '← ডানে-বামে scroll করো →';
+      card.appendChild(hint);
+    }
     state.charts['dbyear_' + db.key] = new Chart(canvas.getContext('2d'), {
       type: 'line',
       data: {
@@ -7187,12 +7212,12 @@ function renderDbYearCharts() {
             label: 'Count',
             data: buckets.map(b => b.count),
             borderColor: accent, backgroundColor: accent,
-            tension: 0.3, pointRadius: 3, borderWidth: 2,
+            tension: 0.3, pointRadius: 4, borderWidth: 2,
             yAxisID: 'yCount',
             datalabels: {
               anchor: 'end', align: 'top', offset: 6,
               color: accent,
-              font: { size: 10, weight: 'bold' },
+              font: { size: 11, weight: 'bold' },
               backgroundColor: 'rgba(20,20,20,0.75)',
               borderRadius: 4,
               padding: { top: 2, bottom: 2, left: 4, right: 4 },
@@ -7204,12 +7229,12 @@ function renderDbYearCharts() {
             label: 'Playtime (hrs)',
             data: buckets.map(b => Math.round(b.hours * 10) / 10),
             borderColor: success, backgroundColor: success,
-            tension: 0.3, pointRadius: 3, borderWidth: 2,
+            tension: 0.3, pointRadius: 4, borderWidth: 2,
             yAxisID: 'yHours',
             datalabels: {
               anchor: 'end', align: 'bottom', offset: 6,
               color: success,
-              font: { size: 10, weight: 'bold' },
+              font: { size: 11, weight: 'bold' },
               backgroundColor: 'rgba(20,20,20,0.75)',
               borderRadius: 4,
               padding: { top: 2, bottom: 2, left: 4, right: 4 },
@@ -7221,7 +7246,7 @@ function renderDbYearCharts() {
       },
       plugins: (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : [],
       options: {
-        responsive: true,
+        responsive: false,
         maintainAspectRatio: false,
         layout: { padding: { top: 24, bottom: 24, left: 8, right: 8 } },
         plugins: {
