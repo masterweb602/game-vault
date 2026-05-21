@@ -1359,8 +1359,23 @@ body {
 #db-year-charts-grid { grid-template-columns: 1fr; }
 #db-year-charts-grid .analytics-canvas-wrap {
   height: 450px;
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
+  cursor: grab;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent) rgba(255,255,255,0.08);
+}
+#db-year-charts-grid .analytics-canvas-wrap.is-dragging { cursor: grabbing; }
+#db-year-charts-grid .analytics-canvas-wrap::-webkit-scrollbar { height: 10px; }
+#db-year-charts-grid .analytics-canvas-wrap::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border-radius: 5px;
+}
+#db-year-charts-grid .analytics-canvas-wrap::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.06);
+  border-radius: 5px;
 }
 .db-chart-scroll-inner { height: 100%; position: relative; }
 .analytics-scroll-hint {
@@ -7161,6 +7176,30 @@ function renderDbYearCharts() {
     wrap.appendChild(inner);
     card.appendChild(wrap);
     grid.appendChild(card);
+
+    wrap.addEventListener('mousedown', (e) => {
+      const dragStartX = e.pageX;
+      const dragStartScroll = wrap.scrollLeft;
+      let isDragging = false;
+      const onMove = (ev) => {
+        const dx = ev.pageX - dragStartX;
+        if (!isDragging && Math.abs(dx) > 3) {
+          isDragging = true;
+          wrap.classList.add('is-dragging');
+        }
+        if (isDragging) {
+          wrap.scrollLeft = dragStartScroll - dx;
+          ev.preventDefault();
+        }
+      };
+      const onUp = () => {
+        wrap.classList.remove('is-dragging');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
 
     if (buckets.length === 0 || typeof window.Chart !== 'function') {
       wrap.style.display = 'none';
