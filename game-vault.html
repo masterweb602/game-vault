@@ -1357,6 +1357,7 @@ body {
 .analytics-canvas-wrap { position: relative; height: 280px; }
 /* Phase 10: per-DB release-year charts get full-width single column + taller canvas */
 #db-year-charts-grid { grid-template-columns: 1fr; }
+#db-year-charts-grid .analytics-card { min-width: 0; }
 #db-year-charts-grid .analytics-canvas-wrap {
   height: 450px;
   width: 100%;
@@ -7233,9 +7234,7 @@ function renderDbYearCharts() {
     const labels = buckets.map(b => String(b.year));
     const containerWidth = wrap.clientWidth || 600;
     const minWidth = Math.max(containerWidth, buckets.length * 85);
-    inner.style.width   = minWidth + 'px';
-    canvas.style.width  = minWidth + 'px';
-    canvas.style.height = '450px';
+    inner.style.width = minWidth + 'px';
     if (minWidth > containerWidth) {
       const hint = document.createElement('p');
       hint.className = 'analytics-scroll-hint';
@@ -7285,7 +7284,7 @@ function renderDbYearCharts() {
       },
       plugins: (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : [],
       options: {
-        responsive: false,
+        responsive: true,
         maintainAspectRatio: false,
         layout: { padding: { top: 24, bottom: 24, left: 8, right: 8 } },
         plugins: {
