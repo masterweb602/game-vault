@@ -3857,12 +3857,36 @@ function parseNameMeta(name) {
   return { cleanName, year, hours };
 }
 
-// Re-runnable migration for the bracket format. Walks vault + played +
-// every custom DB. Per item: lift year only if item.year is unset; lift
-// playtime only if item.playtime is absent; rewrite name to cleanName
-// whenever any bracket matched. Manual data is never overwritten.
-// Idempotent — once brackets are stripped, a second pass changes nothing.
-// No flag: this is exposed as a Settings button and can be run any time.
+// Phase 12 parser for the PLAIN trailing format that the user's bulk-add
+// produces in practice: "<name> <year> <hours>" with no brackets/units.
+// Examples: "ECHOSTASIS 2025 5", "007 nightfire ps2 2005 6.5",
+// "1979 Revolution: Black Friday 2016 2", "2032 a new threat 2023 2".
+// The lazy .*? + $ anchor commits to the RIGHTMOST valid year+hours pair,
+// so names that themselves start with numbers or year-like tokens keep
+// those tokens in cleanName. Requires BOTH a valid-range year (1970–2030)
+// AND a trailing bare number — "Far Cry 3" and "Battlefield 2042" don't
+// match and pass through untouched.
+const _PLAINMETA_RX = /^(.*?)\s+(19[7-9]\d|20[0-2]\d|2030)\s+(\d+(?:\.\d+)?)\s*$/;
+function parsePlainMeta(name) {
+  if (typeof name !== 'string' || !name) {
+    return { cleanName: '', year: null, hours: null };
+  }
+  const m = _PLAINMETA_RX.exec(name);
+  if (!m) return { cleanName: name.trim(), year: null, hours: null };
+  return {
+    cleanName: m[1].trim(),
+    year: parseInt(m[2], 10),
+    hours: parseFloat(m[3])
+  };
+}
+
+// Re-runnable migration for the bracket + plain trailing formats. Walks
+// vault + played + every custom DB. Per item: lift year only if item.year
+// is unset; lift playtime only if item.playtime is absent; rewrite name
+// to cleanName whenever a meta token matched. Manual data is never
+// overwritten. Idempotent — once tokens are stripped, a second pass
+// changes nothing. No flag: this is exposed as a Settings button and can
+// be run any time.
 async function migrateNameMeta() {
   let updated = 0, total = 0;
   let touchedVault = false, touchedPlayed = false;
@@ -3871,8 +3895,12 @@ async function migrateNameMeta() {
   const tryItem = (item) => {
     if (!item || typeof item.name !== 'string') return false;
     total++;
-    const m = parseNameMeta(item.name);
-    const bracketMatched = m.year !== null || m.hours !== null;
+    // Bracket parser first. Fall back to plain only when bracket parser
+    // found nothing — a partial bracket find (e.g. just [5h]) should not
+    // be clobbered by a plain parser that requires both year AND hours.
+    let m = parseNameMeta(item.name);
+    if (m.year === null && m.hours === null) m = parsePlainMeta(item.name);
+    const metaMatched = m.year !== null || m.hours !== null;
     let changed = false;
     if (m.year !== null && typeof item.year !== 'number') {
       item.year = m.year; changed = true;
@@ -3881,7 +3909,7 @@ async function migrateNameMeta() {
       const pt = hoursToPlaytime(m.hours);
       if (pt) { item.playtime = pt; changed = true; }
     }
-    if (bracketMatched && m.cleanName && m.cleanName !== item.name) {
+    if (metaMatched && m.cleanName && m.cleanName !== item.name) {
       item.name = m.cleanName; changed = true;
     }
     if (changed) updated++;

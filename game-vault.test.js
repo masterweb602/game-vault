@@ -3316,14 +3316,29 @@ function parseNameMeta(name) {
   return { cleanName, year, hours };
 }
 
+const _PLAINMETA_RX = /^(.*?)\s+(19[7-9]\d|20[0-2]\d|2030)\s+(\d+(?:\.\d+)?)\s*$/;
+function parsePlainMeta(name) {
+  if (typeof name !== 'string' || !name) {
+    return { cleanName: '', year: null, hours: null };
+  }
+  const m = _PLAINMETA_RX.exec(name);
+  if (!m) return { cleanName: name.trim(), year: null, hours: null };
+  return {
+    cleanName: m[1].trim(),
+    year: parseInt(m[2], 10),
+    hours: parseFloat(m[3])
+  };
+}
+
 // State-free per-item version of migrateNameMeta's inner `tryItem` helper.
 // The full migrateNameMeta touches state.vault / saveList / index rebuild
 // which aren't available in this isolated test harness, so the per-item
 // conservative logic is exercised directly here.
 function migrateOneItem(item) {
   if (!item || typeof item.name !== 'string') return false;
-  const m = parseNameMeta(item.name);
-  const bracketMatched = m.year !== null || m.hours !== null;
+  let m = parseNameMeta(item.name);
+  if (m.year === null && m.hours === null) m = parsePlainMeta(item.name);
+  const metaMatched = m.year !== null || m.hours !== null;
   let changed = false;
   if (m.year !== null && typeof item.year !== 'number') {
     item.year = m.year; changed = true;
@@ -3332,7 +3347,7 @@ function migrateOneItem(item) {
     const pt = hoursToPlaytime(m.hours);
     if (pt) { item.playtime = pt; changed = true; }
   }
-  if (bracketMatched && m.cleanName && m.cleanName !== item.name) {
+  if (metaMatched && m.cleanName && m.cleanName !== item.name) {
     item.name = m.cleanName; changed = true;
   }
   return changed;
@@ -3411,5 +3426,41 @@ describe('migrateNameMeta — per-item conservative apply', () => {
     expect(migrateOneItem(it)).toBe(true);
     expect(it.year).toBe(2020);
     expect(it.name).toBe('Halo');
+  });
+  test('plain trailing format: "ECHOSTASIS 2025 5" → year + playtime set, name cleaned', () => {
+    const it = { name: 'ECHOSTASIS 2025 5' };
+    expect(migrateOneItem(it)).toBe(true);
+    expect(it).toEqual({
+      name: 'ECHOSTASIS',
+      year: 2025,
+      playtime: { hours: 5, minutes: 0 }
+    });
+  });
+});
+
+describe('parsePlainMeta', () => {
+  test('basic trailing year + integer hours', () => {
+    expect(parsePlainMeta('ECHOSTASIS 2025 5'))
+      .toEqual({ cleanName: 'ECHOSTASIS', year: 2025, hours: 5 });
+  });
+  test('name starting with digits + decimal hours', () => {
+    expect(parsePlainMeta('007 nightfire ps2 2005 6.5'))
+      .toEqual({ cleanName: '007 nightfire ps2', year: 2005, hours: 6.5 });
+  });
+  test('name starting with valid-year-like token preserves it', () => {
+    expect(parsePlainMeta('1979 Revolution: Black Friday 2016 2'))
+      .toEqual({ cleanName: '1979 Revolution: Black Friday', year: 2016, hours: 2 });
+  });
+  test('name starting with out-of-range year-like token (2032)', () => {
+    expect(parsePlainMeta('2032 a new threat 2023 2'))
+      .toEqual({ cleanName: '2032 a new threat', year: 2023, hours: 2 });
+  });
+  test('only trailing number, no year → no match, unchanged', () => {
+    expect(parsePlainMeta('Far Cry 3'))
+      .toEqual({ cleanName: 'Far Cry 3', year: null, hours: null });
+  });
+  test('year-like but out of range (2042), no hours → no match, unchanged', () => {
+    expect(parsePlainMeta('Battlefield 2042'))
+      .toEqual({ cleanName: 'Battlefield 2042', year: null, hours: null });
   });
 });
