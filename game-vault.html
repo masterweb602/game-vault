@@ -7178,8 +7178,6 @@ function renderDbYearCharts() {
     card.appendChild(summary);
 
     const labels = buckets.map(b => String(b.year));
-    const n = buckets.length;
-    const step = n <= 12 ? 1 : n <= 24 ? 2 : n <= 40 ? 3 : Math.ceil(n / 14);
     state.charts['dbyear_' + db.key] = new Chart(canvas.getContext('2d'), {
       type: 'line',
       data: {
@@ -7198,7 +7196,7 @@ function renderDbYearCharts() {
               backgroundColor: 'rgba(20,20,20,0.75)',
               borderRadius: 4,
               padding: { top: 2, bottom: 2, left: 4, right: 4 },
-              formatter: (v, ctx) => (v > 0 && ctx.dataIndex % step === 0) ? v : '',
+              formatter: (v) => v > 0 ? v : '',
               clamp: true, clip: false
             }
           },
@@ -7215,7 +7213,7 @@ function renderDbYearCharts() {
               backgroundColor: 'rgba(20,20,20,0.75)',
               borderRadius: 4,
               padding: { top: 2, bottom: 2, left: 4, right: 4 },
-              formatter: (v, ctx) => (v > 0 && ctx.dataIndex % step === 0) ? v : '',
+              formatter: (v) => v > 0 ? v : '',
               clamp: true, clip: false
             }
           }
