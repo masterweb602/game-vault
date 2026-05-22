@@ -1940,94 +1940,175 @@ body {
 <!-- ──── BULK CHECK VIEW ─────────────────────────────────── -->
 <section class="view" id="view-bulk-check">
   <h2 class="section-title">bulk check</h2>
-  <p class="section-desc">তোমার list-এর প্রতিটা item ভল্টে আছে কি না, কোনগুলো নেই, আর ভল্টে কোনগুলো extra আছে — সব এক সাথে।<br>💡 শুধু বছর (যেমন <code>2013</code>) থাকা লাইন header — missing গেমগুলোকে পরে Add করলে ওই বছর apply হবে। এছাড়া game name শেষে date (যেমন <code>Oct 12</code>, <code>dec 21</code>, <code>january 12</code>) লিখলে সেটাও parse হবে।</p>
+  <p class="section-desc">দুটো আলাদা box — Played list strict-parser দিয়ে চেক হয়, Vault/DB list loose-parser দিয়ে। তোমার list-এর প্রতিটা item target-এ আছে কি না, কোনগুলো নেই, আর target-এ কোনগুলো extra আছে — সব এক সাথে।</p>
+
+  <!-- ─── 🎮 PLAYED BOX (strict parser, fixed target = played) ─── -->
+  <h3 class="section-title" style="margin-top:8px;font-size:16px;">🎮 Check against Played — strict</h3>
+  <p class="section-desc">timeline-style list-এর সাথে compare। numbered prefix + trailing date parse, single-word + year drop।</p>
 
   <div class="toolbar">
-    <textarea class="textarea" id="bulk-check-text" placeholder="যেই list চেক করতে চাও সেগুলো paste করো, এক লাইনে এক গেম..."></textarea>
+    <textarea class="textarea" id="bc-played-text" placeholder="2013&#10;1. Far Cry +&#10;2. Crysis 3&#10;..."></textarea>
     <div class="toolbar-row">
-      <select class="select" id="bulk-check-target">
-        <option value="vault">⚙ Check against Vault</option>
-        <option value="played">⚙ Check against Played</option>
-      </select>
+      <span class="select" style="display:inline-flex;align-items:center;padding:6px 10px;color:var(--muted);font-family:var(--mono);font-size:12px;">⚙ Check against Played (fixed)</span>
       <label class="checkbox">
-        <input type="checkbox" id="bulk-check-fuzzy" checked>
+        <input type="checkbox" id="bc-played-fuzzy" checked>
         Fuzzy fallback (Levenshtein)
       </label>
-      <button class="btn btn-primary" id="bulk-check-go">Run Check</button>
-      <button class="btn" id="bulk-check-cancel" style="display:none;">Cancel</button>
-      <button class="btn" id="bulk-check-clear">Clear</button>
+      <button class="btn btn-primary" id="bc-played-go">Run Check</button>
+      <button class="btn" id="bc-played-cancel" style="display:none;">Cancel</button>
+      <button class="btn" id="bc-played-clear">Clear</button>
     </div>
   </div>
 
-  <div id="bulk-check-status" class="status-bar" style="display:none;"></div>
+  <div id="bc-played-status" class="status-bar" style="display:none;"></div>
 
-  <div id="bulk-check-result" style="display:none;">
+  <div id="bc-played-result" style="display:none;">
     <div class="results-grid">
-      <!-- FOUND -->
       <div class="result-card found">
         <div class="result-header">
           <div>
             <span class="result-title">✓ found</span>
-            <span class="result-desc">ভল্টে আছে</span>
+            <span class="result-desc">played list-এ আছে</span>
           </div>
-          <div class="result-count" id="bc-found-count">0</div>
+          <div class="result-count" id="bc-played-found-count">0</div>
         </div>
-        <div class="result-list" id="bc-found-list"></div>
+        <div class="result-list" id="bc-played-found-list"></div>
         <div class="result-actions">
-          <button class="btn btn-sm btn-success" data-copy="found">Copy</button>
-          <button class="btn btn-sm btn-success" data-mark-played>Mark all Played</button>
+          <button class="btn btn-sm btn-success" data-bc-copy="found" data-bc-prefix="bc-played">Copy</button>
         </div>
       </div>
-
-      <!-- MISSING -->
       <div class="result-card missing">
         <div class="result-header">
           <div>
             <span class="result-title">✗ missing</span>
-            <span class="result-desc">তোমার list-এ আছে, ভল্টে নাই</span>
+            <span class="result-desc">তোমার list-এ আছে, played-এ নাই</span>
           </div>
-          <div class="result-count" id="bc-missing-count">0</div>
+          <div class="result-count" id="bc-played-missing-count">0</div>
         </div>
-        <div class="result-list" id="bc-missing-list"></div>
+        <div class="result-list" id="bc-played-missing-list"></div>
         <div class="result-actions">
-          <button class="btn btn-sm btn-danger" data-copy="missing">Copy</button>
-          <button class="btn btn-sm btn-danger" data-add-missing>Add all to Vault</button>
+          <button class="btn btn-sm btn-danger" data-bc-copy="missing" data-bc-prefix="bc-played">Copy</button>
+          <button class="btn btn-sm btn-danger" data-bc-add-missing data-bc-prefix="bc-played">Add all to Played</button>
         </div>
       </div>
-
-      <!-- EXTRAS -->
       <div class="result-card extras">
         <div class="result-header">
           <div>
             <span class="result-title">+ extras</span>
-            <span class="result-desc">ভল্টে আছে, তোমার list-এ নাই</span>
+            <span class="result-desc">played-এ আছে, তোমার list-এ নাই</span>
           </div>
-          <div class="result-count" id="bc-extras-count">0</div>
+          <div class="result-count" id="bc-played-extras-count">0</div>
         </div>
-        <div class="result-list" id="bc-extras-list"></div>
+        <div class="result-list" id="bc-played-extras-list"></div>
         <div class="result-actions">
-          <button class="btn btn-sm btn-info" data-copy="extras">Copy</button>
+          <button class="btn btn-sm btn-info" data-bc-copy="extras" data-bc-prefix="bc-played">Copy</button>
         </div>
       </div>
     </div>
 
-    <!-- INPUT DUPLICATES (4th section, full width) -->
-    <div class="dup-panel" id="bc-input-dups-panel" hidden style="margin-top:24px;">
+    <div class="dup-panel" id="bc-played-input-dups-panel" hidden style="margin-top:24px;">
       <div class="dup-panel-header">
         <div>
           <span class="dup-panel-title">input duplicates</span>
-          <div class="dup-panel-counts" id="bc-input-dups-counts"></div>
+          <div class="dup-panel-counts" id="bc-played-input-dups-counts"></div>
           <div class="dup-panel-hint">তোমার input list-এ duplicate lines আছে (same normalized name)। Merge করলে textarea থেকে duplicate line গুলো remove হবে — first occurrence থাকবে। Keep / unmarked = কিছু হবে না, সব line আগের মতোই থাকবে।</div>
         </div>
         <div class="dup-panel-bulk">
-          <button class="btn btn-sm" data-bcdup-bulk="merge">Mark all Merge</button>
-          <button class="btn btn-sm" data-bcdup-bulk="keep">Mark all Keep</button>
+          <button class="btn btn-sm" data-bcdup-bulk="merge" data-bc-prefix="bc-played">Mark all Merge</button>
+          <button class="btn btn-sm" data-bcdup-bulk="keep" data-bc-prefix="bc-played">Mark all Keep</button>
         </div>
       </div>
-      <div class="dup-groups" id="bc-input-dups-groups"></div>
+      <div class="dup-groups" id="bc-played-input-dups-groups"></div>
       <div class="dup-panel-actions">
-        <button class="btn btn-danger" data-bcdup-apply>Apply (rewrites textarea)</button>
-        <button class="btn" data-bcdup-cancel>Cancel</button>
+        <button class="btn btn-danger" data-bcdup-apply data-bc-prefix="bc-played">Apply (rewrites textarea)</button>
+        <button class="btn" data-bcdup-cancel data-bc-prefix="bc-played">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── 📦 VAULT/DB BOX (loose parser, dropdown target) ─── -->
+  <h3 class="section-title" style="margin-top:24px;font-size:16px;">📦 Check against Vault / custom DB — loose</h3>
+  <p class="section-desc">collection list-এর সাথে compare। <code>FEZ 2012</code>, <code>DOOM 2016</code>, <code>Yu-Gi-Oh: Master Duel 2022</code> সব রাখে।</p>
+
+  <div class="toolbar">
+    <textarea class="textarea" id="bc-vault-text" placeholder="FEZ 2012&#10;DOOM 2016&#10;Yu-Gi-Oh: Master Duel 2022&#10;..."></textarea>
+    <div class="toolbar-row">
+      <select class="select" id="bc-vault-target">
+        <option value="vault">⚙ Check against Vault</option>
+      </select>
+      <label class="checkbox">
+        <input type="checkbox" id="bc-vault-fuzzy" checked>
+        Fuzzy fallback (Levenshtein)
+      </label>
+      <button class="btn btn-primary" id="bc-vault-go">Run Check</button>
+      <button class="btn" id="bc-vault-cancel" style="display:none;">Cancel</button>
+      <button class="btn" id="bc-vault-clear">Clear</button>
+    </div>
+  </div>
+
+  <div id="bc-vault-status" class="status-bar" style="display:none;"></div>
+
+  <div id="bc-vault-result" style="display:none;">
+    <div class="results-grid">
+      <div class="result-card found">
+        <div class="result-header">
+          <div>
+            <span class="result-title">✓ found</span>
+            <span class="result-desc">target-এ আছে</span>
+          </div>
+          <div class="result-count" id="bc-vault-found-count">0</div>
+        </div>
+        <div class="result-list" id="bc-vault-found-list"></div>
+        <div class="result-actions">
+          <button class="btn btn-sm btn-success" data-bc-copy="found" data-bc-prefix="bc-vault">Copy</button>
+          <button class="btn btn-sm btn-success" data-bc-mark-played data-bc-prefix="bc-vault">Mark all Played</button>
+        </div>
+      </div>
+      <div class="result-card missing">
+        <div class="result-header">
+          <div>
+            <span class="result-title">✗ missing</span>
+            <span class="result-desc">তোমার list-এ আছে, target-এ নাই</span>
+          </div>
+          <div class="result-count" id="bc-vault-missing-count">0</div>
+        </div>
+        <div class="result-list" id="bc-vault-missing-list"></div>
+        <div class="result-actions">
+          <button class="btn btn-sm btn-danger" data-bc-copy="missing" data-bc-prefix="bc-vault">Copy</button>
+          <button class="btn btn-sm btn-danger" data-bc-add-missing data-bc-prefix="bc-vault">Add all to target</button>
+        </div>
+      </div>
+      <div class="result-card extras">
+        <div class="result-header">
+          <div>
+            <span class="result-title">+ extras</span>
+            <span class="result-desc">target-এ আছে, তোমার list-এ নাই</span>
+          </div>
+          <div class="result-count" id="bc-vault-extras-count">0</div>
+        </div>
+        <div class="result-list" id="bc-vault-extras-list"></div>
+        <div class="result-actions">
+          <button class="btn btn-sm btn-info" data-bc-copy="extras" data-bc-prefix="bc-vault">Copy</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="dup-panel" id="bc-vault-input-dups-panel" hidden style="margin-top:24px;">
+      <div class="dup-panel-header">
+        <div>
+          <span class="dup-panel-title">input duplicates</span>
+          <div class="dup-panel-counts" id="bc-vault-input-dups-counts"></div>
+          <div class="dup-panel-hint">তোমার input list-এ duplicate lines আছে। Merge করলে textarea থেকে duplicate line গুলো remove হবে — first occurrence থাকবে।</div>
+        </div>
+        <div class="dup-panel-bulk">
+          <button class="btn btn-sm" data-bcdup-bulk="merge" data-bc-prefix="bc-vault">Mark all Merge</button>
+          <button class="btn btn-sm" data-bcdup-bulk="keep" data-bc-prefix="bc-vault">Mark all Keep</button>
+        </div>
+      </div>
+      <div class="dup-groups" id="bc-vault-input-dups-groups"></div>
+      <div class="dup-panel-actions">
+        <button class="btn btn-danger" data-bcdup-apply data-bc-prefix="bc-vault">Apply (rewrites textarea)</button>
+        <button class="btn" data-bcdup-cancel data-bc-prefix="bc-vault">Cancel</button>
       </div>
     </div>
   </div>
@@ -4584,8 +4665,9 @@ const state = {
   vaultDupReview: null,
   playedDupReview: null,
   fuzzyThreshold: 0.82,
-  bulkCheckResult: null,
-  bulkCheckInputDups: null,
+  bulkCheckResult: { 'bc-played': null, 'bc-vault': null },
+  bulkCheckInputDups: { 'bc-played': null, 'bc-vault': null },
+  bulkCheckActivePrefix: null,
   saveTimers: { vault: null, played: null },
   loaded: false,
   useWorker: false,
@@ -6135,10 +6217,11 @@ function moveToVault(item) {
 }
 
 /* ─── Bulk check engine ──────────────────────────────────── */
-async function runBulkCheck(inputText, target, useFuzzy, onProgress) {
+async function runBulkCheck(inputText, target, useFuzzy, onProgress, opts) {
   const _tProf = performance.now();
+  const strict = !opts || opts.strict !== false;
   const rawLines = inputText.split(/\r?\n/);
-  const parsed = parseLinesWithYearHeaders(rawLines);
+  const parsed = parseLinesWithYearHeaders(rawLines, { strict });
   const lines = parsed.entries.map(e => e.name);
   const lineDates = parsed.entries.map(e => e.date);
   if (lines.length === 0) return null;
@@ -6310,10 +6393,12 @@ async function _runBulkCheckWorker(lines, lineDates, target, useFuzzy, onProgres
   };
 }
 
-function renderBulkCheckResult(r) {
-  $('#bc-found-count').textContent = r.found.length;
-  $('#bc-missing-count').textContent = r.missing.length;
-  $('#bc-extras-count').textContent = r.extras.length;
+function renderBulkCheckResult(prefix, r) {
+  const id = (suffix) => '#' + prefix + '-' + suffix;
+
+  $(id('found-count')).textContent = r.found.length;
+  $(id('missing-count')).textContent = r.missing.length;
+  $(id('extras-count')).textContent = r.extras.length;
 
   // Render lists (cap to first 500 visible items for speed)
   const renderItems = (containerId, items, transform) => {
@@ -6322,10 +6407,7 @@ function renderBulkCheckResult(r) {
     const cap = 500;
     const slice = items.slice(0, cap);
     const frag = document.createDocumentFragment();
-    for (const it of slice) {
-      const node = transform(it);
-      frag.appendChild(node);
-    }
+    for (const it of slice) frag.appendChild(transform(it));
     if (items.length > cap) {
       frag.appendChild(el('div', {
         class: 'result-item',
@@ -6335,7 +6417,7 @@ function renderBulkCheckResult(r) {
     c.appendChild(frag);
   };
 
-  renderItems('#bc-found-list', r.found, (f) => {
+  renderItems(id('found-list'), r.found, (f) => {
     const item = el('div', { class: 'result-item' });
     item.appendChild(el('span', { class: 'item-name' }, f.input + (f.input !== f.match.item.name ? ' → ' + f.match.item.name : '')));
     item.appendChild(el('span', {
@@ -6344,54 +6426,51 @@ function renderBulkCheckResult(r) {
     return item;
   });
 
-  renderItems('#bc-missing-list', r.missing, (line) => {
-    return el('div', { class: 'result-item' }, el('span', { class: 'item-name' }, line));
-  });
+  renderItems(id('missing-list'), r.missing, (line) =>
+    el('div', { class: 'result-item' }, el('span', { class: 'item-name' }, line)));
 
-  renderItems('#bc-extras-list', r.extras, (it) => {
-    return el('div', { class: 'result-item' }, el('span', { class: 'item-name' }, it.name));
-  });
+  renderItems(id('extras-list'), r.extras, (it) =>
+    el('div', { class: 'result-item' }, el('span', { class: 'item-name' }, it.name)));
 
-  $('#bulk-check-result').style.display = 'block';
+  $(id('result')).style.display = 'block';
 
-  // Input duplicates: 4th section (panel below the 3-card grid).
-  renderBcInputDupsPanel(r);
+  renderBcInputDupsPanel(prefix, r);
 
   const dupLineCount = (r.inputDupGroups || []).reduce((s, g) => s + (g.lines.length - 1), 0);
-  $('#bulk-check-status').style.display = 'block';
-  $('#bulk-check-status').textContent =
+  $(id('status')).style.display = 'block';
+  $(id('status')).textContent =
     'input: ' + r.totalInput + ' lines · unique: ' + r.uniqueInput +
     ' · target: ' + r.target + ' (' + state[r.target].length + ' items)' +
     (dupLineCount > 0 ? ' · ' + dupLineCount + ' duplicate lines — see Input duplicates' : '');
 }
 
-function renderBcInputDupsPanel(r) {
+function renderBcInputDupsPanel(prefix, r) {
   const groups = r.inputDupGroups || [];
-  const panel = $('#bc-input-dups-panel');
+  const panel = $('#' + prefix + '-input-dups-panel');
   if (groups.length === 0) {
     panel.hidden = true;
-    state.bulkCheckInputDups = null;
+    state.bulkCheckInputDups[prefix] = null;
     return;
   }
-  state.bulkCheckInputDups = { groups, marks: new Map() };
+  state.bulkCheckInputDups[prefix] = { groups, marks: new Map() };
   panel.hidden = false;
-  renderBcInputDupsBody();
+  renderBcInputDupsBody(prefix);
 }
 
-function renderBcInputDupsBody() {
-  const review = state.bulkCheckInputDups;
+function renderBcInputDupsBody(prefix) {
+  const review = state.bulkCheckInputDups[prefix];
   if (!review) return;
   const { groups, marks } = review;
   let mergeLineCount = 0;
   for (const g of groups) {
     if (marks.get(g.norm) === 'merge') mergeLineCount += g.lines.length - 1;
   }
-  $('#bc-input-dups-counts').innerHTML =
+  $('#' + prefix + '-input-dups-counts').innerHTML =
     groups.length + ' groups · '
     + '<span class="merge-count">' + mergeLineCount + '</span>'
     + ' lines will be removed';
 
-  const host = $('#bc-input-dups-groups');
+  const host = $('#' + prefix + '-input-dups-groups');
   host.innerHTML = '';
   const frag = document.createDocumentFragment();
   for (const g of groups) {
@@ -6426,11 +6505,13 @@ function renderBcInputDupsBody() {
     keepBtn.textContent = 'Keep';
     keepBtn.dataset.bcdupMark = 'keep';
     keepBtn.dataset.norm = g.norm;
+    keepBtn.dataset.bcPrefix = prefix;
     const mergeBtn = document.createElement('button');
     mergeBtn.className = 'btn btn-sm merge' + (mark === 'merge' ? ' active' : '');
     mergeBtn.textContent = 'Merge';
     mergeBtn.dataset.bcdupMark = 'merge';
     mergeBtn.dataset.norm = g.norm;
+    mergeBtn.dataset.bcPrefix = prefix;
     actions.appendChild(keepBtn);
     actions.appendChild(mergeBtn);
 
@@ -6442,53 +6523,54 @@ function renderBcInputDupsBody() {
   host.appendChild(frag);
 }
 
-function setBcDupMark(norm, mark) {
-  const review = state.bulkCheckInputDups;
+function setBcDupMark(prefix, norm, mark) {
+  const review = state.bulkCheckInputDups[prefix];
   if (!review) return;
   if (review.marks.get(norm) === mark) review.marks.delete(norm);
   else review.marks.set(norm, mark);
-  renderBcInputDupsBody();
+  renderBcInputDupsBody(prefix);
 }
-function setBcDupMarkAll(mark) {
-  const review = state.bulkCheckInputDups;
+function setBcDupMarkAll(prefix, mark) {
+  const review = state.bulkCheckInputDups[prefix];
   if (!review) return;
   for (const g of review.groups) review.marks.set(g.norm, mark);
-  renderBcInputDupsBody();
+  renderBcInputDupsBody(prefix);
 }
-function applyBcInputDups() {
-  const review = state.bulkCheckInputDups;
+function applyBcInputDups(prefix) {
+  const review = state.bulkCheckInputDups[prefix];
   if (!review) return;
-  const ta = $('#bulk-check-text');
+  const ta = $('#' + prefix + '-text');
   const lines = ta.value.split(/\r?\n/);
   const { kept, removed } = applyInputDups(lines, review.marks);
   if (removed.length === 0) {
     toast('কোনো group merge mark করা হয়নি', 'info');
-    closeBcInputDups();
+    closeBcInputDups(prefix);
     return;
   }
   ta.value = kept.join('\n');
   // Result panel is now stale relative to the new textarea; hide it.
-  $('#bulk-check-result').style.display = 'none';
-  $('#bulk-check-status').style.display = 'none';
-  closeBcInputDups();
+  $('#' + prefix + '-result').style.display = 'none';
+  $('#' + prefix + '-status').style.display = 'none';
+  closeBcInputDups(prefix);
   toast('Removed ' + removed.length + ' duplicate line(s) — Run Check আবার চালাও', 'success', 3500);
 }
-function closeBcInputDups() {
-  state.bulkCheckInputDups = null;
-  $('#bc-input-dups-panel').hidden = true;
+function closeBcInputDups(prefix) {
+  state.bulkCheckInputDups[prefix] = null;
+  $('#' + prefix + '-input-dups-panel').hidden = true;
 }
 
 document.addEventListener('click', (e) => {
   const t = e.target;
   if (!(t instanceof HTMLElement)) return;
+  const prefix = t.dataset.bcPrefix;
   if (t.dataset.bcdupMark) {
-    setBcDupMark(t.dataset.norm, t.dataset.bcdupMark);
+    if (prefix) setBcDupMark(prefix, t.dataset.norm, t.dataset.bcdupMark);
   } else if (t.dataset.bcdupBulk) {
-    setBcDupMarkAll(t.dataset.bcdupBulk);
+    if (prefix) setBcDupMarkAll(prefix, t.dataset.bcdupBulk);
   } else if (t.hasAttribute('data-bcdup-apply')) {
-    applyBcInputDups();
+    if (prefix) applyBcInputDups(prefix);
   } else if (t.hasAttribute('data-bcdup-cancel')) {
-    closeBcInputDups();
+    if (prefix) closeBcInputDups(prefix);
   }
 });
 
@@ -8692,8 +8774,7 @@ function refreshTargetDropdowns() {
     { value: 'vault',  label: '→ Add to Vault' }
   ];
   const bcCfg = [
-    { value: 'vault',  label: '⚙ Check against Vault' },
-    { value: 'played', label: '⚙ Check against Played' }
+    { value: 'vault',  label: '⚙ Check against Vault' }
   ];
   for (const id of state.customListsOrder) {
     const list = state.customLists[id];
@@ -8701,7 +8782,7 @@ function refreshTargetDropdowns() {
     baCfg.push({ value: 'cl-' + id, label: '→ ' + list.name });
     bcCfg.push({ value: 'cl-' + id, label: '⚙ Check against ' + list.name });
   }
-  for (const [selId, cfg] of [['#ba-vault-target', baCfg], ['#bulk-check-target', bcCfg]]) {
+  for (const [selId, cfg] of [['#ba-vault-target', baCfg], ['#bc-vault-target', bcCfg]]) {
     const sel = document.querySelector(selId);
     if (!sel) continue;
     const prev = sel.value;
@@ -9321,74 +9402,89 @@ if (!state.lastBulkAddResult || typeof state.lastBulkAddResult !== 'object'
 wireBulkAddBox('ba-played', { strict: true,  fixedTarget: 'played' });
 wireBulkAddBox('ba-vault',  { strict: false, fixedTarget: null });
 
-/* ─── Bulk check wiring ──────────────────────────────────── */
-$('#bulk-check-go').addEventListener('click', async () => {
-  const text = $('#bulk-check-text').value;
-  if (!text.trim()) { toast('Textarea-এ list paste করো', 'error'); return; }
-  const target = $('#bulk-check-target').value;
-  const useFuzzy = $('#bulk-check-fuzzy').checked;
-  const btn = $('#bulk-check-go');
-  const cancelBtn = $('#bulk-check-cancel');
-  const status = $('#bulk-check-status');
-  const workerMode = state.useWorker && Storage.workerAvailable;
+/* ─── Bulk check wiring (Phase 15: two boxes — played strict, vault loose) ─── */
+function wireBulkCheckBox(prefix, { strict, fixedTarget }) {
+  const id = (suffix) => '#' + prefix + '-' + suffix;
 
-  btn.disabled = true;
-  btn.textContent = 'Running…';
-  if (workerMode) cancelBtn.style.display = '';
-  status.style.display = 'block';
-  status.textContent = 'preparing…';
-
-  const t0 = performance.now();
-  try {
-    const r = await runBulkCheck(text, target, useFuzzy, (done, total) => {
-      // Throttle status updates to avoid layout thrash
-      if (done % 2000 === 0 || done === total) {
-        const pct = Math.floor((done / total) * 100);
-        status.textContent = 'matching… ' + done.toLocaleString() + ' / ' + total.toLocaleString() + ' (' + pct + '%)';
-      }
-    });
-    const dt = (performance.now() - t0).toFixed(0);
-    if (!r) { toast('No valid input', 'error'); return; }
-    state.bulkCheckResult = r;
-    renderBulkCheckResult(r);
-    toast('Check complete in ' + dt + 'ms (found ' + r.found.length + ', missing ' + r.missing.length + ')', 'success');
-  } catch (err) {
-    const msg = err && err.message || String(err);
-    if (msg === 'cancelled' || msg === 'worker terminated') {
-      toast('Cancelled', 'info');
-      status.textContent = 'cancelled';
-    } else {
-      toast('Error: ' + msg, 'error');
-      console.error(err);
+  $(id('go')).addEventListener('click', async () => {
+    if (state.bulkCheckWorker) {
+      toast('আরেকটা check চলছে — শেষ হবার অপেক্ষা করো বা Cancel চাপো', 'info');
+      return;
     }
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Run Check';
-    cancelBtn.style.display = 'none';
-  }
-});
+    const text = $(id('text')).value;
+    if (!text.trim()) { toast('Textarea-এ list paste করো', 'error'); return; }
+    const target = fixedTarget || $(id('target')).value;
+    const useFuzzy = $(id('fuzzy')).checked;
+    const btn = $(id('go'));
+    const cancelBtn = $(id('cancel'));
+    const status = $(id('status'));
+    const workerMode = state.useWorker && Storage.workerAvailable;
 
-$('#bulk-check-cancel').addEventListener('click', () => {
-  state.bulkCheckAborted = true;
-  if (state.bulkCheckWorker) {
-    try { state.bulkCheckWorker.send(WORKER_MSG.CANCEL); } catch (e) {}
-    try { state.bulkCheckWorker.terminate(); } catch (e) {}
-    state.bulkCheckWorker = null;
-  }
-});
-$('#bulk-check-clear').addEventListener('click', () => {
-  $('#bulk-check-text').value = '';
-  $('#bulk-check-result').style.display = 'none';
-  $('#bulk-check-status').style.display = 'none';
-  state.bulkCheckResult = null;
-});
+    state.bulkCheckActivePrefix = prefix;
+    btn.disabled = true;
+    btn.textContent = 'Running…';
+    if (workerMode) cancelBtn.style.display = '';
+    status.style.display = 'block';
+    status.textContent = 'preparing…';
 
-// Result actions
-$$('[data-copy]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const r = state.bulkCheckResult;
+    const t0 = performance.now();
+    try {
+      const r = await runBulkCheck(text, target, useFuzzy, (done, total) => {
+        if (done % 2000 === 0 || done === total) {
+          const pct = Math.floor((done / total) * 100);
+          status.textContent = 'matching… ' + done.toLocaleString() + ' / ' + total.toLocaleString() + ' (' + pct + '%)';
+        }
+      }, { strict });
+      const dt = (performance.now() - t0).toFixed(0);
+      if (!r) { toast('No valid input', 'error'); return; }
+      state.bulkCheckResult[prefix] = r;
+      renderBulkCheckResult(prefix, r);
+      toast('Check complete in ' + dt + 'ms (found ' + r.found.length + ', missing ' + r.missing.length + ')', 'success');
+    } catch (err) {
+      const msg = err && err.message || String(err);
+      if (msg === 'cancelled' || msg === 'worker terminated') {
+        toast('Cancelled', 'info');
+        status.textContent = 'cancelled';
+      } else {
+        toast('Error: ' + msg, 'error');
+        console.error(err);
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Run Check';
+      cancelBtn.style.display = 'none';
+      state.bulkCheckActivePrefix = null;
+    }
+  });
+
+  $(id('cancel')).addEventListener('click', () => {
+    state.bulkCheckAborted = true;
+    if (state.bulkCheckWorker) {
+      try { state.bulkCheckWorker.send(WORKER_MSG.CANCEL); } catch (e) {}
+      try { state.bulkCheckWorker.terminate(); } catch (e) {}
+      state.bulkCheckWorker = null;
+    }
+  });
+
+  $(id('clear')).addEventListener('click', () => {
+    $(id('text')).value = '';
+    $(id('result')).style.display = 'none';
+    $(id('status')).style.display = 'none';
+    state.bulkCheckResult[prefix] = null;
+  });
+}
+
+// Global delegated handlers for result-card actions (Copy / Mark / Add missing)
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLElement)) return;
+  const prefix = t.dataset.bcPrefix;
+  if (!prefix) return;
+
+  if (t.hasAttribute('data-bc-copy')) {
+    const r = state.bulkCheckResult[prefix];
     if (!r) return;
-    const kind = btn.dataset.copy;
+    const kind = t.dataset.bcCopy;
     let lines = [];
     if (kind === 'found') lines = r.found.map(f => f.match.item.name);
     if (kind === 'missing') lines = r.missing;
@@ -9397,43 +9493,44 @@ $$('[data-copy]').forEach(btn => {
       () => toast('Copied ' + lines.length + ' lines', 'success'),
       () => toast('Copy failed', 'error')
     );
-  });
+  } else if (t.hasAttribute('data-bc-mark-played')) {
+    const r = state.bulkCheckResult[prefix];
+    if (!r) return;
+    if (r.target !== 'vault') { toast('শুধু vault check-এর জন্য', 'info'); return; }
+    modal({
+      title: 'Mark all as Played?',
+      body: r.found.length + ' items played list-এ যোগ হবে। continue?',
+      confirmLabel: 'Yes, mark played',
+      onConfirm: () => {
+        const names = r.found.map(f => f.match.item.name);
+        const res = bulkAdd(names, 'played', { dedupe: true });
+        renderPlayed(); updateStats();
+        toast('Added ' + res.added + ' to played, skipped ' + res.skipped.length, 'success');
+      }
+    });
+  } else if (t.hasAttribute('data-bc-add-missing')) {
+    const r = state.bulkCheckResult[prefix];
+    if (!r) return;
+    modal({
+      title: 'Add missing to ' + r.target + '?',
+      body: r.missing.length + ' items ' + r.target + ' list-এ যোগ হবে।',
+      confirmLabel: 'Add all',
+      onConfirm: async () => {
+        const res = bulkAdd(r.missing, r.target, { dedupe: true, dates: r.missingDates });
+        renderVault(); renderPlayed(); updateStats();
+        const useFuzzy = $('#' + prefix + '-fuzzy').checked;
+        const text = $('#' + prefix + '-text').value;
+        const strict = prefix === 'bc-played';
+        const newR = await runBulkCheck(text, r.target, useFuzzy, null, { strict });
+        if (newR) { state.bulkCheckResult[prefix] = newR; renderBulkCheckResult(prefix, newR); }
+        toast('Added ' + res.added + ', skipped ' + res.skipped.length, 'success');
+      }
+    });
+  }
 });
 
-$('[data-mark-played]')?.addEventListener('click', () => {
-  const r = state.bulkCheckResult;
-  if (!r) return;
-  if (r.target !== 'vault') { toast('শুধু vault check-এর জন্য', 'info'); return; }
-  modal({
-    title: 'Mark all as Played?',
-    body: r.found.length + ' items played list-এ যোগ হবে। continue?',
-    confirmLabel: 'Yes, mark played',
-    onConfirm: () => {
-      const names = r.found.map(f => f.match.item.name);
-      const res = bulkAdd(names, 'played', { dedupe: true });
-      renderPlayed(); updateStats();
-      toast('Added ' + res.added + ' to played, skipped ' + res.skipped.length, 'success');
-    }
-  });
-});
-
-$('[data-add-missing]')?.addEventListener('click', () => {
-  const r = state.bulkCheckResult;
-  if (!r) return;
-  modal({
-    title: 'Add missing to ' + r.target + '?',
-    body: r.missing.length + ' items ' + r.target + ' list-এ যোগ হবে।',
-    confirmLabel: 'Add all',
-    onConfirm: async () => {
-      const res = bulkAdd(r.missing, r.target, { dedupe: true, dates: r.missingDates });
-      renderVault(); renderPlayed(); updateStats();
-      // Re-run check so result UI reflects the additions
-      const newR = await runBulkCheck($('#bulk-check-text').value, r.target, $('#bulk-check-fuzzy').checked);
-      if (newR) { state.bulkCheckResult = newR; renderBulkCheckResult(newR); }
-      toast('Added ' + res.added + ', skipped ' + res.skipped.length, 'success');
-    }
-  });
-});
+wireBulkCheckBox('bc-played', { strict: true,  fixedTarget: 'played' });
+wireBulkCheckBox('bc-vault',  { strict: false, fixedTarget: null });
 
 /* ─── Settings ───────────────────────────────────────────── */
 function downloadFile(content, filename, mimeType) {
