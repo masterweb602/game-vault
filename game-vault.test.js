@@ -3135,6 +3135,14 @@ function parseTrailingDate(name) {
     }
   }
 
+  // Phase 15 follow-up: a month token without an adjacent day number is
+  // almost always part of the title (e.g. "Devil May Cry", "Mirror's Edge
+  // May", "Devil March 2008"), not trailing-date metadata. Without a day,
+  // return the name unchanged so we don't truncate at the month word.
+  if (day === null) {
+    return { cleanedName: name.trim(), month: null, day: null };
+  }
+
   cleaned = cleaned.replace(/\s*(?:19|20)\d{2}\s*$/, '');
   if (dayBeforeMatched) {
     cleaned = cleaned.replace(/[\s,.\-]+\d{1,2}\s*[,.\-\s]*$/, '');
@@ -3314,6 +3322,38 @@ describe('parseLinesWithYearHeaders strict:false (Phase 15)', () => {
     expect(parse(['2019', 'Halo Reach'], { strict: false })).toEqual([
       { name: 'Halo Reach', date: { year: 2019, month: null, day: null } }
     ]);
+  });
+});
+
+describe('parseTrailingDate month-word guard (Phase 15 follow-up)', () => {
+  test('"Devil May Cry" keeps full name (mid-title May without day)', () => {
+    expect(parseTrailingDate('Devil May Cry')).toEqual({
+      cleanedName: 'Devil May Cry', month: null, day: null
+    });
+  });
+
+  test('"Devil May Cry 4 2008" keeps full name (the original "Devil" bug)', () => {
+    expect(parseTrailingDate('Devil May Cry 4 2008')).toEqual({
+      cleanedName: 'Devil May Cry 4 2008', month: null, day: null
+    });
+  });
+
+  test('"Mirror\'s Edge May" keeps full name (month-only at end, no day)', () => {
+    expect(parseTrailingDate("Mirror's Edge May")).toEqual({
+      cleanedName: "Mirror's Edge May", month: null, day: null
+    });
+  });
+
+  test('"Devil March" keeps full name', () => {
+    expect(parseTrailingDate('Devil March')).toEqual({
+      cleanedName: 'Devil March', month: null, day: null
+    });
+  });
+
+  test('regression: "Bioshock Infinite Oct 12" still parses month + day', () => {
+    expect(parseTrailingDate('Bioshock Infinite Oct 12')).toEqual({
+      cleanedName: 'Bioshock Infinite', month: 10, day: 12
+    });
   });
 });
 

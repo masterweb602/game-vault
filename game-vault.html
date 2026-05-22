@@ -3763,6 +3763,14 @@ function parseTrailingDate(name) {
     }
   }
 
+  // Phase 15 follow-up: a month token without an adjacent day number is
+  // almost always part of the title (e.g. "Devil May Cry", "Mirror's Edge
+  // May", "Devil March 2008"), not trailing-date metadata. Without a day,
+  // return the name unchanged so we don't truncate at the month word.
+  if (day === null) {
+    return { cleanedName: name.trim(), month: null, day: null };
+  }
+
   cleaned = cleaned.replace(/\s*(?:19|20)\d{2}\s*$/, '');
   if (dayBeforeMatched) {
     cleaned = cleaned.replace(/[\s,.\-]+\d{1,2}\s*[,.\-\s]*$/, '');
