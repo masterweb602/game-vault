@@ -1778,33 +1778,34 @@ body {
 <!-- ──── BULK ADD VIEW ───────────────────────────────────── -->
 <section class="view" id="view-bulk-add">
   <h2 class="section-title">bulk add</h2>
-  <p class="section-desc">এক লাইনে এক গেম। ১ লাখ পর্যন্ত একসাথে। duplicate auto skip হবে।<br>💡 শুধু বছর (যেমন <code>2013</code>) থাকা লাইন header — পরের গেমগুলো ওই বছরে যাবে। নাম যদি "1984" হয় তাহলে header হিসেবে নেবে। এছাড়া game name শেষে date (যেমন <code>Oct 12</code>, <code>dec 21</code>, <code>january 12</code>) লিখলে সেটাও parse হবে।</p>
+  <p class="section-desc">দুটো আলাদা box — Played-এ কড়া (strict) parser, Vault/DB-এ ঢিলা (loose) parser। এক লাইনে এক গেম।<br>💡 দুই box-এই: শুধু বছর (যেমন <code>2013</code>) থাকা লাইন header হিসেবে কাজ করে — পরের গেমগুলো ওই বছরে যাবে।</p>
+
+  <!-- ─── 🎮 PLAYED BOX (strict parser, fixed target = played) ─── -->
+  <h3 class="section-title" style="margin-top:8px;font-size:16px;">🎮 Played — strict</h3>
+  <p class="section-desc">timeline-style list-এর জন্য। numbered prefix (<code>1. Far Cry +</code>), trailing date (<code>Oct 12</code>) parse করে। single-word + year (<code>FEZ 2012</code>) drop হয়।</p>
 
   <div class="toolbar">
-    <textarea class="textarea" id="bulk-add-text" placeholder="Max Payne&#10;Assassin's Creed: Brotherhood&#10;Prince of Persia&#10;..."></textarea>
+    <textarea class="textarea" id="ba-played-text" placeholder="2013&#10;1. Far Cry +&#10;2. Crysis 3&#10;3. Bioshock Infinite&#10;..."></textarea>
     <div class="toolbar-row">
-      <select class="select" id="bulk-add-target">
-        <option value="vault">→ Add to Vault</option>
-        <option value="played">→ Add to Played</option>
-      </select>
+      <span class="select" style="display:inline-flex;align-items:center;padding:6px 10px;color:var(--muted);font-family:var(--mono);font-size:12px;">→ Played (fixed)</span>
       <label class="checkbox">
-        <input type="checkbox" id="bulk-add-dedupe" checked>
+        <input type="checkbox" id="ba-played-dedupe" checked>
         Skip duplicates (fuzzy)
       </label>
       <label class="checkbox">
-        <input type="checkbox" id="bulk-add-trim" checked>
+        <input type="checkbox" id="ba-played-trim" checked>
         Trim & clean lines
       </label>
       <label class="checkbox">
-        <input type="checkbox" id="bulk-add-keep-dupes">
+        <input type="checkbox" id="ba-played-keep-dupes">
         সব add করো — duplicate skip করো না
       </label>
-      <button class="btn btn-primary" id="bulk-add-go">Process & Add</button>
-      <button class="btn" id="bulk-add-clear">Clear</button>
+      <button class="btn btn-primary" id="ba-played-go">Process & Add</button>
+      <button class="btn" id="ba-played-clear">Clear</button>
     </div>
   </div>
 
-  <div id="bulk-add-result" style="display:none;">
+  <div id="ba-played-result" style="display:none;">
     <div class="results-grid">
       <div class="result-card found">
         <div class="result-header">
@@ -1812,7 +1813,7 @@ body {
             <span class="result-title">✓ added</span>
             <span class="result-desc">নতুন entry hisebe save হলো</span>
           </div>
-          <div class="result-count" id="ba-added-count">0</div>
+          <div class="result-count" id="ba-played-added-count">0</div>
         </div>
       </div>
       <div class="result-card missing">
@@ -1821,11 +1822,11 @@ body {
             <span class="result-title">✗ skipped</span>
             <span class="result-desc">exact duplicate — list-এ আগে থেকেই আছে</span>
           </div>
-          <div class="result-count" id="ba-skipped-count">0</div>
+          <div class="result-count" id="ba-played-skipped-count">0</div>
         </div>
-        <div class="result-list" id="ba-skipped-list"></div>
-        <div class="result-actions" id="ba-skipped-actions" style="display:none;">
-          <button class="btn btn-sm btn-success" id="ba-add-all-skipped">Add all anyway</button>
+        <div class="result-list" id="ba-played-skipped-list"></div>
+        <div class="result-actions" id="ba-played-skipped-actions" style="display:none;">
+          <button class="btn btn-sm btn-success" id="ba-played-add-all-skipped">Add all anyway</button>
         </div>
       </div>
       <div class="result-card extras">
@@ -1834,24 +1835,103 @@ body {
             <span class="result-title">⚠ possible duplicates</span>
             <span class="result-desc">added হয়েছে কিন্তু similar কিছু আছে — review করো</span>
           </div>
-          <div class="result-count" id="ba-flagged-count">0</div>
+          <div class="result-count" id="ba-played-flagged-count">0</div>
         </div>
-        <div class="result-list" id="ba-flagged-list"></div>
+        <div class="result-list" id="ba-played-flagged-list"></div>
       </div>
     </div>
 
-    <div class="result-card" id="ba-duplicates-card" style="display:none; margin-top: 12px;">
+    <div class="result-card" id="ba-played-duplicates-card" style="display:none; margin-top: 12px;">
       <div class="result-header">
         <div>
           <span class="result-title">📋 duplicate report</span>
-          <span class="result-desc" id="ba-duplicates-desc">duplicate detect হলো — review-এর জন্য</span>
+          <span class="result-desc" id="ba-played-duplicates-desc">duplicate detect হলো — review-এর জন্য</span>
         </div>
-        <div class="result-count" id="ba-duplicates-count">0</div>
+        <div class="result-count" id="ba-played-duplicates-count">0</div>
       </div>
-      <textarea id="ba-duplicates-text" class="textarea" readonly rows="6"
+      <textarea id="ba-played-duplicates-text" class="textarea" readonly rows="6"
                 style="margin-top:12px;font-family:var(--mono);font-size:12px;"></textarea>
       <div class="result-actions" style="margin-top:10px;">
-        <button class="btn btn-sm" id="ba-duplicates-copy">📋 Copy list</button>
+        <button class="btn btn-sm" id="ba-played-duplicates-copy">📋 Copy list</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── 📦 VAULT/DB BOX (loose parser, dropdown target) ─── -->
+  <h3 class="section-title" style="margin-top:24px;font-size:16px;">📦 Vault / custom DB — loose</h3>
+  <p class="section-desc">collection list-এর জন্য। <code>FEZ 2012</code>, <code>DOOM 2016</code>, <code>007 Nightfire 2005 6.5</code>, <code>Yu-Gi-Oh: Master Duel 2022</code> সব রাখে। শুধু bare URL আর whole-line license key drop হয়।</p>
+
+  <div class="toolbar">
+    <textarea class="textarea" id="ba-vault-text" placeholder="FEZ 2012&#10;DOOM 2016&#10;007 Nightfire 2005 6.5&#10;Yu-Gi-Oh: Master Duel 2022&#10;..."></textarea>
+    <div class="toolbar-row">
+      <select class="select" id="ba-vault-target">
+        <option value="vault">→ Add to Vault</option>
+      </select>
+      <label class="checkbox">
+        <input type="checkbox" id="ba-vault-dedupe" checked>
+        Skip duplicates (fuzzy)
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" id="ba-vault-trim" checked>
+        Trim & clean lines
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" id="ba-vault-keep-dupes">
+        সব add করো — duplicate skip করো না
+      </label>
+      <button class="btn btn-primary" id="ba-vault-go">Process & Add</button>
+      <button class="btn" id="ba-vault-clear">Clear</button>
+    </div>
+  </div>
+
+  <div id="ba-vault-result" style="display:none;">
+    <div class="results-grid">
+      <div class="result-card found">
+        <div class="result-header">
+          <div>
+            <span class="result-title">✓ added</span>
+            <span class="result-desc">নতুন entry hisebe save হলো</span>
+          </div>
+          <div class="result-count" id="ba-vault-added-count">0</div>
+        </div>
+      </div>
+      <div class="result-card missing">
+        <div class="result-header">
+          <div>
+            <span class="result-title">✗ skipped</span>
+            <span class="result-desc">exact duplicate — list-এ আগে থেকেই আছে</span>
+          </div>
+          <div class="result-count" id="ba-vault-skipped-count">0</div>
+        </div>
+        <div class="result-list" id="ba-vault-skipped-list"></div>
+        <div class="result-actions" id="ba-vault-skipped-actions" style="display:none;">
+          <button class="btn btn-sm btn-success" id="ba-vault-add-all-skipped">Add all anyway</button>
+        </div>
+      </div>
+      <div class="result-card extras">
+        <div class="result-header">
+          <div>
+            <span class="result-title">⚠ possible duplicates</span>
+            <span class="result-desc">added হয়েছে কিন্তু similar কিছু আছে — review করো</span>
+          </div>
+          <div class="result-count" id="ba-vault-flagged-count">0</div>
+        </div>
+        <div class="result-list" id="ba-vault-flagged-list"></div>
+      </div>
+    </div>
+
+    <div class="result-card" id="ba-vault-duplicates-card" style="display:none; margin-top: 12px;">
+      <div class="result-header">
+        <div>
+          <span class="result-title">📋 duplicate report</span>
+          <span class="result-desc" id="ba-vault-duplicates-desc">duplicate detect হলো — review-এর জন্য</span>
+        </div>
+        <div class="result-count" id="ba-vault-duplicates-count">0</div>
+      </div>
+      <textarea id="ba-vault-duplicates-text" class="textarea" readonly rows="6"
+                style="margin-top:12px;font-family:var(--mono);font-size:12px;"></textarea>
+      <div class="result-actions" style="margin-top:10px;">
+        <button class="btn btn-sm" id="ba-vault-duplicates-copy">📋 Copy list</button>
       </div>
     </div>
   </div>
@@ -8606,9 +8686,10 @@ async function moveCustomDb(id, dir) {
 }
 
 function refreshTargetDropdowns() {
+  // Phase 15: vault box no longer offers Played as a target — Played has its
+  // own strict-parser box. Custom DBs are loose-side, so they live here too.
   const baCfg = [
-    { value: 'vault',  label: '→ Add to Vault' },
-    { value: 'played', label: '→ Add to Played' }
+    { value: 'vault',  label: '→ Add to Vault' }
   ];
   const bcCfg = [
     { value: 'vault',  label: '⚙ Check against Vault' },
@@ -8620,7 +8701,7 @@ function refreshTargetDropdowns() {
     baCfg.push({ value: 'cl-' + id, label: '→ ' + list.name });
     bcCfg.push({ value: 'cl-' + id, label: '⚙ Check against ' + list.name });
   }
-  for (const [selId, cfg] of [['#bulk-add-target', baCfg], ['#bulk-check-target', bcCfg]]) {
+  for (const [selId, cfg] of [['#ba-vault-target', baCfg], ['#bulk-check-target', bcCfg]]) {
     const sel = document.querySelector(selId);
     if (!sel) continue;
     const prev = sel.value;
@@ -9017,45 +9098,93 @@ function debounce(fn, ms) {
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
 }
 
-/* ─── Bulk add wiring ────────────────────────────────────── */
-$('#bulk-add-go').addEventListener('click', () => {
-  const text = $('#bulk-add-text').value;
-  if (!text.trim()) { toast('Textarea-এ কিছু paste করো', 'error'); return; }
-  const target = $('#bulk-add-target').value;
-  const dedupe = $('#bulk-add-dedupe').checked;
-  const keepDupes = $('#bulk-add-keep-dupes').checked;
-  const trim = $('#bulk-add-trim').checked;
+/* ─── Bulk add wiring (Phase 15: two boxes — played strict, vault loose) ─── */
+function wireBulkAddBox(prefix, { strict, fixedTarget }) {
+  const id = (suffix) => '#' + prefix + '-' + suffix;
 
-  const rawLines = text.split(/\r?\n/);
-  const preCleaned = trim ? rawLines.map(l => l.replace(/\s+/g, ' ')) : rawLines;
-  const parsed = parseLinesWithYearHeaders(preCleaned);
-  const names = parsed.entries.map(e => e.name);
-  const dates = parsed.entries.map(e => e.date);
+  $(id('go')).addEventListener('click', () => {
+    const text = $(id('text')).value;
+    if (!text.trim()) { toast('Textarea-এ কিছু paste করো', 'error'); return; }
+    const target = fixedTarget || $(id('target')).value;
+    const dedupe = $(id('dedupe')).checked;
+    const keepDupes = $(id('keep-dupes')).checked;
+    const trim = $(id('trim')).checked;
 
-  const result = bulkAdd(names, target, { dedupe, dates, keepDupes });
-  state.lastBulkAddResult = { result, target };
+    const rawLines = text.split(/\r?\n/);
+    const preCleaned = trim ? rawLines.map(l => l.replace(/\s+/g, ' ')) : rawLines;
+    const parsed = parseLinesWithYearHeaders(preCleaned, { strict });
+    const names = parsed.entries.map(e => e.name);
+    const dates = parsed.entries.map(e => e.date);
 
-  renderBulkAddResult(state.lastBulkAddResult);
-  refreshAfterBulkChange(target);
-  refreshTagState();
+    const result = bulkAdd(names, target, { dedupe, dates, keepDupes });
+    state.lastBulkAddResult[prefix] = { result, target };
 
-  const dupCount = (result.duplicates || []).length;
-  const dupNote = dupCount
-    ? ' · ' + dupCount + ' duplicate' + (keepDupes ? ' (added anyway)' : ' (skipped)')
-    : '';
-  toast('Done — added ' + result.added + dupNote +
-        (result.flagged.length ? ', ' + result.flagged.length + ' to review' : ''),
-        result.added > 0 ? 'success' : 'info');
-});
+    renderBulkAddResult(prefix, state.lastBulkAddResult[prefix]);
+    refreshAfterBulkChange(target);
+    refreshTagState();
 
-function renderBulkAddResult({ result, target }) {
-  $('#ba-added-count').textContent = result.added.toLocaleString();
-  $('#ba-skipped-count').textContent = result.skipped.length.toLocaleString();
-  $('#ba-flagged-count').textContent = result.flagged.length.toLocaleString();
-  $('#bulk-add-result').style.display = 'block';
+    const dupCount = (result.duplicates || []).length;
+    const dupNote = dupCount
+      ? ' · ' + dupCount + ' duplicate' + (keepDupes ? ' (added anyway)' : ' (skipped)')
+      : '';
+    toast('Done — added ' + result.added + dupNote +
+          (result.flagged.length ? ', ' + result.flagged.length + ' to review' : ''),
+          result.added > 0 ? 'success' : 'info');
+  });
+
+  $(id('add-all-skipped')).addEventListener('click', () => {
+    const lr = state.lastBulkAddResult[prefix];
+    if (!lr || !lr.result.skipped.length) return;
+    modal({
+      title: 'Add ' + lr.result.skipped.length + ' skipped item(s)?',
+      body: 'These were skipped as exact duplicates. Force-add all?',
+      confirmLabel: 'Add all',
+      onConfirm: () => {
+        let added = 0;
+        for (const s of lr.result.skipped) {
+          const r = addItem(s.input, lr.target, { allowDup: true });
+          if (r && r.added) added++;
+        }
+        lr.result.skipped = [];
+        renderBulkAddResult(prefix, lr);
+        refreshAfterBulkChange(lr.target);
+        toast('Force-added ' + added, 'success');
+      }
+    });
+  });
+
+  $(id('duplicates-copy')).addEventListener('click', () => {
+    const ta = $(id('duplicates-text'));
+    if (!ta || !ta.value) { toast('কিছু copy করার নাই', 'info'); return; }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(ta.value).then(
+          () => toast('Copied to clipboard', 'success'),
+          () => { ta.select(); document.execCommand('copy'); toast('Copied', 'success'); }
+        );
+      } else {
+        ta.select(); document.execCommand('copy'); toast('Copied', 'success');
+      }
+    } catch (e) { toast('Copy failed: ' + (e && e.message ? e.message : e), 'error'); }
+  });
+
+  $(id('clear')).addEventListener('click', () => {
+    $(id('text')).value = '';
+    $(id('result')).style.display = 'none';
+    state.lastBulkAddResult[prefix] = null;
+  });
+}
+
+function renderBulkAddResult(prefix, { result, target }) {
+  const id = (suffix) => '#' + prefix + '-' + suffix;
+
+  $(id('added-count')).textContent = result.added.toLocaleString();
+  $(id('skipped-count')).textContent = result.skipped.length.toLocaleString();
+  $(id('flagged-count')).textContent = result.flagged.length.toLocaleString();
+  $(id('result')).style.display = 'block';
 
   // Skipped list
-  const skipList = $('#ba-skipped-list');
+  const skipList = $(id('skipped-list'));
   skipList.innerHTML = '';
   const cap = 200;
   const skipSlice = result.skipped.slice(0, cap);
@@ -9096,10 +9225,10 @@ function renderBulkAddResult({ result, target }) {
       style: 'color:var(--muted);font-style:italic;font-size:12px;'
     }, '+ ' + (result.skipped.length - cap).toLocaleString() + ' more skipped'));
   }
-  $('#ba-skipped-actions').style.display = result.skipped.length > 0 ? 'flex' : 'none';
+  $(id('skipped-actions')).style.display = result.skipped.length > 0 ? 'flex' : 'none';
 
   // Flagged list (added but with similar entries)
-  const flagList = $('#ba-flagged-list');
+  const flagList = $(id('flagged-list'));
   flagList.innerHTML = '';
   const flagSlice = result.flagged.slice(0, cap);
 
@@ -9165,10 +9294,10 @@ function renderBulkAddResult({ result, target }) {
 
   // Duplicate report — shown whenever detection found anything (works in both
   // keepDupes=true and keepDupes=false modes; description adapts).
-  const dupCard  = $('#ba-duplicates-card');
-  const dupCount = $('#ba-duplicates-count');
-  const dupText  = $('#ba-duplicates-text');
-  const dupDesc  = $('#ba-duplicates-desc');
+  const dupCard  = $(id('duplicates-card'));
+  const dupCount = $(id('duplicates-count'));
+  const dupText  = $(id('duplicates-text'));
+  const dupDesc  = $(id('duplicates-desc'));
   const dups = result.duplicates || [];
   if (dups.length > 0) {
     dupCard.style.display = 'block';
@@ -9185,49 +9314,12 @@ function renderBulkAddResult({ result, target }) {
   }
 }
 
-// Add all skipped — force-add ignoring dedup
-$('#ba-add-all-skipped').addEventListener('click', () => {
-  const lr = state.lastBulkAddResult;
-  if (!lr || !lr.result.skipped.length) return;
-  modal({
-    title: 'Add ' + lr.result.skipped.length + ' skipped item(s)?',
-    body: 'These were skipped as exact duplicates. Force-add all?',
-    confirmLabel: 'Add all',
-    onConfirm: () => {
-      let added = 0;
-      for (const s of lr.result.skipped) {
-        const r = addItem(s.input, lr.target, { allowDup: true });
-        if (r && r.added) added++;
-      }
-      // Clear from result so list refreshes empty
-      lr.result.skipped = [];
-      renderBulkAddResult(lr);
-      refreshAfterBulkChange(lr.target);
-      toast('Force-added ' + added, 'success');
-    }
-  });
-});
-
-$('#ba-duplicates-copy').addEventListener('click', () => {
-  const ta = $('#ba-duplicates-text');
-  if (!ta || !ta.value) { toast('কিছু copy করার নাই', 'info'); return; }
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(ta.value).then(
-        () => toast('Copied to clipboard', 'success'),
-        () => { ta.select(); document.execCommand('copy'); toast('Copied', 'success'); }
-      );
-    } else {
-      ta.select(); document.execCommand('copy'); toast('Copied', 'success');
-    }
-  } catch (e) { toast('Copy failed: ' + (e && e.message ? e.message : e), 'error'); }
-});
-
-$('#bulk-add-clear').addEventListener('click', () => {
-  $('#bulk-add-text').value = '';
-  $('#bulk-add-result').style.display = 'none';
-  state.lastBulkAddResult = null;
-});
+if (!state.lastBulkAddResult || typeof state.lastBulkAddResult !== 'object'
+    || state.lastBulkAddResult.result) {
+  state.lastBulkAddResult = { 'ba-played': null, 'ba-vault': null };
+}
+wireBulkAddBox('ba-played', { strict: true,  fixedTarget: 'played' });
+wireBulkAddBox('ba-vault',  { strict: false, fixedTarget: null });
 
 /* ─── Bulk check wiring ──────────────────────────────────── */
 $('#bulk-check-go').addEventListener('click', async () => {
