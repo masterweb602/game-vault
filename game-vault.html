@@ -3567,7 +3567,8 @@ function parseTrailingDate(name) {
   return { cleanedName: cleaned, month, day };
 }
 
-function parseLinesWithYearHeaders(rawLines) {
+function parseLinesWithYearHeaders(rawLines, opts) {
+  const strict = !opts || opts.strict !== false;
   const HEADER_RX = /^\s*(19[7-9]\d|20[0-2]\d|2030)\s*$/;
   const entries = [];
   let currentYear = null;
@@ -3581,9 +3582,15 @@ function parseLinesWithYearHeaders(rawLines) {
     if (hm) { currentYear = parseInt(hm[1], 10); headers++; continue; }
 
     if (_DATE_URL_RX.test(trimmed)) continue;
-    if (_DATE_LICENSE_RX.test(trimmed)) continue;
+    if (_DATE_LICENSE_RX.test(trimmed)) {
+      if (strict) continue;
+      const firstSeg = trimmed.match(/^\s*([A-Za-z0-9]+)/)[1];
+      if (/\d/.test(firstSeg)) continue;
+    }
 
-    let work = trimmed.replace(_DATE_NUM_PREFIX_RX, '').replace(_DATE_PLUS_SUFFIX_RX, '').trim();
+    let work = strict
+      ? trimmed.replace(_DATE_NUM_PREFIX_RX, '').replace(_DATE_PLUS_SUFFIX_RX, '').trim()
+      : trimmed;
     if (!work) continue;
 
     const { cleanedName, month, day } = parseTrailingDate(work);
@@ -3591,7 +3598,7 @@ function parseLinesWithYearHeaders(rawLines) {
     if (!name) continue;
     if (_DATE_ONLY_PUNCT_RX.test(name)) continue;
     if (_DATE_YEAR_ONLY_RX.test(name)) continue;
-    if (_DATE_WORD_YEAR_RX.test(name)) continue;
+    if (strict && _DATE_WORD_YEAR_RX.test(name)) continue;
 
     entries.push({ name, date: { year: currentYear, month, day } });
   }

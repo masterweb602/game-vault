@@ -3037,7 +3037,8 @@ function parseTrailingDate(name) {
   return { cleanedName: cleaned, month, day };
 }
 
-function parseLinesWithYearHeaders(rawLines) {
+function parseLinesWithYearHeaders(rawLines, opts) {
+  const strict = !opts || opts.strict !== false;
   const HEADER_RX = /^\s*(19[7-9]\d|20[0-2]\d|2030)\s*$/;
   const entries = [];
   let currentYear = null;
@@ -3051,9 +3052,15 @@ function parseLinesWithYearHeaders(rawLines) {
     if (hm) { currentYear = parseInt(hm[1], 10); headers++; continue; }
 
     if (_DATE_URL_RX.test(trimmed)) continue;
-    if (_DATE_LICENSE_RX.test(trimmed)) continue;
+    if (_DATE_LICENSE_RX.test(trimmed)) {
+      if (strict) continue;
+      const firstSeg = trimmed.match(/^\s*([A-Za-z0-9]+)/)[1];
+      if (/\d/.test(firstSeg)) continue;
+    }
 
-    let work = trimmed.replace(_DATE_NUM_PREFIX_RX, '').replace(_DATE_PLUS_SUFFIX_RX, '').trim();
+    let work = strict
+      ? trimmed.replace(_DATE_NUM_PREFIX_RX, '').replace(_DATE_PLUS_SUFFIX_RX, '').trim()
+      : trimmed;
     if (!work) continue;
 
     const { cleanedName, month, day } = parseTrailingDate(work);
@@ -3061,7 +3068,7 @@ function parseLinesWithYearHeaders(rawLines) {
     if (!name) continue;
     if (_DATE_ONLY_PUNCT_RX.test(name)) continue;
     if (_DATE_YEAR_ONLY_RX.test(name)) continue;
-    if (_DATE_WORD_YEAR_RX.test(name)) continue;
+    if (strict && _DATE_WORD_YEAR_RX.test(name)) continue;
 
     entries.push({ name, date: { year: currentYear, month, day } });
   }
@@ -3152,6 +3159,53 @@ describe('parseLinesWithYearHeaders (Phase 9A)', () => {
     expect(r).toEqual([
       { name: 'Crysis 2', date: { year: 2013, month: null, day: null } },
       { name: 'Bioshock Infinite', date: { year: 2013, month: null, day: null } }
+    ]);
+  });
+});
+
+describe('parseLinesWithYearHeaders strict:false (Phase 15)', () => {
+  const parse = (lines, opts) => parseLinesWithYearHeaders(lines, opts).entries;
+
+  test('strict:false keeps single-word + year (FEZ 2012)', () => {
+    expect(parse(['FEZ 2012'], { strict: false })).toEqual([
+      { name: 'FEZ 2012', date: { year: null, month: null, day: null } }
+    ]);
+  });
+
+  test('strict:false keeps DOOM 2016', () => {
+    expect(parse(['DOOM 2016'], { strict: false })).toEqual([
+      { name: 'DOOM 2016', date: { year: null, month: null, day: null } }
+    ]);
+  });
+
+  test('strict:false keeps multi-word + year (Yu-Gi-Oh: Master Duel 2022)', () => {
+    expect(parse(['Yu-Gi-Oh: Master Duel 2022'], { strict: false })).toEqual([
+      { name: 'Yu-Gi-Oh: Master Duel 2022', date: { year: null, month: null, day: null } }
+    ]);
+  });
+
+  test('strict:false keeps leading 007 prefix and trailing playtime number', () => {
+    expect(parse(['007 Nightfire 2005 6.5'], { strict: false })).toEqual([
+      { name: '007 Nightfire 2005 6.5', date: { year: null, month: null, day: null } }
+    ]);
+  });
+
+  test('strict:false still drops bare URL', () => {
+    expect(parse(['https://example.com/foo'], { strict: false })).toEqual([]);
+  });
+
+  test('strict:false still drops whole-line license key', () => {
+    expect(parse(['3xwg7-rwzpn-Ltb2q-4yzq4 ----idm key'], { strict: false })).toEqual([]);
+  });
+
+  test('strict:true (default + explicit) still drops FEZ 2012 — regression', () => {
+    expect(parse(['FEZ 2012'])).toEqual([]);
+    expect(parse(['FEZ 2012'], { strict: true })).toEqual([]);
+  });
+
+  test('strict:false honors year header when entry has no inline year', () => {
+    expect(parse(['2019', 'Halo Reach'], { strict: false })).toEqual([
+      { name: 'Halo Reach', date: { year: 2019, month: null, day: null } }
     ]);
   });
 });
