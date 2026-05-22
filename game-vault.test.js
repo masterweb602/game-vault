@@ -118,6 +118,25 @@ function levenshtein(a, b, maxDist) {
   return prev[bl];
 }
 
+// Phase 15 follow-up: matchOne sequel/edition guards
+function _lastNumericToken(normStr) {
+  if (!normStr) return null;
+  const tokens = normStr.split(' ');
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    if (/^\d+$/.test(tokens[i])) return tokens[i];
+  }
+  return null;
+}
+
+function _dedupTokensDiffer(a, b) {
+  const aSet = new Set(a.split(' ').filter(Boolean));
+  const bSet = new Set(b.split(' ').filter(Boolean));
+  const isYear = (t) => /^(19|20)\d{2}$/.test(t);
+  for (const t of aSet) if (!bSet.has(t) && !isYear(t)) return true;
+  for (const t of bSet) if (!aSet.has(t) && !isYear(t)) return true;
+  return false;
+}
+
 function stringSim(a, b, threshold) {
   if (!a || !b) return 0;
   if (a === b) return 1;
@@ -294,12 +313,27 @@ class SearchIndex {
   matchOne(query, useFuzzy = true, threshold = 0.82) {
     const norm = normalize(query);
     if (!norm) return null;
+    const queryDedup = normalizeDedup(query);
+    const queryLastNum = _lastNumericToken(norm);
+
+    // Fix A: byNorm/tokenSort can be false positives when YEAR_RX or EDITION_RX
+    // strip a discriminating word. Keep the hit only when dedup norms either
+    // match outright, or differ by year tokens only.
+    const _safeExact = (item, score, type) => {
+      const candDedup = normalizeDedup(item.name);
+      if (candDedup === queryDedup) return { item, score, type };
+      if (_dedupTokensDiffer(queryDedup, candDedup)) return null;
+      return { item, score, type };
+    };
+
     if (this.byNorm.has(norm)) {
-      return { item: this.byNorm.get(norm), score: 1, type: 'exact' };
+      const r = _safeExact(this.byNorm.get(norm), 1, 'exact');
+      if (r) return r;
     }
     const ts = tokenSort(query);
     if (ts && this.byTokenSort.has(ts)) {
-      return { item: this.byTokenSort.get(ts), score: 0.97, type: 'token-sort' };
+      const r = _safeExact(this.byTokenSort.get(ts), 0.97, 'token-sort');
+      if (r) return r;
     }
     if (norm.length >= 2 && norm.length <= 8 && norm.indexOf(' ') === -1) {
       const acrSet = this.acronyms.get(norm);
@@ -314,10 +348,21 @@ class SearchIndex {
     let best = null;
     for (let i = 0; i < candidates.length; i++) {
       const it = candidates[i];
+      // Fix B: reject fuzzy candidate whose trailing numeric token differs
+      // (Devil May Cry 4 ≠ 5; Aliens 2021 12 ≠ 13).
+      if (queryLastNum !== _lastNumericToken(it._norm)) continue;
       const sim = stringSim(norm, it._norm, threshold);
       if (sim >= threshold && (!best || sim > best.score)) {
         best = { item: it, score: sim, type: 'fuzzy' };
         if (sim >= 0.99) break;
+      }
+    }
+    // Fix A safety for fuzzy hits with score ≈ 1 (identical _norm), catches the
+    // year+edition strip case where _norm matches but dedup-by-edition disagrees.
+    if (best && best.score >= 0.999) {
+      const candDedup = normalizeDedup(best.item.name);
+      if (candDedup !== queryDedup && _dedupTokensDiffer(queryDedup, candDedup)) {
+        best = null;
       }
     }
     return best;
@@ -697,6 +742,68 @@ describe('SearchIndex.matchOne()', () => {
     expect(result.score).toBeGreaterThanOrEqual(0.9);
     expect(result.type).toBe('acronym');
     expect(result.item.name).toBe('Counter-Strike: Global Offensive');
+  });
+});
+
+describe('SearchIndex.matchOne() — Phase 15 follow-up: sequel/edition guards', () => {
+  test('Fix B: Devil May Cry 4 does NOT fuzzy-match Devil May Cry 5', () => {
+    const idx = new SearchIndex();
+    idx.add({ id: 'g1', name: 'Devil May Cry 5' });
+    expect(idx.matchOne('Devil May Cry 4')).toBeNull();
+  });
+
+  test('Fix B: Aliens Fireteam Elite 2021 12 does NOT match 2021 13', () => {
+    const idx = new SearchIndex();
+    idx.add({ id: 'g1', name: 'Aliens Fireteam Elite 2021 13' });
+    expect(idx.matchOne('Aliens Fireteam Elite 2021 12')).toBeNull();
+  });
+
+  test('Fix A: Freedom Wars 2014 does NOT exact-match Freedom Wars Remastered 2025', () => {
+    const idx = new SearchIndex();
+    idx.add({ id: 'g1', name: 'Freedom Wars Remastered 2025' });
+    expect(idx.matchOne('Freedom Wars 2014')).toBeNull();
+  });
+
+  test('regression: Witcher 3 self-match returns exact score 1', () => {
+    const idx = new SearchIndex();
+    idx.add({ id: 'g1', name: 'The Witcher 3: Wild Hunt' });
+    const r = idx.matchOne('The Witcher 3: Wild Hunt');
+    expect(r).not.toBeNull();
+    expect(r.type).toBe('exact');
+    expect(r.score).toBe(1);
+  });
+
+  test('regression: CSGO acronym still resolves', () => {
+    const idx = new SearchIndex();
+    idx.add({ id: 'g1', name: 'Counter-Strike: Global Offensive' });
+    const r = idx.matchOne('CSGO');
+    expect(r).not.toBeNull();
+    expect(r.type).toBe('acronym');
+  });
+
+  test('regression: identical edition-variant name matches itself exact', () => {
+    const idx = new SearchIndex();
+    idx.add({ id: 'g1', name: 'Max Payne: Definitive Edition' });
+    const r = idx.matchOne('Max Payne: Definitive Edition');
+    expect(r).not.toBeNull();
+    expect(r.type).toBe('exact');
+    expect(r.score).toBe(1);
+  });
+
+  test('Fix A year-only diff: "Halo 3 2024" still matches indexed "Halo 3"', () => {
+    const idx = new SearchIndex();
+    idx.add({ id: 'g1', name: 'Halo 3' });
+    const r = idx.matchOne('Halo 3 2024');
+    expect(r).not.toBeNull();
+    expect(r.item.name).toBe('Halo 3');
+  });
+
+  test('regression: typo fuzzy still works when trailing number agrees', () => {
+    const idx = new SearchIndex();
+    idx.add({ id: 'g1', name: 'The Witcher 3' });
+    const r = idx.matchOne('The Witchr 3');
+    expect(r).not.toBeNull();
+    expect(r.type).toBe('fuzzy');
   });
 });
 
