@@ -1358,9 +1358,9 @@ body {
 .analytics-canvas-wrap { position: relative; height: 280px; }
 /* Phase 10: per-DB release-year charts get full-width single column + taller canvas */
 #db-year-charts-grid { grid-template-columns: 1fr; }
-#db-year-charts-grid .analytics-card { min-width: 0; }
+#db-year-charts-grid .analytics-card { min-width: 0; padding: 12px; }
 #db-year-charts-grid .analytics-canvas-wrap {
-  height: 450px;
+  height: 750px;
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
@@ -4189,8 +4189,10 @@ async function migrateNameMeta() {
 
   if (updated > 0) {
     state.motherDirty = true;
+    state.yearsDirty  = true;
     if (typeof renderVault       === 'function') renderVault();
     if (typeof renderPlayed      === 'function') renderPlayed();
+    if (typeof renderYears       === 'function') renderYears();
     if (typeof renderAnalytics   === 'function') renderAnalytics();
     if (typeof renderDbYearCharts === 'function') renderDbYearCharts();
     if (typeof renderBacklogForecast === 'function') renderBacklogForecast();
@@ -5509,6 +5511,10 @@ function updateStats() {
   if (state.loaded && state.currentTab === 'analytics' && typeof renderDbYearCharts === 'function') {
     renderDbYearCharts();
     if (typeof renderBacklogForecast === 'function') renderBacklogForecast();
+    if (typeof renderDecadeChart === 'function') renderDecadeChart();
+  }
+  if (state.loaded && state.currentTab === 'years' && typeof renderYears === 'function') {
+    renderYears();
   }
 }
 
@@ -7462,6 +7468,16 @@ function renderDbYearCharts() {
     : (arr || []).slice();
 
   const dbs = [];
+  const motherItems = (typeof aggregateMotherList === 'function')
+    ? aggregateMotherList(state).map(r => r.item)
+    : [];
+  if (motherItems.length) {
+    dbs.push({
+      key: 'mother', label: 'Mother',
+      sub: 'সব database একসাথে — release year অনুযায়ী (Played বাদ)',
+      items: excludePlayed(motherItems)
+    });
+  }
   dbs.push({
     key: 'vault', label: 'Vault',
     sub: 'release year অনুযায়ী কত games বাকি + কত ঘণ্টা বাকি',
