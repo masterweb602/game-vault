@@ -7448,7 +7448,7 @@ function renderDbYearCharts() {
       zoom: {
         pan:  { enabled: true, mode: 'x', modifierKey: 'shift' },
         zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
-        limits: { x: { minRange: 2 } }
+        limits: { x: { minRange: 2, min: -1000, max: 1000 } }
       }
     };
   };
@@ -7463,11 +7463,6 @@ function renderDbYearCharts() {
     key: 'vault', label: 'Vault',
     sub: 'release year অনুযায়ী কত games বাকি + কত ঘণ্টা বাকি',
     items: excludePlayed(state.vault)
-  });
-  dbs.push({
-    key: 'played', label: 'Played',
-    sub: 'release year অনুযায়ী complete করা games + spent hours',
-    items: (state.played || []).slice()
   });
   for (const id of (state.customListsOrder || [])) {
     const list = state.customLists[id];
