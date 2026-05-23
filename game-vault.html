@@ -2149,7 +2149,7 @@ body {
   <p class="section-desc">📊 তোমার collection-এর pattern, growth, ও activity trends।</p>
 
   <section class="analytics-stats">
-    <div class="stat-tile"><div class="stat-tile-num" id="stat-total">0</div><div class="stat-tile-label">মোট games</div></div>
+    <div class="stat-tile"><div class="stat-tile-num" id="stat-total">0</div><div class="stat-tile-label">All games</div></div>
     <div class="stat-tile"><div class="stat-tile-num" id="qs-vault">0</div><div class="stat-tile-label">Vault</div></div>
     <div class="stat-tile"><div class="stat-tile-num" id="qs-played">0</div><div class="stat-tile-label">Complete</div></div>
     <div class="stat-tile"><div class="stat-tile-num" id="stat-completion">—</div><div class="stat-tile-label">Completion %</div></div>
@@ -7269,7 +7269,9 @@ function renderQuickStats() {
 
   const vault  = state.vault;
   const played = state.played;
-  const total  = vault.length + played.length;
+  const total  = (typeof aggregateMotherList === 'function')
+    ? aggregateMotherList(state).length
+    : vault.length + played.length;
 
   totalEl.textContent  = String(total);
   vaultEl.textContent  = String(vault.length);
