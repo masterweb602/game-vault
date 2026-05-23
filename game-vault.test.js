@@ -3737,3 +3737,59 @@ describe('formatFinishDate (Phase 16)', () => {
     expect(formatFinishDate(null)).toBe('');
   });
 });
+
+// Verbatim copy from game-vault.html — pure heuristic helper for the
+// month/day migration. Lives in tests so we can exercise its rules without
+// loading the DOM.
+function extractParsedDateFromDateAdded(item) {
+  if (!item || typeof item.year !== 'number') return null;
+  const ts = Number(item.dateAdded);
+  if (!Number.isFinite(ts) || ts <= 0) return null;
+  const dt = new Date(ts);
+  if (dt.getHours() !== 12 || dt.getMinutes() !== 0
+      || dt.getSeconds() !== 0 || dt.getMilliseconds() !== 0) return null;
+  if (dt.getFullYear() !== item.year) return null;
+  const month = dt.getMonth() + 1;
+  const day = dt.getDate();
+  if (month === 1 && day === 1) return null;
+  return { month, day };
+}
+
+describe('extractParsedDateFromDateAdded (Phase 19 step 1)', () => {
+  test('null guards: missing item/year/dateAdded all return null', () => {
+    expect(extractParsedDateFromDateAdded(null)).toBe(null);
+    expect(extractParsedDateFromDateAdded(undefined)).toBe(null);
+    expect(extractParsedDateFromDateAdded({})).toBe(null);
+    expect(extractParsedDateFromDateAdded({ year: 2024 })).toBe(null);
+    expect(extractParsedDateFromDateAdded({ year: 2024, dateAdded: 0 })).toBe(null);
+    expect(extractParsedDateFromDateAdded({ year: 2024, dateAdded: 'abc' })).toBe(null);
+    expect(extractParsedDateFromDateAdded({ dateAdded: new Date(2024, 9, 12, 12).getTime() })).toBe(null);
+  });
+  test('noon-signature gate: non-noon timestamp (UI add) returns null', () => {
+    // Date.now() at any "normal" moment is essentially never exactly noon to the ms.
+    const wallClock = new Date(2024, 9, 12, 14, 27, 3, 412).getTime();
+    expect(extractParsedDateFromDateAdded({ year: 2024, dateAdded: wallClock })).toBe(null);
+    // Even noon with non-zero ms fails.
+    const noonOff = new Date(2024, 9, 12, 12, 0, 0, 5).getTime();
+    expect(extractParsedDateFromDateAdded({ year: 2024, dateAdded: noonOff })).toBe(null);
+  });
+  test('Jan 1 exclusion: year-only default fallback returns null', () => {
+    const jan1Noon = new Date(2024, 0, 1, 12, 0, 0).getTime();
+    expect(extractParsedDateFromDateAdded({ year: 2024, dateAdded: jan1Noon })).toBe(null);
+    // Jan 2 (also noon) is a real parsed date — not excluded.
+    const jan2Noon = new Date(2024, 0, 2, 12, 0, 0).getTime();
+    expect(extractParsedDateFromDateAdded({ year: 2024, dateAdded: jan2Noon }))
+      .toEqual({ month: 1, day: 2 });
+  });
+  test('valid extraction: Oct 12 2024 noon → {month:10, day:12}; year mismatch returns null', () => {
+    const oct12 = new Date(2024, 9, 12, 12, 0, 0).getTime();
+    expect(extractParsedDateFromDateAdded({ year: 2024, dateAdded: oct12 }))
+      .toEqual({ month: 10, day: 12 });
+    // If item.year disagrees with timestamp's year, reject (sanity gate).
+    expect(extractParsedDateFromDateAdded({ year: 2023, dateAdded: oct12 })).toBe(null);
+    // Pure helper: calling twice yields the same answer (drives idempotency).
+    const item = { year: 2024, dateAdded: oct12 };
+    expect(extractParsedDateFromDateAdded(item))
+      .toEqual(extractParsedDateFromDateAdded(item));
+  });
+});

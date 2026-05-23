@@ -2345,6 +2345,14 @@ body {
     </div>
   </div>
 
+  <div class="setting-card">
+    <h4>Played: month/day structured field-এ আনো</h4>
+    <p>Played list-এ পুরোনো year-header paste থেকে আসা inline date (e.g. <span style="font-family:var(--mono);">Oct 12</span>) <span style="font-family:var(--mono);">dateAdded</span> timestamp-এ encoded আছে। সেগুলো <span style="font-family:var(--mono);">item.month</span> / <span style="font-family:var(--mono);">item.day</span> field-এ তুলে আনে। শুধু Played list-এ চলে। UI-add করা items আর Jan 1 fallback বাদ পড়ে। Manual month/day overwrite হবে না। চালানোর আগে Export backup নিয়ে নাও।</p>
+    <div class="setting-row">
+      <button class="btn" id="migrate-month-day">📅 month/day structured field-এ আনো</button>
+    </div>
+  </div>
+
   <div class="setting-card" id="worker-setting-card">
     <h4>🧪 Worker mode</h4>
     <p>ON হলে bulk check Web Worker-এ run হবে — main thread block হবে না, cancel-ও করা যাবে। <span id="worker-availability-hint" style="color:var(--muted);"></span></p>
@@ -4202,6 +4210,53 @@ async function migrateNameMeta() {
   return { updated, total };
 }
 
+// Pure heuristic: recover (month, day) from item.dateAdded when it was
+// written by the import path (noon-local timestamp encoding a parsed Mon dd).
+// Returns null when item.year is missing, dateAdded isn't a finite positive
+// number, timestamp isn't exactly noon local (UI-added items use Date.now()),
+// timestamp's year doesn't match item.year, OR timestamp is Jan 1 of
+// item.year (the year-only default fallback — ambiguous).
+function extractParsedDateFromDateAdded(item) {
+  if (!item || typeof item.year !== 'number') return null;
+  const ts = Number(item.dateAdded);
+  if (!Number.isFinite(ts) || ts <= 0) return null;
+  const dt = new Date(ts);
+  if (dt.getHours() !== 12 || dt.getMinutes() !== 0
+      || dt.getSeconds() !== 0 || dt.getMilliseconds() !== 0) return null;
+  if (dt.getFullYear() !== item.year) return null;
+  const month = dt.getMonth() + 1;
+  const day = dt.getDate();
+  if (month === 1 && day === 1) return null;
+  return { month, day };
+}
+
+// Idempotent migration: lift month/day from dateAdded → item.month/item.day
+// for Played items whose timestamp matches the heuristic. Items that already
+// have month+day are skipped. Vault is not walked (year-only data).
+async function migrateMonthDay() {
+  let updated = 0, total = 0;
+  let touched = false;
+  for (const it of (state.played || [])) {
+    total++;
+    if (!it) continue;
+    if (typeof it.month === 'number' && typeof it.day === 'number') continue;
+    const parsed = extractParsedDateFromDateAdded(it);
+    if (!parsed) continue;
+    it.month = parsed.month;
+    it.day = parsed.day;
+    updated++;
+    touched = true;
+  }
+  if (touched) {
+    await saveList('played', state.played);
+    state.motherDirty = true;
+    state.yearsDirty = true;
+    if (typeof renderPlayed === 'function') renderPlayed();
+    if (typeof updateStats === 'function') updateStats();
+  }
+  return { updated, total };
+}
+
 // Pure: dedupe + unshift + cap at 5. Invalid years are dropped silently.
 // Mutates `arr` in place and returns it.
 function pushRecentYear(arr, year) {
@@ -5998,6 +6053,7 @@ function bulkAdd(names, target = 'vault', { dedupe = true, dates = null, keepDup
     // ── Add ──
     let dateAdded = Date.now() + addedItems.length;
     let yrFromDate = null;
+    let monthFromDate = null, dayFromDate = null;
     if (dates && dates[i]) {
       const d = dates[i];
       const yr = isValidYear(d.year);
@@ -6006,10 +6062,20 @@ function bulkAdd(names, target = 'vault', { dedupe = true, dates = null, keepDup
         const m = (d.month != null ? d.month : 1);
         const day = (d.day != null ? d.day : 1);
         dateAdded = new Date(yr, m - 1, day, 12, 0, 0).getTime();
+        if (d.month != null && d.day != null
+            && Number.isInteger(d.month) && d.month >= 1 && d.month <= 12
+            && Number.isInteger(d.day) && d.day >= 1 && d.day <= 31) {
+          monthFromDate = d.month;
+          dayFromDate = d.day;
+        }
       }
     }
     const item = { id: newId(), name: trimmed, dateAdded, tags: [] };
     if (yrFromDate !== null) item.year = yrFromDate;
+    if (monthFromDate !== null && dayFromDate !== null) {
+      item.month = monthFromDate;
+      item.day = dayFromDate;
+    }
     item._norm = n;
     item._ts = tokenSort(trimmed);
     t.items.push(item);
@@ -10125,7 +10191,7 @@ function bulkAddRich(richItems, target) {
   let counter = 0;
 
   for (const raw of richItems) {
-    let name, dateAdded, rawTags, rawYear, rawPlaytime;
+    let name, dateAdded, rawTags, rawYear, rawPlaytime, rawMonth, rawDay;
     if (typeof raw === 'string') {
       name = raw.trim();
       dateAdded = Date.now() + counter;
@@ -10136,6 +10202,8 @@ function bulkAddRich(richItems, target) {
       rawTags = raw.tags;
       rawYear = raw.year;
       rawPlaytime = raw.playtime;
+      rawMonth = raw.month;
+      rawDay = raw.day;
     } else continue;
 
     if (!name) continue;
@@ -10181,6 +10249,12 @@ function bulkAddRich(richItems, target) {
       const hv = Number.isFinite(ph) && ph >= 0 ? ph : 0;
       const mv = Number.isFinite(pm) && pm >= 0 ? pm : 0;
       if (hv > 0 || mv > 0) item.playtime = { hours: hv, minutes: mv };
+    }
+    const mm = Number(rawMonth), dd = Number(rawDay);
+    if (Number.isInteger(mm) && mm >= 1 && mm <= 12
+        && Number.isInteger(dd) && dd >= 1 && dd <= 31) {
+      item.month = mm;
+      item.day = dd;
     }
     item._norm = n;
     item._ts = tokenSort(name);
@@ -10336,9 +10410,13 @@ $('#import-file').addEventListener('change', async (e) => {
       const d = e.date;
       if (d && d.year != null) {
         o.year = d.year;
-        const m = (d.month != null ? d.month : 1);
-        const day = (d.day != null ? d.day : 1);
-        o.dateAdded = new Date(d.year, m - 1, day, 12, 0, 0).getTime();
+        if (d.month != null && d.day != null) {
+          o.month = d.month;
+          o.day = d.day;
+          o.dateAdded = new Date(d.year, d.month - 1, d.day, 12, 0, 0).getTime();
+        } else {
+          o.dateAdded = new Date(d.year, 0, 1, 12, 0, 0).getTime();
+        }
       }
       return o;
     });
@@ -10638,6 +10716,27 @@ $('#migrate-name-meta').addEventListener('click', () => {
         }
       } catch (e) {
         console.error('migrateNameMeta failed:', e);
+        toast('Migrate ব্যর্থ: ' + e.message, 'error', 5000);
+      }
+    }
+  });
+});
+$('#migrate-month-day').addEventListener('click', () => {
+  modal({
+    title: 'Month/day migrate করবো?',
+    body: 'Played items যাদের dateAdded একটা parsed date এনকোড করে (noon local time, Jan 1 না) — সেগুলো থেকে month/day field-এ তোলা হবে। ভুল হলে undo নেই — চালানোর আগে Settings → Export data থেকে JSON backup নিয়ে রাখো।',
+    confirmLabel: 'Migrate করো',
+    confirmKind: 'btn-primary',
+    onConfirm: async () => {
+      try {
+        const { updated, total } = await migrateMonthDay();
+        if (updated > 0) {
+          toast('✓ ' + updated + ' / ' + total + ' Played items এ month/day যোগ হয়েছে', 'success', 4000);
+        } else {
+          toast('কিছু change হয়নি — ' + total + ' items scan হয়েছে', 'info', 3000);
+        }
+      } catch (e) {
+        console.error('migrateMonthDay failed:', e);
         toast('Migrate ব্যর্থ: ' + e.message, 'error', 5000);
       }
     }
