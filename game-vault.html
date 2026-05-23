@@ -7437,18 +7437,21 @@ function renderDbYearCharts() {
     backgroundColor: 'rgba(20,20,20,0.78)',
     borderRadius: 4,
     padding: { top: 2, bottom: 2, left: 4, right: 4 },
-    formatter: (v) => v > 0 ? v : '',
+    formatter: (v) => {
+      const n = (v && typeof v === 'object') ? v.y : v;
+      return n > 0 ? n : '';
+    },
     clamp: true, clip: false
   });
   // Zoom config: wheel-zoom + Shift+drag-pan (plain drag still scrolls the wrapper).
   // No-op if chartjs-plugin-zoom didn't load.
-  const _dbChartZoomCfg = () => {
+  const _dbChartZoomCfg = (xMin, xMax) => {
     if (typeof Chart === 'undefined' || !Chart.registry || !Chart.registry.plugins.get('zoom')) return {};
     return {
       zoom: {
         pan:  { enabled: true, mode: 'x', modifierKey: 'shift' },
         zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
-        limits: { x: { minRange: 2, min: 0, max: 10000 } }
+        limits: { x: { minRange: 2, min: xMin, max: xMax } }
       }
     };
   };
@@ -7582,6 +7585,8 @@ function renderDbYearCharts() {
     card.insertBefore(toolbar, wrap);
 
     const ctx2d = canvas.getContext('2d');
+    const minYear = buckets[0].year;
+    const maxYear = buckets[buckets.length - 1].year;
     const countData = buckets.map(b => ({ x: b.year, y: b.count }));
     const hoursData = buckets.map(b => ({ x: b.year, y: Math.round(b.hours * 10) / 10 }));
 
@@ -7649,7 +7654,7 @@ function renderDbYearCharts() {
               label: (ctx) => '  ' + ctx.dataset.label + ': ' + ctx.parsed.y
             }
           },
-          ..._dbChartZoomCfg()
+          ..._dbChartZoomCfg(minYear - 2, maxYear + 3)
         },
         scales: {
           x: {
@@ -7675,8 +7680,6 @@ function renderDbYearCharts() {
 
     // Range buttons clip x scale to last N years (data unchanged).
     const chartRef = state.charts['dbyear_' + db.key];
-    const minYear = buckets[0].year;
-    const maxYear = buckets[buckets.length - 1].year;
     const applyRange = (n) => {
       if (!chartRef) return;
       if (n === null || n >= buckets.length) {
