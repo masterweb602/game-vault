@@ -7448,7 +7448,7 @@ function renderDbYearCharts() {
       zoom: {
         pan:  { enabled: true, mode: 'x', modifierKey: 'shift' },
         zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
-        limits: { x: { minRange: 2, min: -1000, max: 1000 } }
+        limits: { x: { minRange: 2, min: 0, max: 10000 } }
       }
     };
   };
@@ -7553,7 +7553,6 @@ function renderDbYearCharts() {
     summary.textContent = 'মোট ' + totalGames + ' games · ' + Math.round(totalHours) + ' ঘণ্টা · peak year ' + peakYear + ' · ~' + avg + ' games/year';
     card.appendChild(summary);
 
-    const labels = buckets.map(b => String(b.year));
     const containerWidth = wrap.clientWidth || 600;
     const minWidth = Math.max(containerWidth, buckets.length * 85);
     inner.style.width = minWidth + 'px';
@@ -7583,13 +7582,12 @@ function renderDbYearCharts() {
     card.insertBefore(toolbar, wrap);
 
     const ctx2d = canvas.getContext('2d');
-    const countData = buckets.map(b => b.count);
-    const hoursData = buckets.map(b => Math.round(b.hours * 10) / 10);
+    const countData = buckets.map(b => ({ x: b.year, y: b.count }));
+    const hoursData = buckets.map(b => ({ x: b.year, y: Math.round(b.hours * 10) / 10 }));
 
     state.charts['dbyear_' + db.key] = new Chart(ctx2d, {
       type: 'line',
       data: {
-        labels,
         datasets: [
           {
             label: 'Count',
@@ -7647,14 +7645,18 @@ function renderDbYearCharts() {
             titleColor: '#f0ece4',
             bodyColor: '#f0ece4',
             callbacks: {
-              title: (ctx) => 'Release year ' + ctx[0].label,
+              title: (ctx) => 'Release year ' + ctx[0].parsed.x,
               label: (ctx) => '  ' + ctx.dataset.label + ': ' + ctx.parsed.y
             }
           },
           ..._dbChartZoomCfg()
         },
         scales: {
-          x: { ticks: { color: '#76716a' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+          x: {
+            type: 'linear',
+            ticks: { color: '#76716a', stepSize: 1, callback: (v) => Math.round(v) },
+            grid: { color: 'rgba(255,255,255,0.04)' }
+          },
           yCount: {
             type: 'linear', position: 'left', beginAtZero: true,
             ticks: { color: '#76716a', precision: 0 },
@@ -7673,15 +7675,17 @@ function renderDbYearCharts() {
 
     // Range buttons clip x scale to last N years (data unchanged).
     const chartRef = state.charts['dbyear_' + db.key];
+    const minYear = buckets[0].year;
+    const maxYear = buckets[buckets.length - 1].year;
     const applyRange = (n) => {
       if (!chartRef) return;
-      const total = labels.length;
-      if (n === null || n >= total) {
+      if (n === null || n >= buckets.length) {
         chartRef.options.scales.x.min = undefined;
         chartRef.options.scales.x.max = undefined;
       } else {
-        chartRef.options.scales.x.min = labels[Math.max(0, total - n)];
-        chartRef.options.scales.x.max = labels[total - 1];
+        const startBucket = buckets[Math.max(0, buckets.length - n)];
+        chartRef.options.scales.x.min = startBucket.year - 0.5;
+        chartRef.options.scales.x.max = maxYear + 0.5;
       }
       if (typeof chartRef.resetZoom === 'function') chartRef.resetZoom();
       chartRef.update();
