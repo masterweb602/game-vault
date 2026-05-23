@@ -3665,3 +3665,75 @@ describe('parsePlainMeta', () => {
       .toEqual({ cleanName: 'Battlefield 2042', year: null, hours: null });
   });
 });
+
+// ── Phase 16: backlog forecast helpers ────────────────────────────────────
+// Verbatim copies from game-vault.html so the math can be tested without
+// loading the full DOM.
+
+function computeBacklogDays(totalHours, perDay) {
+  const h = Number(totalHours), pd = Number(perDay);
+  if (!isFinite(h) || !isFinite(pd) || pd <= 0) return null;
+  if (h <= 0) return 0;
+  return Math.ceil(h / pd);
+}
+
+function addDays(date, days) {
+  const d = Number(days);
+  if (!(date instanceof Date) || isNaN(date.getTime()) || !isFinite(d)) return null;
+  const r = new Date(date.getTime());
+  r.setDate(r.getDate() + d);
+  return r;
+}
+
+function formatFinishDate(date) {
+  if (!(date instanceof Date) || isNaN(date.getTime())) return '';
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return date.getDate() + ' ' + months[date.getMonth()] + ' ' + date.getFullYear();
+}
+
+describe('computeBacklogDays (Phase 16)', () => {
+  test('ceils fractional days: 100h at 3h/day → 34 days', () => {
+    expect(computeBacklogDays(100, 3)).toBe(34);
+  });
+  test('exact multiples + sub-hour', () => {
+    expect(computeBacklogDays(24, 2)).toBe(12);
+    expect(computeBacklogDays(0.5, 1)).toBe(1);
+  });
+  test('edge cases', () => {
+    expect(computeBacklogDays(0, 2)).toBe(0);
+    expect(computeBacklogDays(-5, 2)).toBe(0);
+    expect(computeBacklogDays(100, 0)).toBeNull();
+    expect(computeBacklogDays(100, -1)).toBeNull();
+    expect(computeBacklogDays(NaN, 2)).toBeNull();
+    expect(computeBacklogDays(100, 'abc')).toBeNull();
+  });
+});
+
+describe('addDays (Phase 16)', () => {
+  test('adds whole days; original not mutated', () => {
+    const base = new Date(2026, 4, 23);
+    const out = addDays(base, 10);
+    expect(out.getFullYear()).toBe(2026);
+    expect(out.getMonth()).toBe(5);
+    expect(out.getDate()).toBe(2);
+    expect(base.getDate()).toBe(23);
+  });
+  test('null for invalid inputs', () => {
+    expect(addDays(new Date('not a date'), 5)).toBeNull();
+    expect(addDays(new Date(2026, 0, 1), NaN)).toBeNull();
+    expect(addDays('2026-01-01', 5)).toBeNull();
+  });
+});
+
+describe('formatFinishDate (Phase 16)', () => {
+  test('formats as "D Mon YYYY"', () => {
+    expect(formatFinishDate(new Date(2026, 4, 23))).toBe('23 May 2026');
+    expect(formatFinishDate(new Date(2027, 0, 1))).toBe('1 Jan 2027');
+    expect(formatFinishDate(new Date(2026, 11, 31))).toBe('31 Dec 2026');
+  });
+  test('empty string for invalid Date', () => {
+    expect(formatFinishDate(new Date('not a date'))).toBe('');
+    expect(formatFinishDate('2026-05-23')).toBe('');
+    expect(formatFinishDate(null)).toBe('');
+  });
+});

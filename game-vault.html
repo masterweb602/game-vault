@@ -11,6 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -2243,6 +2244,8 @@ body {
     <p class="section-desc" style="margin-bottom: 16px;">প্রতিটা list-এ কোন release year-এর কত games আর কত playtime। Played list-এ থাকা games তাদের source DB থেকে বাদ।</p>
     <div class="analytics-grid" id="db-year-charts-grid"></div>
   </div>
+
+  <div class="analytics-db-section" id="backlog-forecast" style="margin-top: 24px;"></div>
 </section>
 
 <!-- ──── NOTES VIEW ──────────────────────────────────────── -->
@@ -4190,6 +4193,7 @@ async function migrateNameMeta() {
     if (typeof renderPlayed      === 'function') renderPlayed();
     if (typeof renderAnalytics   === 'function') renderAnalytics();
     if (typeof renderDbYearCharts === 'function') renderDbYearCharts();
+    if (typeof renderBacklogForecast === 'function') renderBacklogForecast();
     if (typeof updateStats       === 'function') updateStats();
   }
 
@@ -5504,6 +5508,7 @@ function updateStats() {
   if (state.loaded) refreshTagState();
   if (state.loaded && state.currentTab === 'analytics' && typeof renderDbYearCharts === 'function') {
     renderDbYearCharts();
+    if (typeof renderBacklogForecast === 'function') renderBacklogForecast();
   }
 }
 
@@ -7395,6 +7400,59 @@ function renderDbYearCharts() {
   }
   grid.innerHTML = '';
 
+  // ---- Phase 16: shared chart helpers (crosshair, gradient, value labels, zoom) ----
+  // Crosshair plugin: vertical guideline at hovered index (aligns with mode:'index' tooltip).
+  const _dbChartCrosshair = {
+    id: 'dbCrosshair',
+    afterDatasetsDraw(chart) {
+      const active = chart.tooltip && chart.tooltip._active;
+      if (!active || !active.length) return;
+      const x = active[0].element.x;
+      const { top, bottom } = chart.chartArea;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(245,166,35,0.35)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(x, top);
+      ctx.lineTo(x, bottom);
+      ctx.stroke();
+      ctx.restore();
+    }
+  };
+  // Gradient fill under a line — fades from line color → transparent.
+  const _dbChartGradient = (ctx, area, hex) => {
+    if (!area) return hex + '22';
+    const g = ctx.createLinearGradient(0, area.top, 0, area.bottom);
+    g.addColorStop(0, hex + '55');
+    g.addColorStop(1, hex + '00');
+    return g;
+  };
+  // All-point value labels with chip background. placement is 'top' (Count) or 'bottom' (Playtime).
+  const _dbChartValueLabel = (color, placement) => ({
+    anchor: 'end', align: placement, offset: 6,
+    color,
+    font: { size: 10, weight: 'bold' },
+    backgroundColor: 'rgba(20,20,20,0.78)',
+    borderRadius: 4,
+    padding: { top: 2, bottom: 2, left: 4, right: 4 },
+    formatter: (v) => v > 0 ? v : '',
+    clamp: true, clip: false
+  });
+  // Zoom config: wheel-zoom + Shift+drag-pan (plain drag still scrolls the wrapper).
+  // No-op if chartjs-plugin-zoom didn't load.
+  const _dbChartZoomCfg = () => {
+    if (typeof Chart === 'undefined' || !Chart.registry || !Chart.registry.plugins.get('zoom')) return {};
+    return {
+      zoom: {
+        pan:  { enabled: true, mode: 'x', modifierKey: 'shift' },
+        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+        limits: { x: { minRange: 2 } }
+      }
+    };
+  };
+
   const playedNorms = state.pIndex && state.pIndex.byNorm;
   const excludePlayed = (arr) => playedNorms
     ? (arr || []).filter(it => !playedNorms.has(it._norm))
@@ -7510,60 +7568,95 @@ function renderDbYearCharts() {
       hint.textContent = '← ডানে-বামে scroll করো →';
       card.appendChild(hint);
     }
-    state.charts['dbyear_' + db.key] = new Chart(canvas.getContext('2d'), {
+    // ---- Phase 16: range buttons + reset zoom (above canvas, below summary) ----
+    const toolbar = document.createElement('div');
+    toolbar.className = 'analytics-chart-toolbar';
+    toolbar.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 4px;font-size:11px;';
+    const mkBtn = (label, title) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.title = title || '';
+      b.style.cssText = 'background:#1c1c22;color:#f0ece4;border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:3px 9px;cursor:pointer;font-size:11px;';
+      return b;
+    };
+    const btn5  = mkBtn('5Y',  'last 5 release years');
+    const btn10 = mkBtn('10Y', 'last 10 release years');
+    const btnAll= mkBtn('All', 'all years');
+    const btnRst= mkBtn('Reset zoom', 'reset wheel/pinch zoom');
+    toolbar.append(btn5, btn10, btnAll, btnRst);
+    card.insertBefore(toolbar, wrap);
+
+    const ctx2d = canvas.getContext('2d');
+    const countData = buckets.map(b => b.count);
+    const hoursData = buckets.map(b => Math.round(b.hours * 10) / 10);
+
+    state.charts['dbyear_' + db.key] = new Chart(ctx2d, {
       type: 'line',
       data: {
         labels,
         datasets: [
           {
             label: 'Count',
-            data: buckets.map(b => b.count),
-            borderColor: accent, backgroundColor: accent,
-            tension: 0.3, pointRadius: 4, borderWidth: 2,
+            data: countData,
+            borderColor: accent,
+            backgroundColor: (c) => _dbChartGradient(c.chart.ctx, c.chart.chartArea, accent),
+            fill: true,
+            tension: 0.35,
+            borderWidth: 1.6,
+            pointRadius: 2,
+            pointHoverRadius: 6,
+            pointHoverBorderWidth: 2,
+            pointHoverBackgroundColor: accent,
+            pointHoverBorderColor: '#fff',
             yAxisID: 'yCount',
-            datalabels: {
-              anchor: 'end', align: 'top', offset: 6,
-              color: accent,
-              font: { size: 11, weight: 'bold' },
-              backgroundColor: 'rgba(20,20,20,0.75)',
-              borderRadius: 4,
-              padding: { top: 2, bottom: 2, left: 4, right: 4 },
-              formatter: (v) => v > 0 ? v : '',
-              clamp: true, clip: false
-            }
+            datalabels: _dbChartValueLabel(accent, 'top')
           },
           {
             label: 'Playtime (hrs)',
-            data: buckets.map(b => Math.round(b.hours * 10) / 10),
-            borderColor: success, backgroundColor: success,
-            tension: 0.3, pointRadius: 4, borderWidth: 2,
+            data: hoursData,
+            borderColor: success,
+            backgroundColor: (c) => _dbChartGradient(c.chart.ctx, c.chart.chartArea, success),
+            fill: true,
+            tension: 0.35,
+            borderWidth: 1.6,
+            pointRadius: 2,
+            pointHoverRadius: 6,
+            pointHoverBorderWidth: 2,
+            pointHoverBackgroundColor: success,
+            pointHoverBorderColor: '#fff',
             yAxisID: 'yHours',
-            datalabels: {
-              anchor: 'end', align: 'bottom', offset: 6,
-              color: success,
-              font: { size: 11, weight: 'bold' },
-              backgroundColor: 'rgba(20,20,20,0.75)',
-              borderRadius: 4,
-              padding: { top: 2, bottom: 2, left: 4, right: 4 },
-              formatter: (v) => v > 0 ? v : '',
-              clamp: true, clip: false
-            }
+            datalabels: _dbChartValueLabel(success, 'bottom')
           }
         ]
       },
-      plugins: (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : [],
+      plugins: [
+        ...((typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : []),
+        _dbChartCrosshair
+      ],
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        layout: { padding: { top: 24, bottom: 24, left: 8, right: 8 } },
+        layout: { padding: { top: 28, bottom: 28, left: 8, right: 8 } },
+        interaction: { mode: 'index', intersect: false, axis: 'x' },
+        hover:       { mode: 'index', intersect: false, axis: 'x' },
         plugins: {
           legend: { display: true, position: 'bottom', labels: { color: '#76716a' } },
           tooltip: {
+            mode: 'index',
+            intersect: false,
+            backgroundColor: 'rgba(15,15,18,0.95)',
+            borderColor: 'rgba(255,255,255,0.08)',
+            borderWidth: 1,
+            padding: 10,
+            titleColor: '#f0ece4',
+            bodyColor: '#f0ece4',
             callbacks: {
               title: (ctx) => 'Release year ' + ctx[0].label,
-              label: (ctx) => ctx.dataset.label + ': ' + ctx.parsed.y
+              label: (ctx) => '  ' + ctx.dataset.label + ': ' + ctx.parsed.y
             }
-          }
+          },
+          ..._dbChartZoomCfg()
         },
         scales: {
           x: { ticks: { color: '#76716a' }, grid: { color: 'rgba(255,255,255,0.04)' } },
@@ -7582,7 +7675,122 @@ function renderDbYearCharts() {
         }
       }
     });
+
+    // Range buttons clip x scale to last N years (data unchanged).
+    const chartRef = state.charts['dbyear_' + db.key];
+    const applyRange = (n) => {
+      if (!chartRef) return;
+      const total = labels.length;
+      if (n === null || n >= total) {
+        chartRef.options.scales.x.min = undefined;
+        chartRef.options.scales.x.max = undefined;
+      } else {
+        chartRef.options.scales.x.min = labels[Math.max(0, total - n)];
+        chartRef.options.scales.x.max = labels[total - 1];
+      }
+      if (typeof chartRef.resetZoom === 'function') chartRef.resetZoom();
+      chartRef.update();
+    };
+    btn5.addEventListener('click',  () => applyRange(5));
+    btn10.addEventListener('click', () => applyRange(10));
+    btnAll.addEventListener('click',() => applyRange(null));
+    btnRst.addEventListener('click',() => { if (typeof chartRef.resetZoom === 'function') chartRef.resetZoom(); });
   }
+}
+
+// ── Phase 16: backlog completion forecast ──────────────────────────────────
+// Pure helpers (also covered by tests in game-vault.test.js).
+// computeBacklogDays(totalHours, perDay) → whole days needed (ceil).
+//   Returns null when perDay <= 0 or non-finite; 0 when totalHours <= 0.
+function computeBacklogDays(totalHours, perDay) {
+  const h = Number(totalHours), pd = Number(perDay);
+  if (!isFinite(h) || !isFinite(pd) || pd <= 0) return null;
+  if (h <= 0) return 0;
+  return Math.ceil(h / pd);
+}
+// addDays(date, days) → new Date offset; null on invalid input.
+function addDays(date, days) {
+  const d = Number(days);
+  if (!(date instanceof Date) || isNaN(date.getTime()) || !isFinite(d)) return null;
+  const r = new Date(date.getTime());
+  r.setDate(r.getDate() + d);
+  return r;
+}
+// formatFinishDate(date) → "23 May 2026" (locale-independent month abbr).
+function formatFinishDate(date) {
+  if (!(date instanceof Date) || isNaN(date.getTime())) return '';
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return date.getDate() + ' ' + months[date.getMonth()] + ' ' + date.getFullYear();
+}
+
+function renderBacklogForecast() {
+  const host = document.getElementById('backlog-forecast');
+  if (!host) return;
+
+  const playedNorms = state.pIndex && state.pIndex.byNorm;
+  const remaining = (state.vault || []).filter(it => !(playedNorms && playedNorms.has(it._norm)));
+  let totalHours = 0, gamesWithPlaytime = 0;
+  for (const it of remaining) {
+    const p = getPlaytimeForItem(it);
+    if (!p) continue;
+    totalHours += p.hours + p.minutes / 60;
+    gamesWithPlaytime++;
+  }
+  totalHours = Math.round(totalHours * 10) / 10;
+
+  if (gamesWithPlaytime === 0 || totalHours <= 0) {
+    host.innerHTML = ''
+      + '<div class="analytics-card">'
+      +   '<h3 class="analytics-card-title">প্রতিদিন কত ঘণ্টা খেললে backlog শেষ হবে</h3>'
+      +   '<div class="analytics-empty">Vault-এ কোনো remaining item-এ playtime set নেই।</div>'
+      + '</div>';
+    return;
+  }
+
+  const today = new Date();
+  const scenarios = [1, 2, 3, 4, 6];
+  let rows = '';
+  for (const h of scenarios) {
+    const days = computeBacklogDays(totalHours, h);
+    const finish = formatFinishDate(addDays(today, days));
+    rows += '<tr>'
+      +   '<td style="padding:6px 8px;color:#f0ece4;">' + h + '</td>'
+      +   '<td style="padding:6px 8px;color:#f0ece4;">' + days.toLocaleString() + '</td>'
+      +   '<td style="padding:6px 8px;color:#76716a;">' + finish + '</td>'
+      + '</tr>';
+  }
+
+  host.innerHTML = ''
+    + '<div class="analytics-card">'
+    +   '<h3 class="analytics-card-title">প্রতিদিন কত ঘণ্টা খেললে backlog শেষ হবে</h3>'
+    +   '<p class="analytics-card-sub">' + gamesWithPlaytime + ' games · ' + Math.round(totalHours).toLocaleString() + ' ঘণ্টা remaining (Vault, playtime set; Played বাদ)</p>'
+    +   '<table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:13px;">'
+    +     '<thead><tr style="text-align:left;color:#76716a;border-bottom:1px solid rgba(255,255,255,0.08);">'
+    +       '<th style="padding:6px 8px;font-weight:600;">ঘণ্টা/দিন</th>'
+    +       '<th style="padding:6px 8px;font-weight:600;">দিন লাগবে</th>'
+    +       '<th style="padding:6px 8px;font-weight:600;">শেষ হবে</th>'
+    +     '</tr></thead>'
+    +     '<tbody>' + rows + '</tbody>'
+    +   '</table>'
+    +   '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);">'
+    +     '<label style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;">'
+    +       '<span style="color:#76716a;min-width:60px;">কাস্টম:</span>'
+    +       '<input type="range" id="backlog-slider" min="1" max="12" step="1" value="2" style="flex:1;min-width:140px;accent-color:#f5a623;">'
+    +       '<span id="backlog-slider-out" style="color:#f0ece4;flex-basis:100%;"></span>'
+    +     '</label>'
+    +   '</div>'
+    + '</div>';
+
+  const slider = document.getElementById('backlog-slider');
+  const out    = document.getElementById('backlog-slider-out');
+  const update = () => {
+    const h = Number(slider.value);
+    const days = computeBacklogDays(totalHours, h);
+    const finish = formatFinishDate(addDays(today, days));
+    out.textContent = h + ' ঘণ্টা/দিন → ' + days.toLocaleString() + ' দিন লাগবে → শেষ হবে ' + finish;
+  };
+  slider.addEventListener('input', update);
+  update();
 }
 
 function renderYears() {
@@ -8168,6 +8376,7 @@ function switchTab(name) {
     renderBurndownChart(); renderScenarios(); renderScenarioExplorer();
     renderDecadeChart(); renderInsights();
     renderDbYearCharts();
+    renderBacklogForecast();
   }
   if (name === 'notes') refreshNotesStatus();
   if (name === 'mother') renderMotherView();
@@ -8183,6 +8392,7 @@ if (_analyticsRefreshBtn) {
     renderBurndownChart(); renderScenarios(); renderScenarioExplorer();
     renderDecadeChart(); renderInsights();
     renderDbYearCharts();
+    renderBacklogForecast();
   });
 }
 
