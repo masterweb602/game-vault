@@ -2150,8 +2150,8 @@ body {
 
   <section class="analytics-stats">
     <div class="stat-tile"><div class="stat-tile-num" id="stat-total">0</div><div class="stat-tile-label">মোট games</div></div>
-    <div class="stat-tile"><div class="stat-tile-num" id="stat-vault">0</div><div class="stat-tile-label">Vault</div></div>
-    <div class="stat-tile"><div class="stat-tile-num" id="stat-played">0</div><div class="stat-tile-label">Complete</div></div>
+    <div class="stat-tile"><div class="stat-tile-num" id="qs-vault">0</div><div class="stat-tile-label">Vault</div></div>
+    <div class="stat-tile"><div class="stat-tile-num" id="qs-played">0</div><div class="stat-tile-label">Complete</div></div>
     <div class="stat-tile"><div class="stat-tile-num" id="stat-completion">—</div><div class="stat-tile-label">Completion %</div></div>
     <div class="stat-tile"><div class="stat-tile-num" id="stat-years">0</div><div class="stat-tile-label">Active years</div></div>
     <div class="stat-tile" id="stat-playtime-tile" hidden><div class="stat-tile-num" id="stat-playtime">0 hrs</div><div class="stat-tile-label">মোট playtime</div></div>
@@ -7259,8 +7259,8 @@ function renderScenarioExplorer() {
 
 function renderQuickStats() {
   const totalEl      = document.getElementById('stat-total');
-  const vaultEl      = document.getElementById('stat-vault');
-  const playedEl     = document.getElementById('stat-played');
+  const vaultEl      = document.getElementById('qs-vault');
+  const playedEl     = document.getElementById('qs-played');
   const completionEl = document.getElementById('stat-completion');
   const yearsEl      = document.getElementById('stat-years');
   const playtimeEl   = document.getElementById('stat-playtime');
