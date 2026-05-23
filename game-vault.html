@@ -7802,31 +7802,51 @@ function renderYears() {
   const cache = getYearsCache();
   const q = state.yearsFilter || '';
 
-  // Drop selections whose item is no longer in the unknown list (year was set
-  // elsewhere, or item was deleted). Pruned against full cache.unknown — not
-  // search-filtered — so search/clear keeps selections intact.
+  // View-only filter: hide rows whose item is in the Played list. The cache
+  // itself (and state.played) stays intact — this is display-time only, so
+  // bulk-apply and other consumers that walk cache.* keep working.
+  const pNorms = state.pIndex && state.pIndex.byNorm;
+  const excludePlayedRows = (rows) =>
+    pNorms ? rows.filter(r => !pNorms.has(r.item._norm)) : rows;
+  const viewByYear = new Map();
+  let viewDetected = 0;
+  for (const [y, rows] of cache.byYear) {
+    const kept = excludePlayedRows(rows);
+    if (kept.length) { viewByYear.set(y, kept); viewDetected += kept.length; }
+  }
+  const viewUnknown = excludePlayedRows(cache.unknown);
+  const view = {
+    byYear: viewByYear,
+    unknown: viewUnknown,
+    detected: viewDetected,
+    total: viewDetected + viewUnknown.length
+  };
+
+  // Drop selections whose item is no longer in the unknown view (year was set
+  // elsewhere, item was deleted, or item is now in Played). Pruned against
+  // full view.unknown — not search-filtered — so search/clear keeps selections intact.
   if (state.unknownSelections.size) {
     const validIds = new Set();
-    for (const r of cache.unknown) validIds.add(r.item.id);
+    for (const r of view.unknown) validIds.add(r.item.id);
     for (const id of Array.from(state.unknownSelections)) {
       if (!validIds.has(id)) state.unknownSelections.delete(id);
     }
   }
 
-  const sortedYears = Array.from(cache.byYear.keys()).sort((a, b) => b - a);
+  const sortedYears = Array.from(view.byYear.keys()).sort((a, b) => b - a);
 
   // Apply search filter — drops rows then drops empty year buckets.
   const filteredByYear = new Map();
   let shownDetected = 0;
   for (const y of sortedYears) {
-    const filtered = filterYearRows(cache.byYear.get(y), q);
+    const filtered = filterYearRows(view.byYear.get(y), q);
     if (filtered.length > 0) { filteredByYear.set(y, filtered); shownDetected += filtered.length; }
   }
-  const filteredUnknown = filterYearRows(cache.unknown, q);
+  const filteredUnknown = filterYearRows(view.unknown, q);
 
   // Stats line — total playtime across whatever is currently visible
-  // (filtered when q is active, full cache otherwise). Map row → item once.
-  if (cache.total === 0) {
+  // (filtered when q is active, full view otherwise). Map row → item once.
+  if (view.total === 0) {
     statsHost.textContent = '';
   } else if (q) {
     const visibleItems = [];
@@ -7838,17 +7858,17 @@ function renderYears() {
       filteredByYear.size + ' years shown';
   } else {
     const allItems = [];
-    for (const rows of cache.byYear.values()) for (const r of rows) allItems.push(r.item);
-    for (const r of cache.unknown) allItems.push(r.item);
+    for (const rows of view.byYear.values()) for (const r of rows) allItems.push(r.item);
+    for (const r of view.unknown) allItems.push(r.item);
     statsHost.textContent =
-      cache.detected + ' games auto-detected · ' + cache.unknown.length + ' unknown · ' +
+      view.detected + ' games auto-detected · ' + view.unknown.length + ' unknown · ' +
       formatTotalHours(totalPlaytimeHours(allItems)) + ' · ' +
-      cache.byYear.size + ' years total';
+      view.byYear.size + ' years total';
   }
 
   sectionsHost.innerHTML = '';
 
-  if (cache.total === 0) {
+  if (view.total === 0) {
     const empty = document.createElement('div');
     empty.className = 'years-empty';
     empty.textContent = 'এখনো কোনো game নেই';
