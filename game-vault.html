@@ -48,6 +48,7 @@ html, body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: clip;     /* clips full-bleed chart overflow without breaking position:sticky */
 }
 
 body {
@@ -1357,9 +1358,20 @@ body {
 .analytics-card-sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
 .analytics-canvas-wrap { position: relative; height: 280px; }
 /* Phase 10: per-DB release-year charts get full-width single column + taller canvas */
-#db-year-charts-grid { grid-template-columns: 1fr; }
-#db-year-charts-grid .analytics-card { min-width: 0; padding: 12px; }
-#db-year-charts-grid .analytics-canvas-wrap {
+/* Full-bleed: chart sections break out of .app's 1200/1400px cap to span the full
+   window width. The ~scrollbar-width overflow is clipped by html,body{overflow-x:clip}.
+   #played-activity-* pre-wired for the Played activity chart (step 2). */
+#db-year-section, #played-activity-section {
+  width: 100vw;
+  margin-left:  calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  box-sizing: border-box;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+#db-year-charts-grid, #played-activity-grid { grid-template-columns: 1fr; }
+#db-year-charts-grid .analytics-card, #played-activity-grid .analytics-card { min-width: 0; padding: 12px; }
+#db-year-charts-grid .analytics-canvas-wrap, #played-activity-grid .analytics-canvas-wrap {
   height: 750px;
   width: 100%;
   max-width: 100%;
@@ -1369,13 +1381,17 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--accent) rgba(255,255,255,0.08);
 }
-#db-year-charts-grid .analytics-canvas-wrap.is-dragging { cursor: grabbing; }
-#db-year-charts-grid .analytics-canvas-wrap::-webkit-scrollbar { height: 10px; }
-#db-year-charts-grid .analytics-canvas-wrap::-webkit-scrollbar-thumb {
+/* Touch: vertical swipe scrolls the page; horizontal swipe + pinch go to the chart
+   so chartjs-plugin-zoom can pinch-zoom (mode 'x') on Android. Touch-only — desktop
+   wheel-zoom / Shift-drag pan / mouse drag-scroll are unaffected. */
+#db-year-charts-grid canvas, #played-activity-grid canvas { touch-action: pan-y; }
+#db-year-charts-grid .analytics-canvas-wrap.is-dragging, #played-activity-grid .analytics-canvas-wrap.is-dragging { cursor: grabbing; }
+#db-year-charts-grid .analytics-canvas-wrap::-webkit-scrollbar, #played-activity-grid .analytics-canvas-wrap::-webkit-scrollbar { height: 10px; }
+#db-year-charts-grid .analytics-canvas-wrap::-webkit-scrollbar-thumb, #played-activity-grid .analytics-canvas-wrap::-webkit-scrollbar-thumb {
   background: var(--accent);
   border-radius: 5px;
 }
-#db-year-charts-grid .analytics-canvas-wrap::-webkit-scrollbar-track {
+#db-year-charts-grid .analytics-canvas-wrap::-webkit-scrollbar-track, #played-activity-grid .analytics-canvas-wrap::-webkit-scrollbar-track {
   background: rgba(255,255,255,0.06);
   border-radius: 5px;
 }
@@ -2239,7 +2255,7 @@ body {
     </div>
   </div>
 
-  <div class="analytics-db-section" style="margin-top: 24px;">
+  <div class="analytics-db-section" id="db-year-section" style="margin-top: 24px;">
     <h3 class="analytics-card-title" style="font-size: 16px; margin-bottom: 8px;">প্রতি database — release year অনুযায়ী</h3>
     <p class="section-desc" style="margin-bottom: 16px;">প্রতিটা list-এ কোন release year-এর কত games আর কত playtime। Played list-এ থাকা games তাদের source DB থেকে বাদ।</p>
     <div class="analytics-grid" id="db-year-charts-grid"></div>
