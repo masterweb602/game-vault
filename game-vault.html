@@ -3390,6 +3390,10 @@ async function saveList(name, items) {
       tags: Array.isArray(it.tags) ? it.tags.slice() : []
     };
     if (typeof it.year === 'number') o.year = it.year;
+    if (typeof it.month === 'number' && typeof it.day === 'number') {
+      o.month = it.month;
+      o.day = it.day;
+    }
     if (it.playtime) {
       const h = Number(it.playtime.hours) || 0;
       const m = Number(it.playtime.minutes) || 0;
@@ -10298,6 +10302,10 @@ $('#export-json').addEventListener('click', () => {
   const exportItem = (it) => {
     const o = { name: it.name, dateAdded: it.dateAdded, tags: Array.isArray(it.tags) ? it.tags.slice() : [] };
     if (typeof it.year === 'number') o.year = it.year;
+    if (typeof it.month === 'number' && typeof it.day === 'number') {
+      o.month = it.month;
+      o.day = it.day;
+    }
     if (it.playtime) {
       const h = Number(it.playtime.hours) || 0;
       const m = Number(it.playtime.minutes) || 0;
@@ -11383,6 +11391,12 @@ async function init() {
       rebuildIndexes();
     }
     Profiler.record('indexBuild', performance.now() - _tIdx, { n: totalItems });
+
+    // Backfill month/day for Played items whose dateAdded encodes a parsed
+    // date but whose month/day was stripped by an older save. Idempotent —
+    // skips items that already have both fields, so it's a no-op after the
+    // first run. Silent on startup (the toast lives in the Settings button).
+    try { await migrateMonthDay(); } catch (e) { console.warn('migrateMonthDay (startup) failed:', e); }
 
     const dt = (performance.now() - t0).toFixed(0);
     $('#vault-status').textContent = 'ready · ' + state.vault.length + ' items · loaded in ' + dt + 'ms · storage: ' + Storage.label;
