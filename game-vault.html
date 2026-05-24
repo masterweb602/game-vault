@@ -2255,6 +2255,12 @@ body {
     </div>
   </div>
 
+  <div class="analytics-db-section" id="played-activity-section" style="margin-top: 24px;">
+    <h3 class="analytics-card-title" style="font-size: 16px; margin-bottom: 8px;">Played activity — প্রতি বছর কতগুলো শেষ করেছ</h3>
+    <p class="section-desc" style="margin-bottom: 16px;">প্রতি বছরে কতগুলো games Played-এ যোগ হয়েছে। একটা বছরে ক্লিক করো → সেই বছরের মাস-ভিত্তিক breakdown।</p>
+    <div class="analytics-grid" id="played-activity-grid"></div>
+  </div>
+
   <div class="analytics-db-section" id="db-year-section" style="margin-top: 24px;">
     <h3 class="analytics-card-title" style="font-size: 16px; margin-bottom: 8px;">প্রতি database — release year অনুযায়ী</h3>
     <p class="section-desc" style="margin-bottom: 16px;">প্রতিটা list-এ কোন release year-এর কত games আর কত playtime। Played list-এ থাকা games তাদের source DB থেকে বাদ।</p>
@@ -3572,6 +3578,42 @@ function groupItemsByYearAdded(items) {
   return out;
 }
 
+// Pure: count Played items per item.year (year played). Items without a
+// finite item.year are skipped. Returns [{year, count}] sorted ascending.
+function groupPlayedByYear(items) {
+  if (!Array.isArray(items)) return [];
+  const counts = new Map();
+  for (const it of items) {
+    if (!it) continue;
+    const y = Number(it.year);
+    if (!Number.isFinite(y)) continue;
+    counts.set(y, (counts.get(y) || 0) + 1);
+  }
+  const out = [];
+  for (const [year, count] of counts) out.push({ year, count });
+  out.sort((a, b) => a.year - b.year);
+  return out;
+}
+
+// Pure: within one year, bucket Played items by item.month (1–12). Always
+// returns all 12 months (count 0 when empty). Items of that year with no
+// valid integer month 1–12 go to `unknown` — never forced into a month.
+// Items of other years are ignored. Returns { months:[{month,count}]×12, unknown }.
+function groupPlayedByMonth(items, year) {
+  const y = Number(year);
+  const months = [];
+  for (let m = 1; m <= 12; m++) months.push({ month: m, count: 0 });
+  let unknown = 0;
+  if (!Array.isArray(items) || !Number.isFinite(y)) return { months, unknown };
+  for (const it of items) {
+    if (!it || Number(it.year) !== y) continue;
+    const m = Number(it.month);
+    if (Number.isInteger(m) && m >= 1 && m <= 12) months[m - 1].count++;
+    else unknown++;
+  }
+  return { months, unknown };
+}
+
 // Pure helper: group items by item.year (release year), summing count
 // and playtime hours per year. Items without finite item.year are
 // skipped. Returns [{year, count, hours}, ...] sorted ascending.
@@ -4833,6 +4875,7 @@ const state = {
   vIndex: null,
   pIndex: null,
   currentTab: 'vault',
+  playedDrill: null,             // Played activity chart: null = year view, number = drilled-into year
   vaultFilter: '',
   playedFilter: '',
   vaultSort: 'recent',
@@ -5581,6 +5624,7 @@ function updateStats() {
   if (state.loaded) refreshTagState();
   if (state.loaded && state.currentTab === 'analytics' && typeof renderDbYearCharts === 'function') {
     renderDbYearCharts();
+    if (typeof renderPlayedActivityChart === 'function') renderPlayedActivityChart();
     if (typeof renderBacklogForecast === 'function') renderBacklogForecast();
     if (typeof renderDecadeChart === 'function') renderDecadeChart();
   }
@@ -7800,6 +7844,257 @@ function renderDbYearCharts() {
   }
 }
 
+// ── Phase 19 step 2: Played activity chart with year → month drill-down ──────
+// Dedicated chart (separate from the per-DB backlog grid). Year view = per-year
+// Played count; click a year → that year's month breakdown. state.playedDrill:
+// null = year view, number = drilled-into year. Pure helpers (tested):
+// groupPlayedByYear / groupPlayedByMonth.
+function renderPlayedActivityChart() {
+  const grid = document.getElementById('played-activity-grid');
+  if (!grid) return;
+
+  if (!state.charts) state.charts = {};
+  if (state.charts.playedActivity) {
+    try { state.charts.playedActivity.destroy(); } catch (_) {}
+    state.charts.playedActivity = null;
+  }
+  grid.innerHTML = '';
+
+  // Shared finance-style helpers (same look as the per-DB charts).
+  const _crosshair = {
+    id: 'paCrosshair',
+    afterDatasetsDraw(chart) {
+      const active = chart.tooltip && chart.tooltip._active;
+      if (!active || !active.length) return;
+      const x = active[0].element.x;
+      const { top, bottom } = chart.chartArea;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(245,166,35,0.35)';
+      ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
+      ctx.restore();
+    }
+  };
+  const _gradient = (ctx, area, hex) => {
+    if (!area) return hex + '22';
+    const g = ctx.createLinearGradient(0, area.top, 0, area.bottom);
+    g.addColorStop(0, hex + '55'); g.addColorStop(1, hex + '00');
+    return g;
+  };
+  const _valueLabel = (color) => ({
+    anchor: 'end', align: 'top', offset: 6, color,
+    font: { size: 10, weight: 'bold' },
+    backgroundColor: 'rgba(20,20,20,0.78)', borderRadius: 4,
+    padding: { top: 2, bottom: 2, left: 4, right: 4 },
+    formatter: (v) => { const n = (v && typeof v === 'object') ? v.y : v; return n > 0 ? n : ''; },
+    clamp: true, clip: false
+  });
+  const _zoomCfg = (xMin, xMax) => {
+    if (typeof Chart === 'undefined' || !Chart.registry || !Chart.registry.plugins.get('zoom')) return {};
+    return {
+      zoom: {
+        pan:  { enabled: true, mode: 'x', modifierKey: 'shift' },
+        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+        limits: { x: { minRange: 2, min: xMin, max: xMax } }
+      }
+    };
+  };
+
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#f5a623';
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const drill = state.playedDrill;
+
+  const card = document.createElement('div');
+  card.className = 'analytics-card';
+
+  // Back button (month view only).
+  if (drill !== null) {
+    const back = document.createElement('button');
+    back.type = 'button'; back.className = 'btn btn-sm';
+    back.textContent = '← back to years';
+    back.style.cssText = 'margin-bottom:10px;';
+    back.addEventListener('click', () => { state.playedDrill = null; renderPlayedActivityChart(); });
+    card.appendChild(back);
+  }
+
+  const h = document.createElement('h3'); h.className = 'analytics-card-title';
+  const subEl = document.createElement('p'); subEl.className = 'analytics-card-sub';
+
+  let points, xCallback, tipTitle, ranges, xZoomMin, xZoomMax, spacing, onPointClick, summaryText, unknownNote;
+
+  if (drill === null) {
+    const buckets = groupPlayedByYear(state.played);
+    h.textContent = 'Played activity — প্রতি বছর';
+    subEl.textContent = 'প্রতি বছরে কতগুলো games Played-এ যোগ হয়েছে · একটা বছরে ক্লিক করো → মাস breakdown';
+    card.appendChild(h); card.appendChild(subEl);
+
+    if (buckets.length === 0 || typeof window.Chart !== 'function') {
+      const empty = document.createElement('div');
+      empty.className = 'analytics-empty';
+      empty.textContent = (typeof window.Chart !== 'function')
+        ? 'Chart library load হয়নি — internet check করো।'
+        : 'এখনো কোনো Played game-এ year নেই।';
+      card.appendChild(empty); grid.appendChild(card);
+      return;
+    }
+
+    points = buckets.map(b => ({ x: b.year, y: b.count }));
+    xCallback = (v) => Math.round(v);
+    tipTitle = (ctx) => 'বছর ' + ctx[0].parsed.x;
+    const minYear = buckets[0].year, maxYear = buckets[buckets.length - 1].year;
+    xZoomMin = minYear - 25; xZoomMax = maxYear + 25;
+    spacing = buckets.length;
+    ranges = [{ label: '5Y', n: 5 }, { label: '10Y', n: 10 }, { label: 'All', n: null }];
+    onPointClick = (i) => { state.playedDrill = buckets[i].year; renderPlayedActivityChart(); };
+
+    const total = buckets.reduce((s, b) => s + b.count, 0);
+    let peak = buckets[0];
+    for (const b of buckets) if (b.count >= peak.count) peak = b;
+    summaryText = 'মোট ' + total + ' games · ' + buckets.length + ' বছর · peak ' + peak.year + ' (' + peak.count + ')';
+    unknownNote = '';
+  } else {
+    const { months, unknown } = groupPlayedByMonth(state.played, drill);
+    h.textContent = 'Played activity — ' + drill + ' সালের মাস breakdown';
+    subEl.textContent = drill + ' সালে কোন মাসে কতগুলো games শেষ করেছ';
+    card.appendChild(h); card.appendChild(subEl);
+
+    points = months.map(m => ({ x: m.month, y: m.count }));
+    xCallback = (v) => MONTHS[Math.round(v) - 1] || '';
+    tipTitle = (ctx) => (MONTHS[Math.round(ctx[0].parsed.x) - 1] || '') + ' ' + drill;
+    xZoomMin = 0.5; xZoomMax = 12.5;
+    spacing = 12;
+    ranges = [{ label: '6M', n: 6 }, { label: 'All', n: null }];
+    onPointClick = null;
+
+    const total = months.reduce((s, m) => s + m.count, 0);
+    let peak = months[0];
+    for (const m of months) if (m.count >= peak.count) peak = m;
+    summaryText = 'মোট ' + total + ' games · peak ' + MONTHS[peak.month - 1] + ' (' + peak.count + ')'
+      + (unknown ? ' · ' + unknown + ' মাস ছাড়া' : '');
+    unknownNote = unknown ? unknown + ' টা game-এর মাস জানা নেই — কোনো মাসে ধরা হয়নি।' : '';
+  }
+
+  const summary = document.createElement('p');
+  summary.className = 'analytics-card-summary';
+  summary.textContent = summaryText;
+  card.appendChild(summary);
+
+  // range / reset-zoom toolbar
+  const toolbar = document.createElement('div');
+  toolbar.className = 'analytics-chart-toolbar';
+  toolbar.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 4px;font-size:11px;';
+  const mkBtn = (label) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = label;
+    b.style.cssText = 'background:#1c1c22;color:#f0ece4;border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:3px 9px;cursor:pointer;font-size:11px;';
+    return b;
+  };
+  const rangeBtns = ranges.map(r => { const b = mkBtn(r.label); b._n = r.n; return b; });
+  const btnRst = mkBtn('Reset zoom');
+  rangeBtns.forEach(b => toolbar.appendChild(b));
+  toolbar.appendChild(btnRst);
+  card.appendChild(toolbar);
+
+  // canvas wrap (drag-to-scroll, same as per-DB)
+  const wrap = document.createElement('div'); wrap.className = 'analytics-canvas-wrap';
+  const inner = document.createElement('div'); inner.className = 'db-chart-scroll-inner';
+  const canvas = document.createElement('canvas');
+  inner.appendChild(canvas); wrap.appendChild(inner); card.appendChild(wrap);
+  grid.appendChild(card);
+
+  wrap.addEventListener('mousedown', (e) => {
+    const dragStartX = e.pageX, dragStartScroll = wrap.scrollLeft;
+    let isDragging = false;
+    const onMove = (ev) => {
+      const dx = ev.pageX - dragStartX;
+      if (!isDragging && Math.abs(dx) > 3) { isDragging = true; wrap.classList.add('is-dragging'); }
+      if (isDragging) { wrap.scrollLeft = dragStartScroll - dx; ev.preventDefault(); }
+    };
+    const onUp = () => {
+      wrap.classList.remove('is-dragging');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+
+  if (unknownNote) {
+    const note = document.createElement('p');
+    note.className = 'analytics-scroll-hint';
+    note.textContent = unknownNote;
+    card.appendChild(note);
+  }
+
+  const containerWidth = wrap.clientWidth || 600;
+  inner.style.width = Math.max(containerWidth, spacing * 85) + 'px';
+
+  const chart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { datasets: [{
+      label: 'Played', data: points,
+      borderColor: accent,
+      backgroundColor: (c) => _gradient(c.chart.ctx, c.chart.chartArea, accent),
+      fill: true, tension: 0.35, borderWidth: 1.6,
+      pointRadius: 3, pointHoverRadius: 6, pointHoverBorderWidth: 2,
+      pointHoverBackgroundColor: accent, pointHoverBorderColor: '#fff',
+      datalabels: _valueLabel(accent)
+    }] },
+    plugins: [ ...((typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : []), _crosshair ],
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 28, bottom: 28, left: 8, right: 8 } },
+      interaction: { mode: 'index', intersect: false, axis: 'x' },
+      hover: { mode: 'index', intersect: false, axis: 'x' },
+      onClick: (evt, els) => { if (onPointClick && els && els.length) onPointClick(els[0].index); },
+      onHover: (evt, els) => { canvas.style.cursor = (onPointClick && els && els.length) ? 'pointer' : ''; },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          mode: 'index', intersect: false,
+          backgroundColor: 'rgba(15,15,18,0.95)', borderColor: 'rgba(255,255,255,0.08)',
+          borderWidth: 1, padding: 10, titleColor: '#f0ece4', bodyColor: '#f0ece4',
+          callbacks: { title: tipTitle, label: (ctx) => '  ' + ctx.parsed.y + ' games' }
+        },
+        ..._zoomCfg(xZoomMin, xZoomMax)
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          min: drill === null ? undefined : 0.5,
+          max: drill === null ? undefined : 12.5,
+          ticks: { color: '#76716a', stepSize: 1, callback: xCallback },
+          grid: { color: 'rgba(255,255,255,0.04)' }
+        },
+        y: {
+          type: 'linear', beginAtZero: true,
+          ticks: { color: '#76716a', precision: 0 },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          title: { display: true, text: 'games', color: '#76716a' }
+        }
+      }
+    }
+  });
+  state.charts.playedActivity = chart;
+
+  const applyRange = (n) => {
+    if (n === null || n >= spacing) {
+      chart.options.scales.x.min = drill === null ? undefined : 0.5;
+      chart.options.scales.x.max = drill === null ? undefined : 12.5;
+    } else {
+      const lastX = points[points.length - 1].x;
+      const startX = points[Math.max(0, points.length - n)].x;
+      chart.options.scales.x.min = startX - 0.5;
+      chart.options.scales.x.max = lastX + 0.5;
+    }
+    if (typeof chart.resetZoom === 'function') chart.resetZoom();
+    chart.update();
+  };
+  rangeBtns.forEach(b => b.addEventListener('click', () => applyRange(b._n)));
+  btnRst.addEventListener('click', () => { if (typeof chart.resetZoom === 'function') chart.resetZoom(); });
+}
+
 // ── Phase 16: backlog completion forecast ──────────────────────────────────
 // Pure helpers (also covered by tests in game-vault.test.js).
 // computeBacklogDays(totalHours, perDay) → whole days needed (ceil).
@@ -8498,6 +8793,7 @@ function switchTab(name) {
     renderBurndownChart(); renderScenarios(); renderScenarioExplorer();
     renderDecadeChart(); renderInsights();
     renderDbYearCharts();
+    renderPlayedActivityChart();
     renderBacklogForecast();
   }
   if (name === 'notes') refreshNotesStatus();
@@ -8514,6 +8810,7 @@ if (_analyticsRefreshBtn) {
     renderBurndownChart(); renderScenarios(); renderScenarioExplorer();
     renderDecadeChart(); renderInsights();
     renderDbYearCharts();
+    renderPlayedActivityChart();
     renderBacklogForecast();
   });
 }

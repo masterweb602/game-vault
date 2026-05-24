@@ -3435,6 +3435,85 @@ describe('groupByReleaseYear (Phase 9C)', () => {
   });
 });
 
+// ── Phase 19 step 2: Played activity drill-down helpers (verbatim from source) ──
+function groupPlayedByYear(items) {
+  if (!Array.isArray(items)) return [];
+  const counts = new Map();
+  for (const it of items) {
+    if (!it) continue;
+    const y = Number(it.year);
+    if (!Number.isFinite(y)) continue;
+    counts.set(y, (counts.get(y) || 0) + 1);
+  }
+  const out = [];
+  for (const [year, count] of counts) out.push({ year, count });
+  out.sort((a, b) => a.year - b.year);
+  return out;
+}
+
+function groupPlayedByMonth(items, year) {
+  const y = Number(year);
+  const months = [];
+  for (let m = 1; m <= 12; m++) months.push({ month: m, count: 0 });
+  let unknown = 0;
+  if (!Array.isArray(items) || !Number.isFinite(y)) return { months, unknown };
+  for (const it of items) {
+    if (!it || Number(it.year) !== y) continue;
+    const m = Number(it.month);
+    if (Number.isInteger(m) && m >= 1 && m <= 12) months[m - 1].count++;
+    else unknown++;
+  }
+  return { months, unknown };
+}
+
+describe('groupPlayedByYear / groupPlayedByMonth (Phase 19 step 2)', () => {
+  test('groupPlayedByYear counts per item.year, sorted ascending, skips no/invalid year', () => {
+    const items = [
+      { name: 'A', year: 2022 },
+      { name: 'B', year: 2020 },
+      { name: 'C', year: 2022 },
+      { name: 'D' },               // no year → skipped
+      { name: 'E', year: 'x' }     // non-finite → skipped
+    ];
+    expect(groupPlayedByYear(items)).toEqual([
+      { year: 2020, count: 1 },
+      { year: 2022, count: 2 }
+    ]);
+    expect(groupPlayedByYear([])).toEqual([]);
+    expect(groupPlayedByYear(null)).toEqual([]);
+  });
+
+  test('groupPlayedByMonth buckets the target year into all 12 months, ignoring other years', () => {
+    const items = [
+      { name: 'A', year: 2023, month: 1,  day: 5 },
+      { name: 'B', year: 2023, month: 1,  day: 9 },
+      { name: 'C', year: 2023, month: 12, day: 2 },
+      { name: 'D', year: 2022, month: 1,  day: 1 }   // other year → ignored
+    ];
+    const { months, unknown } = groupPlayedByMonth(items, 2023);
+    expect(months).toHaveLength(12);
+    expect(months[0]).toEqual({ month: 1, count: 2 });
+    expect(months[11]).toEqual({ month: 12, count: 1 });
+    expect(months[5]).toEqual({ month: 6, count: 0 });  // empty month stays 0
+    expect(unknown).toBe(0);
+  });
+
+  test('groupPlayedByMonth routes missing/invalid months to unknown, never into a month', () => {
+    const items = [
+      { name: 'A', year: 2023, month: 3, day: 4 },
+      { name: 'B', year: 2023 },             // no month → unknown
+      { name: 'C', year: 2023, month: 0 },   // invalid → unknown
+      { name: 'D', year: 2023, month: 13 }   // out of range → unknown
+    ];
+    const { months, unknown } = groupPlayedByMonth(items, 2023);
+    expect(unknown).toBe(3);
+    expect(months[2]).toEqual({ month: 3, count: 1 });
+    expect(months.reduce((s, m) => s + m.count, 0)).toBe(1);
+    // invalid year arg → all-zero months, unknown 0
+    expect(groupPlayedByMonth(items, 'nope').unknown).toBe(0);
+  });
+});
+
 describe('bulkAdd keepDupes (Phase 11)', () => {
   beforeEach(() => {
     _idCounter = 0;
