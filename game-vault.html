@@ -1595,6 +1595,22 @@ body {
   }
   .bnav-sheet-item:last-child { border-bottom: none; }
   .bnav-sheet-item.active { color: var(--accent); }
+  .bnav-sheet-item.danger { color: var(--danger); }
+
+  /* Phone mode step 2 — touch-friendly rows */
+  .row { cursor: pointer; }
+  .row:active { background: var(--bg-soft); }
+  .row .actions { display: none; }   /* replaced by tap → action sheet on mobile */
+
+  .row-sheet-title {
+    font-weight: 600;
+    font-size: 17px;
+    padding: 2px 8px 12px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    word-break: break-word;
+  }
 }
 
 /* ─── Serial-jump flash ──────────────────────────────────── */
@@ -1686,6 +1702,13 @@ body {
   <div class="bnav-sheet" role="dialog" aria-label="আরো ট্যাব">
     <div class="bnav-sheet-handle"></div>
     <div class="bnav-sheet-list" id="bnav-sheet-list"></div>
+  </div>
+</div>
+<div class="bnav-sheet-overlay" id="row-sheet-overlay" hidden>
+  <div class="bnav-sheet" role="dialog" aria-label="Game actions">
+    <div class="bnav-sheet-handle"></div>
+    <div class="row-sheet-title" id="row-sheet-title"></div>
+    <div class="bnav-sheet-list" id="row-sheet-actions"></div>
   </div>
 </div>
 
@@ -5333,6 +5356,14 @@ function makeRow(item, idx, source) {
     onClick: () => deleteItem(item, source)
   }, '×'));
   row.appendChild(actions);
+
+  // Mobile: tap row → action sheet (desktop keeps inline hover actions)
+  row.addEventListener('click', (e) => {
+    if (!matchMedia('(max-width: 768px)').matches) return;
+    if (source === 'vault' && state.bulkMode) return;
+    if (e.target.closest('.tag-chip, .bulk-checkbox')) return;
+    openRowSheet(item, source);
+  });
   return row;
 }
 
@@ -9032,6 +9063,36 @@ $$('#bottom-nav .bnav-btn').forEach(b => {
 const _bnavOverlay = document.getElementById('bnav-sheet-overlay');
 if (_bnavOverlay) {
   _bnavOverlay.addEventListener('click', (e) => { if (e.target === _bnavOverlay) closeBnavSheet(); });
+}
+
+/* ─── Row action sheet (Phone mode step 2) ─── */
+function openRowSheet(item, source) {
+  const titleEl = document.getElementById('row-sheet-title');
+  const listEl = document.getElementById('row-sheet-actions');
+  const ov = document.getElementById('row-sheet-overlay');
+  if (!titleEl || !listEl || !ov) return;
+  const yr = resolveItemYear(item);
+  titleEl.textContent = stripDisplayMetadata(item.name) + (yr !== null ? ' [' + yr + ']' : '');
+  listEl.innerHTML = '';
+  const mkBtn = (label, fn, danger) => {
+    listEl.appendChild(el('button', {
+      class: 'bnav-sheet-item' + (danger ? ' danger' : ''),
+      onClick: () => { closeRowSheet(); fn(); }
+    }, label));
+  };
+  if (source === 'vault') mkBtn('✓  Mark as played', () => moveToPlayed(item));
+  else mkBtn('↶  Move to vault', () => moveToVault(item));
+  mkBtn('✏️  Edit', () => editItem(item, source));
+  mkBtn('🗑️  Delete', () => deleteItem(item, source), true);
+  ov.hidden = false;
+}
+function closeRowSheet() {
+  const ov = document.getElementById('row-sheet-overlay');
+  if (ov) ov.hidden = true;
+}
+const _rowSheetOverlay = document.getElementById('row-sheet-overlay');
+if (_rowSheetOverlay) {
+  _rowSheetOverlay.addEventListener('click', (e) => { if (e.target === _rowSheetOverlay) closeRowSheet(); });
 }
 
 const _analyticsRefreshBtn = document.getElementById('analytics-refresh');
