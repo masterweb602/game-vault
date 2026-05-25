@@ -3514,6 +3514,58 @@ describe('groupPlayedByYear / groupPlayedByMonth (Phase 19 step 2)', () => {
   });
 });
 
+// ── Phase 19 step 3: Played day drill-down helper (verbatim from source) ──
+function groupPlayedByDay(items, year, month) {
+  const y = Number(year), m = Number(month);
+  if (!Array.isArray(items) || !Number.isFinite(y) || !Number.isInteger(m) || m < 1 || m > 12) {
+    return { days: [], unknown: 0 };
+  }
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const days = [];
+  for (let d = 1; d <= daysInMonth; d++) days.push({ day: d, count: 0 });
+  let unknown = 0;
+  for (const it of items) {
+    if (!it || Number(it.year) !== y || Number(it.month) !== m) continue;
+    const d = Number(it.day);
+    if (Number.isInteger(d) && d >= 1 && d <= daysInMonth) days[d - 1].count++;
+    else unknown++;
+  }
+  return { days, unknown };
+}
+
+describe('groupPlayedByDay (Phase 19 step 3)', () => {
+  test('buckets target year+month into a perfect calendar, leap-year aware, ignoring others', () => {
+    const items = [
+      { name: 'A', year: 2024, month: 2, day: 1 },
+      { name: 'B', year: 2024, month: 2, day: 1 },
+      { name: 'C', year: 2024, month: 2, day: 29 },  // valid — 2024 is a leap year
+      { name: 'D', year: 2024, month: 3, day: 1 },   // other month → ignored
+      { name: 'E', year: 2023, month: 2, day: 1 }    // other year → ignored
+    ];
+    const { days, unknown } = groupPlayedByDay(items, 2024, 2);
+    expect(days).toHaveLength(29);                    // Feb 2024 has 29 days
+    expect(days[0]).toEqual({ day: 1, count: 2 });
+    expect(days[28]).toEqual({ day: 29, count: 1 });
+    expect(days[14]).toEqual({ day: 15, count: 0 });  // empty day stays 0
+    expect(unknown).toBe(0);
+  });
+
+  test('out-of-range / missing days go to unknown; non-leap Feb has 28 days; bad args → empty', () => {
+    const items = [
+      { name: 'A', year: 2023, month: 2, day: 10 },
+      { name: 'B', year: 2023, month: 2, day: 29 },  // 2023 Feb has 28 days → unknown
+      { name: 'C', year: 2023, month: 2 },           // no day → unknown
+      { name: 'D', year: 2023, month: 2, day: 0 }    // invalid → unknown
+    ];
+    const { days, unknown } = groupPlayedByDay(items, 2023, 2);
+    expect(days).toHaveLength(28);
+    expect(days[9]).toEqual({ day: 10, count: 1 });
+    expect(unknown).toBe(3);
+    expect(groupPlayedByDay(items, 2023, 13)).toEqual({ days: [], unknown: 0 });
+    expect(groupPlayedByDay(items, 'nope', 2)).toEqual({ days: [], unknown: 0 });
+  });
+});
+
 describe('bulkAdd keepDupes (Phase 11)', () => {
   beforeEach(() => {
     _idCounter = 0;

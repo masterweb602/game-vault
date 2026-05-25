@@ -3618,6 +3618,30 @@ function groupPlayedByMonth(items, year) {
   return { months, unknown };
 }
 
+// Pure: within one year+month, bucket Played items by item.day. Returns all
+// real days of that month (count 0 when empty) using a perfect calendar via
+// new Date(year, month, 0).getDate() (handles leap years / 30 vs 31). Items of
+// that year+month with no valid integer day in range go to `unknown`. Items of
+// any other year or month are ignored. Returns { days:[{day,count}], unknown }.
+// Invalid args (bad year, or month not 1–12) → { days:[], unknown:0 }.
+function groupPlayedByDay(items, year, month) {
+  const y = Number(year), m = Number(month);
+  if (!Array.isArray(items) || !Number.isFinite(y) || !Number.isInteger(m) || m < 1 || m > 12) {
+    return { days: [], unknown: 0 };
+  }
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const days = [];
+  for (let d = 1; d <= daysInMonth; d++) days.push({ day: d, count: 0 });
+  let unknown = 0;
+  for (const it of items) {
+    if (!it || Number(it.year) !== y || Number(it.month) !== m) continue;
+    const d = Number(it.day);
+    if (Number.isInteger(d) && d >= 1 && d <= daysInMonth) days[d - 1].count++;
+    else unknown++;
+  }
+  return { days, unknown };
+}
+
 // Pure helper: group items by item.year (release year), summing count
 // and playtime hours per year. Items without finite item.year are
 // skipped. Returns [{year, count, hours}, ...] sorted ascending.
@@ -4879,7 +4903,7 @@ const state = {
   vIndex: null,
   pIndex: null,
   currentTab: 'vault',
-  playedDrill: null,             // Played activity chart: null = year view, number = drilled-into year
+  playedDrill: null,             // Played activity chart drill: null = year view, {year} = month view, {year,month} = day view
   vaultFilter: '',
   playedFilter: '',
   vaultSort: 'recent',
@@ -7848,11 +7872,12 @@ function renderDbYearCharts() {
   }
 }
 
-// ── Phase 19 step 2: Played activity chart with year → month drill-down ──────
+// ── Phase 19 step 3: Played activity chart with year → month → day drill-down ─
 // Dedicated chart (separate from the per-DB backlog grid). Year view = per-year
-// Played count; click a year → that year's month breakdown. state.playedDrill:
-// null = year view, number = drilled-into year. Pure helpers (tested):
-// groupPlayedByYear / groupPlayedByMonth.
+// Played count; click a year → that year's month breakdown; click a month →
+// that month's day breakdown. state.playedDrill: null = year view, {year} =
+// month view, {year,month} = day view. Pure helpers (tested):
+// groupPlayedByYear / groupPlayedByMonth / groupPlayedByDay.
 function renderPlayedActivityChart() {
   const grid = document.getElementById('played-activity-grid');
   if (!grid) return;
@@ -7912,20 +7937,25 @@ function renderPlayedActivityChart() {
   const card = document.createElement('div');
   card.className = 'analytics-card';
 
-  // Back button (month view only).
+  // Back button (month view → years; day view → that month).
   if (drill !== null) {
     const back = document.createElement('button');
     back.type = 'button'; back.className = 'btn btn-sm';
-    back.textContent = '← back to years';
     back.style.cssText = 'margin-bottom:10px;';
-    back.addEventListener('click', () => { state.playedDrill = null; renderPlayedActivityChart(); });
+    if (drill.month != null) {
+      back.textContent = '← back to ' + (MONTHS[drill.month - 1] || '') + ' ' + drill.year;
+      back.addEventListener('click', () => { state.playedDrill = { year: drill.year }; renderPlayedActivityChart(); });
+    } else {
+      back.textContent = '← back to years';
+      back.addEventListener('click', () => { state.playedDrill = null; renderPlayedActivityChart(); });
+    }
     card.appendChild(back);
   }
 
   const h = document.createElement('h3'); h.className = 'analytics-card-title';
   const subEl = document.createElement('p'); subEl.className = 'analytics-card-sub';
 
-  let points, xCallback, tipTitle, ranges, xZoomMin, xZoomMax, spacing, onPointClick, summaryText, unknownNote;
+  let points, xCallback, tipTitle, ranges, xZoomMin, xZoomMax, spacing, onPointClick, summaryText, unknownNote, xScaleMin, xScaleMax;
 
   if (drill === null) {
     const buckets = groupPlayedByYear(state.played);
@@ -7948,28 +7978,30 @@ function renderPlayedActivityChart() {
     tipTitle = (ctx) => 'বছর ' + ctx[0].parsed.x;
     const minYear = buckets[0].year, maxYear = buckets[buckets.length - 1].year;
     xZoomMin = minYear - 25; xZoomMax = maxYear + 25;
+    xScaleMin = undefined; xScaleMax = undefined;
     spacing = buckets.length;
     ranges = [{ label: '5Y', n: 5 }, { label: '10Y', n: 10 }, { label: 'All', n: null }];
-    onPointClick = (i) => { state.playedDrill = buckets[i].year; renderPlayedActivityChart(); };
+    onPointClick = (i) => { state.playedDrill = { year: buckets[i].year }; renderPlayedActivityChart(); };
 
     const total = buckets.reduce((s, b) => s + b.count, 0);
     let peak = buckets[0];
     for (const b of buckets) if (b.count >= peak.count) peak = b;
     summaryText = 'মোট ' + total + ' games · ' + buckets.length + ' বছর · peak ' + peak.year + ' (' + peak.count + ')';
     unknownNote = '';
-  } else {
-    const { months, unknown } = groupPlayedByMonth(state.played, drill);
-    h.textContent = 'Played activity — ' + drill + ' সালের মাস breakdown';
-    subEl.textContent = drill + ' সালে কোন মাসে কতগুলো games শেষ করেছ';
+  } else if (drill.month == null) {
+    const { months, unknown } = groupPlayedByMonth(state.played, drill.year);
+    h.textContent = 'Played activity — ' + drill.year + ' সালের মাস breakdown';
+    subEl.textContent = drill.year + ' সালে কোন মাসে কতগুলো games শেষ করেছ · একটা মাসে ক্লিক করো → দিন breakdown';
     card.appendChild(h); card.appendChild(subEl);
 
     points = months.map(m => ({ x: m.month, y: m.count }));
     xCallback = (v) => MONTHS[Math.round(v) - 1] || '';
-    tipTitle = (ctx) => (MONTHS[Math.round(ctx[0].parsed.x) - 1] || '') + ' ' + drill;
+    tipTitle = (ctx) => (MONTHS[Math.round(ctx[0].parsed.x) - 1] || '') + ' ' + drill.year;
     xZoomMin = 0.5; xZoomMax = 12.5;
+    xScaleMin = 0.5; xScaleMax = 12.5;
     spacing = 12;
     ranges = [{ label: '6M', n: 6 }, { label: 'All', n: null }];
-    onPointClick = null;
+    onPointClick = (i) => { state.playedDrill = { year: drill.year, month: months[i].month }; renderPlayedActivityChart(); };
 
     const total = months.reduce((s, m) => s + m.count, 0);
     let peak = months[0];
@@ -7977,6 +8009,30 @@ function renderPlayedActivityChart() {
     summaryText = 'মোট ' + total + ' games · peak ' + MONTHS[peak.month - 1] + ' (' + peak.count + ')'
       + (unknown ? ' · ' + unknown + ' মাস ছাড়া' : '');
     unknownNote = unknown ? unknown + ' টা game-এর মাস জানা নেই — কোনো মাসে ধরা হয়নি।' : '';
+  } else {
+    const yr = drill.year, mo = drill.month;
+    const monthName = MONTHS[mo - 1] || '';
+    const { days, unknown } = groupPlayedByDay(state.played, yr, mo);
+    const daysInMonth = days.length;
+    h.textContent = 'Played activity — ' + monthName + ' ' + yr + ' এর দিন breakdown';
+    subEl.textContent = monthName + ' ' + yr + ' এ কোন দিনে কতগুলো games শেষ করেছ';
+    card.appendChild(h); card.appendChild(subEl);
+
+    points = days.map(d => ({ x: d.day, y: d.count }));
+    xCallback = (v) => { const n = Math.round(v); return (n >= 1 && n <= daysInMonth) ? n : ''; };
+    tipTitle = (ctx) => monthName + ' ' + Math.round(ctx[0].parsed.x) + ', ' + yr;
+    xZoomMin = 0.5; xZoomMax = daysInMonth + 0.5;
+    xScaleMin = 0.5; xScaleMax = daysInMonth + 0.5;
+    spacing = daysInMonth;
+    ranges = [{ label: '7D', n: 7 }, { label: '14D', n: 14 }, { label: 'All', n: null }];
+    onPointClick = null;
+
+    const total = days.reduce((s, d) => s + d.count, 0);
+    let peak = days[0] || { day: 0, count: 0 };
+    for (const d of days) if (d.count >= peak.count) peak = d;
+    summaryText = 'মোট ' + total + ' games · peak ' + monthName + ' ' + peak.day + ' (' + peak.count + ')'
+      + (unknown ? ' · ' + unknown + ' দিন ছাড়া' : '');
+    unknownNote = unknown ? unknown + ' টা game-এর দিন জানা নেই — কোনো দিনে ধরা হয়নি।' : '';
   }
 
   const summary = document.createElement('p');
@@ -8066,8 +8122,8 @@ function renderPlayedActivityChart() {
       scales: {
         x: {
           type: 'linear',
-          min: drill === null ? undefined : 0.5,
-          max: drill === null ? undefined : 12.5,
+          min: xScaleMin,
+          max: xScaleMax,
           ticks: { color: '#76716a', stepSize: 1, callback: xCallback },
           grid: { color: 'rgba(255,255,255,0.04)' }
         },
@@ -8084,8 +8140,8 @@ function renderPlayedActivityChart() {
 
   const applyRange = (n) => {
     if (n === null || n >= spacing) {
-      chart.options.scales.x.min = drill === null ? undefined : 0.5;
-      chart.options.scales.x.max = drill === null ? undefined : 12.5;
+      chart.options.scales.x.min = xScaleMin;
+      chart.options.scales.x.max = xScaleMax;
     } else {
       const lastX = points[points.length - 1].x;
       const startX = points[Math.max(0, points.length - n)].x;
