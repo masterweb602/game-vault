@@ -1509,6 +1509,94 @@ body {
   .app { max-width: 1400px; }
 }
 
+/* ─── Mobile bottom navigation (Phone mode step 1) ─────────── */
+.bnav { display: none; }
+.bnav-sheet-overlay { display: none; }
+.bnav-sheet-overlay[hidden] { display: none; }
+
+@media (max-width: 768px) {
+  /* hide desktop tab bar, switch to bottom nav */
+  .tabs { display: none; }
+
+  /* larger touch-friendly rows on mobile */
+  :root { --row-h: 60px; }
+  .row { height: 60px; }
+  .row .name { font-size: 15px; }
+
+  /* keep content clear of the fixed bottom nav */
+  .app { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+
+  .bnav {
+    display: flex;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 40;
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.35);
+  }
+  .bnav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 60px;
+    min-width: 44px;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-family: var(--body);
+    cursor: pointer;
+    transition: color 0.15s;
+  }
+  .bnav-btn .bnav-ico { font-size: 20px; line-height: 1; }
+  .bnav-btn .bnav-label { font-size: 11px; }
+  .bnav-btn.active { color: var(--accent); }
+
+  /* bottom sheet for remaining tabs */
+  .bnav-sheet-overlay {
+    display: flex;
+    position: fixed; inset: 0;
+    z-index: 45;
+    background: rgba(0,0,0,0.6);
+    align-items: flex-end;
+  }
+  .bnav-sheet {
+    width: 100%;
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    padding: 8px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+  .bnav-sheet-handle {
+    width: 40px; height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin: 8px auto 12px;
+  }
+  .bnav-sheet-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 16px;
+    padding: 14px 8px;
+    min-height: 48px;
+    cursor: pointer;
+  }
+  .bnav-sheet-item:last-child { border-bottom: none; }
+  .bnav-sheet-item.active { color: var(--accent); }
+}
+
 /* ─── Serial-jump flash ──────────────────────────────────── */
 .row.serial-flash { animation: serialFlash 1.5s ease-out; }
 @keyframes serialFlash {
@@ -1585,6 +1673,21 @@ body {
   <button class="tab" data-tab="notes">📝 Notes <span class="tab-count" id="tc-notes"></span></button>
   <button class="tab" data-tab="settings">Settings</button>
 </nav>
+
+<!-- ──── MOBILE BOTTOM NAV (Phone mode step 1) ────────────── -->
+<nav class="bnav" id="bottom-nav" aria-label="Mobile navigation">
+  <button class="bnav-btn active" data-tab="vault"><span class="bnav-ico">🗄️</span><span class="bnav-label">Vault</span></button>
+  <button class="bnav-btn" data-tab="played"><span class="bnav-ico">✅</span><span class="bnav-label">Played</span></button>
+  <button class="bnav-btn" data-tab="mother"><span class="bnav-ico">🌐</span><span class="bnav-label">Mother</span></button>
+  <button class="bnav-btn" data-tab="analytics"><span class="bnav-ico">📊</span><span class="bnav-label">Analytics</span></button>
+  <button class="bnav-btn" id="bnav-more-btn"><span class="bnav-ico">☰</span><span class="bnav-label">আরো</span></button>
+</nav>
+<div class="bnav-sheet-overlay" id="bnav-sheet-overlay" hidden>
+  <div class="bnav-sheet" role="dialog" aria-label="আরো ট্যাব">
+    <div class="bnav-sheet-handle"></div>
+    <div class="bnav-sheet-list" id="bnav-sheet-list"></div>
+  </div>
+</div>
 
 <!-- ──── VAULT VIEW ──────────────────────────────────────── -->
 <section class="view active" id="view-vault">
@@ -8843,6 +8946,7 @@ $('#mother-source-filter')?.addEventListener('change', e => {
 function switchTab(name) {
   state.currentTab = name;
   $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  if (typeof syncBottomNav === 'function') syncBottomNav(name);
   if (name && name.startsWith('cl-')) {
     const id = name.slice(3);
     if (!state.customLists[id]) return;
@@ -8871,6 +8975,64 @@ function switchTab(name) {
 }
 
 $$('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+/* ─── Mobile bottom navigation (Phone mode step 1) ─── */
+const BNAV_MAIN_TABS = ['vault', 'played', 'mother', 'analytics'];
+
+function syncBottomNav(name) {
+  const nav = document.getElementById('bottom-nav');
+  if (!nav) return;
+  const isMain = BNAV_MAIN_TABS.includes(name);
+  nav.querySelectorAll('.bnav-btn').forEach(b => {
+    if (b.id === 'bnav-more-btn') b.classList.toggle('active', !isMain);
+    else b.classList.toggle('active', b.dataset.tab === name);
+  });
+}
+
+function renderBnavSheet() {
+  const list = document.getElementById('bnav-sheet-list');
+  if (!list) return;
+  list.innerHTML = '';
+  const items = [
+    { tab: 'bulk-add', label: 'Bulk Add' },
+    { tab: 'bulk-check', label: 'Bulk Check' },
+    { tab: 'years', label: 'Years' },
+    { tab: 'notes', label: '📝 Notes' },
+    { tab: 'settings', label: 'Settings' },
+  ];
+  for (const id of state.customListsOrder) {
+    const cl = state.customLists[id];
+    if (cl) items.push({ tab: 'cl-' + id, label: cl.name + ' (' + cl.items.length + ')' });
+  }
+  for (const it of items) {
+    const btn = document.createElement('button');
+    btn.className = 'bnav-sheet-item';
+    btn.dataset.tab = it.tab;
+    btn.textContent = it.label;
+    if (state.currentTab === it.tab) btn.classList.add('active');
+    btn.addEventListener('click', () => { switchTab(it.tab); closeBnavSheet(); });
+    list.appendChild(btn);
+  }
+}
+
+function openBnavSheet() {
+  renderBnavSheet();
+  const ov = document.getElementById('bnav-sheet-overlay');
+  if (ov) ov.hidden = false;
+}
+function closeBnavSheet() {
+  const ov = document.getElementById('bnav-sheet-overlay');
+  if (ov) ov.hidden = true;
+}
+
+$$('#bottom-nav .bnav-btn').forEach(b => {
+  if (b.id === 'bnav-more-btn') b.addEventListener('click', openBnavSheet);
+  else b.addEventListener('click', () => switchTab(b.dataset.tab));
+});
+const _bnavOverlay = document.getElementById('bnav-sheet-overlay');
+if (_bnavOverlay) {
+  _bnavOverlay.addEventListener('click', (e) => { if (e.target === _bnavOverlay) closeBnavSheet(); });
+}
 
 const _analyticsRefreshBtn = document.getElementById('analytics-refresh');
 if (_analyticsRefreshBtn) {
