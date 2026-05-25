@@ -1,0 +1,20 @@
+{
+  "name": "Game Vault",
+  "short_name": "Vault",
+  "description": "Fuzzy-aware game library with analytics, playtime tracking, and cloud sync",
+  "start_url": "./game-vault.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a0a0b",
+  "theme_color": "#f5a623",
+  "lang": "bn",
+  "dir": "ltr",
+  "categories": ["games", "utilities"],
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj48cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjgwIiBmaWxsPSIjZjVhNjIzIi8+PHRleHQgeD0iMjU2IiB5PSIyNTYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGRvbWluYW50LWJhc2VsaW5lPSJjZW50cmFsIiBmb250LWZhbWlseT0iR2VvcmdpYSwnVGltZXMgTmV3IFJvbWFuJyxzZXJpZiIgZm9udC1zdHlsZT0iaXRhbGljIiBmb250LXNpemU9IjI4MCIgZmlsbD0iI2ZmZmZmZiI+R1Y8L3RleHQ+PC9zdmc+", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

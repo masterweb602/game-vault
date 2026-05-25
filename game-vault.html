@@ -2673,22 +2673,19 @@ window.addEventListener('appinstalled', () => {
 (function injectManifest() {
   if (!pwaCanInstall(location.protocol)) return;
   try {
-    // Absolute URLs are required: a blob/data manifest can't resolve relative
-    // paths and would fail the same-origin start_url check (→ not installable).
-    const startUrl = location.origin + location.pathname;
-    const scope = startUrl.replace(/[^/]*$/, '');
-    const json = JSON.stringify(buildPwaManifest(startUrl, scope));
-    // Blob URL inherits the page origin (data: URIs are opaque-origin → rejected).
-    const href = URL.createObjectURL(new Blob([json], { type: 'application/manifest+json' }));
+    // Link the static manifest.json file in the repo root. PWABuilder (and APK
+    // generation) needs a real, fetchable manifest — a blob/data URI can't be
+    // crawled. buildPwaManifest()/buildPwaIconPng() above are retained because
+    // the test suite covers them, but are no longer used for injection.
     const link = document.createElement('link');
     link.rel = 'manifest';
-    link.href = href;
+    link.href = './manifest.json';
     document.head.appendChild(link);
     const meta = document.createElement('meta');
     meta.name = 'theme-color';
     meta.content = '#0a0a0b';
     document.head.appendChild(meta);
-  } catch (_) { /* graceful: skip if Blob/btoa/DOM unavailable */ }
+  } catch (_) { /* graceful: skip if DOM unavailable */ }
 })();
 
 /* Register the companion service worker (sw.js) — required for Chrome's
