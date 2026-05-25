@@ -615,16 +615,45 @@ function buildPwaIcon() {
     + ' font-size="280" fill="#ffffff">GV</text>'
     + '</svg>';
 }
-function buildPwaManifest(startUrl) {
-  const iconData = 'data:image/svg+xml;base64,' + btoa(buildPwaIcon());
+function buildPwaIconPng(size) {
+  // Render the GV mark to a PNG data URI via canvas (synchronous, no SVG load).
+  // Returns null when canvas is unavailable (e.g. Node test env) — callers skip it.
+  try {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    if (!ctx) return null;
+    ctx.fillStyle = '#f5a623';
+    if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(0, 0, size, size, size * 0.156); ctx.fill(); }
+    else ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'italic ' + Math.round(size * 0.547) + "px Georgia,'Times New Roman',serif";
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('GV', size / 2, size / 2 + size * 0.02);
+    return c.toDataURL('image/png');
+  } catch (_) { return null; }
+}
+function buildPwaManifest(startUrl, scope) {
+  const svg = 'data:image/svg+xml;base64,' + btoa(buildPwaIcon());
+  // SVG stays first (scalable, any size); PNG 192/512 added for Chrome's install criteria.
+  const icons = [{ src: svg, sizes: 'any', type: 'image/svg+xml', purpose: 'any' }];
+  const png192 = buildPwaIconPng(192);
+  const png512 = buildPwaIconPng(512);
+  if (png192) icons.push({ src: png192, sizes: '192x192', type: 'image/png', purpose: 'any' });
+  if (png512) {
+    icons.push({ src: png512, sizes: '512x512', type: 'image/png', purpose: 'any' });
+    icons.push({ src: png512, sizes: '512x512', type: 'image/png', purpose: 'maskable' });
+  }
   return {
     name: 'Game Vault',
     short_name: 'Vault',
     start_url: startUrl || './',
+    scope: scope || startUrl || './',
     display: 'standalone',
     background_color: '#0a0a0b',
     theme_color: '#0a0a0b',
-    icons: [{ src: iconData, sizes: 'any', type: 'image/svg+xml', purpose: 'any' }]
+    icons
   };
 }
 function pwaCanInstall(protocol) {

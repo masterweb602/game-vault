@@ -2608,16 +2608,45 @@ function buildPwaIcon() {
     + ' font-size="280" fill="#ffffff">GV</text>'
     + '</svg>';
 }
-function buildPwaManifest(startUrl) {
-  const iconData = 'data:image/svg+xml;base64,' + btoa(buildPwaIcon());
+function buildPwaIconPng(size) {
+  // Render the GV mark to a PNG data URI via canvas (synchronous, no SVG load).
+  // Returns null when canvas is unavailable (e.g. Node test env) — callers skip it.
+  try {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    if (!ctx) return null;
+    ctx.fillStyle = '#f5a623';
+    if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(0, 0, size, size, size * 0.156); ctx.fill(); }
+    else ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'italic ' + Math.round(size * 0.547) + "px Georgia,'Times New Roman',serif";
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('GV', size / 2, size / 2 + size * 0.02);
+    return c.toDataURL('image/png');
+  } catch (_) { return null; }
+}
+function buildPwaManifest(startUrl, scope) {
+  const svg = 'data:image/svg+xml;base64,' + btoa(buildPwaIcon());
+  // SVG stays first (scalable, any size); PNG 192/512 added for Chrome's install criteria.
+  const icons = [{ src: svg, sizes: 'any', type: 'image/svg+xml', purpose: 'any' }];
+  const png192 = buildPwaIconPng(192);
+  const png512 = buildPwaIconPng(512);
+  if (png192) icons.push({ src: png192, sizes: '192x192', type: 'image/png', purpose: 'any' });
+  if (png512) {
+    icons.push({ src: png512, sizes: '512x512', type: 'image/png', purpose: 'any' });
+    icons.push({ src: png512, sizes: '512x512', type: 'image/png', purpose: 'maskable' });
+  }
   return {
     name: 'Game Vault',
     short_name: 'Vault',
     start_url: startUrl || './',
+    scope: scope || startUrl || './',
     display: 'standalone',
     background_color: '#0a0a0b',
     theme_color: '#0a0a0b',
-    icons: [{ src: iconData, sizes: 'any', type: 'image/svg+xml', purpose: 'any' }]
+    icons
   };
 }
 function pwaCanInstall(protocol) {
@@ -2644,8 +2673,13 @@ window.addEventListener('appinstalled', () => {
 (function injectManifest() {
   if (!pwaCanInstall(location.protocol)) return;
   try {
-    const json = JSON.stringify(buildPwaManifest('./'));
-    const href = 'data:application/manifest+json;base64,' + btoa(json);
+    // Absolute URLs are required: a blob/data manifest can't resolve relative
+    // paths and would fail the same-origin start_url check (→ not installable).
+    const startUrl = location.origin + location.pathname;
+    const scope = startUrl.replace(/[^/]*$/, '');
+    const json = JSON.stringify(buildPwaManifest(startUrl, scope));
+    // Blob URL inherits the page origin (data: URIs are opaque-origin → rejected).
+    const href = URL.createObjectURL(new Blob([json], { type: 'application/manifest+json' }));
     const link = document.createElement('link');
     link.rel = 'manifest';
     link.href = href;
@@ -2654,7 +2688,17 @@ window.addEventListener('appinstalled', () => {
     meta.name = 'theme-color';
     meta.content = '#0a0a0b';
     document.head.appendChild(meta);
-  } catch (_) { /* graceful: skip if btoa/DOM not ready */ }
+  } catch (_) { /* graceful: skip if Blob/btoa/DOM unavailable */ }
+})();
+
+/* Register the companion service worker (sw.js) — required for Chrome's
+   beforeinstallprompt to fire on Android. No-op on file:// and when sw.js
+   isn't deployed alongside the page (e.g. a downloaded portable copy). */
+(function registerSW() {
+  if (!pwaCanInstall(location.protocol) || !('serviceWorker' in navigator)) return;
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
 })();
 
 /* ─── Profiler ──────────────────────────────────────────── */
@@ -10860,9 +10904,9 @@ $('#export-html-baked').addEventListener('click', exportHtmlBaked);
   } else {
     setTimeout(() => {
       if (!_deferredInstallPrompt && hint && !hint.textContent) {
-        hint.textContent = 'browser-এর menu / address bar থেকে install option দেখো';
+        hint.textContent = 'কয়েক সেকেন্ড ব্যবহারের পর button active হবে — নাহলে Chrome ⋮ → "Install app" / "Add to Home screen"';
       }
-    }, 2500);
+    }, 4000);
   }
   btn.addEventListener('click', async () => {
     if (!_deferredInstallPrompt) return;

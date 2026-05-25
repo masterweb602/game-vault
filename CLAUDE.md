@@ -6,7 +6,7 @@
 - Bengali UI (keep all Bengali text)
 - No frameworks, no build step
 - Persistent storage (localStorage / artifact storage)
-- PWA: Manifest + install button only. No service worker by design — single-file constraint takes precedence (browsers reject blob:/data: SW scripts, so SW would require a second file).
+- PWA: inline **blob** manifest (absolute `start_url`/`scope`, 192/512 PNG icons via canvas) + a companion **`sw.js`** (network-first, has a `fetch` handler) so Chrome's `beforeinstallprompt` fires and "Install as app" works one-tap on Android. `sw.js` is the ONE allowed second file (user-approved) — the app HTML itself stays single-file. Downloaded portable copies ship without `sw.js`, so install there falls back to the browser ⋮ menu.
 
 ## Rules — NEVER BREAK THESE
 1. Single file থাকবে HTML হিসেবে
