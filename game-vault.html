@@ -2437,15 +2437,6 @@ body {
     <div id="export-html-info" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:10px;"></div>
   </div>
 
-  <div class="setting-card">
-    <h4>💾 Data সহ HTML download</h4>
-    <p>পুরো app + তোমার সব data (vault, played, custom lists, tags, notes, settings) একটা single HTML file-এর <code>&lt;head&gt;</code>-এ baked হয়ে download হবে। এটা একটা <strong>snapshot</strong> — অন্য PC/phone-এ file-টা open করলেই সব data সহ খুলবে (ওই device-এ storage খালি থাকলে; data থাকলে overwrite করবে না)। নতুন backup চাইলে আবার download করো।</p>
-    <div class="setting-row">
-      <button class="btn btn-primary" id="export-html-baked">💾 Data সহ HTML download</button>
-    </div>
-    <div id="export-html-baked-info" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:10px;"></div>
-  </div>
-
   <div class="setting-card" id="install-card">
     <h4>Install as app</h4>
     <p>Phone বা desktop-এ install করো — app drawer থেকে launch হবে, browser chrome ছাড়াই খুলবে।</p>
@@ -10801,91 +10792,6 @@ async function exportHtml({ embedData }) {
 $('#export-html-with-data').addEventListener('click', () => exportHtml({ embedData: true }));
 $('#export-html-blank').addEventListener('click', () => exportHtml({ embedData: false }));
 
-/* ─── Portable snapshot: download HTML with ALL data baked into <head> ─── */
-function collectBakedData() {
-  const lean = (it) => {
-    const o = {
-      id: it.id, name: it.name, dateAdded: it.dateAdded,
-      tags: Array.isArray(it.tags) ? it.tags.slice() : []
-    };
-    if (typeof it.year === 'number') o.year = it.year;
-    if (typeof it.month === 'number' && typeof it.day === 'number') { o.month = it.month; o.day = it.day; }
-    if (it.playtime) {
-      const h = Number(it.playtime.hours) || 0, m = Number(it.playtime.minutes) || 0;
-      if (h > 0 || m > 0) o.playtime = { hours: h, minutes: m };
-    }
-    return o;
-  };
-  return {
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    vault: state.vault.map(lean),
-    played: state.played.map(lean),
-    customLists: state.customListsOrder.map(id => {
-      const l = state.customLists[id];
-      return { id: l.id, name: l.name, createdAt: l.createdAt || Date.now(), items: l.items.map(lean) };
-    }),
-    notes: (typeof state.notes === 'string') ? state.notes : '',
-    recentYears: Array.isArray(state.recentYears) ? state.recentYears.slice() : [],
-    tagLabels: Array.from(state.tagLabels.entries()),
-    settings: { fuzzyThreshold: state.fuzzyThreshold, useWorker: !!state.useWorker }
-  };
-}
-
-async function exportHtmlBaked() {
-  const info = $('#export-html-baked-info');
-  if (info) { info.style.color = 'var(--muted)'; info.textContent = '⏳ preparing source…'; }
-
-  let html;
-  try {
-    html = await getAppSource();
-  } catch (e) {
-    if (info) { info.style.color = 'var(--danger)'; info.textContent = '✗ source fetch failed: ' + e.message; }
-    toast('Source fetch failed', 'error');
-    return;
-  }
-
-  const payload = collectBakedData();
-  // Escape every "less-than" so the JSON can never break out of the data
-  // script tag (no closing-script or comment-opener sequence can form).
-  // JSON.parse decodes the < escapes back to "less-than" on load.
-  const json = JSON.stringify(payload).replace(/</g, '\\u003c');
-  const tag = '<script id="baked-data" type="application/json">' + json + '</' + 'script>';
-
-  const re = /<script id="baked-data"[\s\S]*?<\/script>/i;
-  if (re.test(html)) {
-    html = html.replace(re, tag);                                  // re-export: replace existing
-  } else if (/<\/head>/i.test(html)) {
-    html = html.replace(/<\/head>/i, '  ' + tag + '\n</head>');     // normal: inject before </head>
-  } else if (/<head[^>]*>/i.test(html)) {
-    html = html.replace(/<head[^>]*>/i, (m) => m + '\n  ' + tag);
-  } else {
-    if (info) { info.style.color = 'var(--danger)'; info.textContent = '✗ could not find <head> to inject data'; }
-    toast('Inject failed', 'error');
-    return;
-  }
-
-  const date = new Date().toISOString().slice(0, 10);
-  const fname = 'game-vault-with-data-' + date + '.html';
-  const ok = downloadFile(html, fname, 'text/html;charset=utf-8');
-  if (ok) {
-    const total = payload.vault.length + payload.played.length
-      + payload.customLists.reduce((s, c) => s + c.items.length, 0);
-    if (info) {
-      info.style.color = 'var(--success)';
-      info.textContent = '✓ saved · ' + fname + ' · ' + (html.length / 1024).toFixed(0) + ' KB · '
-        + total + ' items (' + payload.vault.length + ' vault, ' + payload.played.length + ' played, '
-        + payload.customLists.length + ' custom lists) baked in';
-    }
-    toast('Snapshot HTML saved', 'success');
-  } else {
-    if (info) { info.style.color = 'var(--danger)'; info.textContent = '✗ download failed'; }
-    toast('Download failed', 'error');
-  }
-}
-
-$('#export-html-baked').addEventListener('click', exportHtmlBaked);
-
 /* ─── Install button (PWA) ─────────────────────────────── */
 (function wireInstallBtn() {
   const btn = $('#install-btn');
@@ -11647,69 +11553,10 @@ function clearNotes() {
   $('#notes-export')?.addEventListener('click', exportNotesAsTxt);
 }
 
-// Portable snapshot bootstrap: if this file was downloaded with data baked into
-// <script id="baked-data"> AND local storage is still empty (first open on a new
-// device), seed every list/setting into Storage before the normal load path runs.
-// Existing local data is never overwritten — re-opening keeps your edits.
-async function maybeSeedFromBakedData() {
-  const node = document.getElementById('baked-data');
-  if (!node) return;
-  const raw = (node.textContent || '').trim();
-  if (!raw) return;
-
-  // Fresh-device guard: skip if any core data already exists in storage.
-  const existing = (await Storage.get('vault-meta'))
-    || (await Storage.get('played-meta'))
-    || (await Storage.get('customLists-registry'));
-  if (existing) return;
-
-  let data;
-  try { data = JSON.parse(raw); } catch (e) { console.warn('[Game Vault] baked-data parse failed:', e); return; }
-  if (!data || typeof data !== 'object') return;
-
-  try {
-    if (Array.isArray(data.vault))  await saveList('vault', data.vault);
-    if (Array.isArray(data.played)) await saveList('played', data.played);
-
-    if (Array.isArray(data.customLists) && data.customLists.length) {
-      const registry = [];
-      for (const cl of data.customLists) {
-        if (!cl || !cl.id) continue;
-        await saveList('cl-' + cl.id, Array.isArray(cl.items) ? cl.items : []);
-        registry.push({ id: cl.id, name: cl.name || String(cl.id), createdAt: cl.createdAt || Date.now() });
-      }
-      if (registry.length) await saveCustomListsRegistry(registry);
-    }
-
-    if (typeof data.notes === 'string' && data.notes) await Storage.set('user-notes', data.notes);
-    if (Array.isArray(data.recentYears)) await Storage.set('recent-years', JSON.stringify(data.recentYears));
-    if (data.settings) {
-      if (data.settings.fuzzyThreshold != null) await Storage.set('fuzzy-threshold', String(data.settings.fuzzyThreshold));
-      if (typeof data.settings.useWorker === 'boolean') await Storage.set('use-worker', data.settings.useWorker ? '1' : '0');
-    }
-    // Tag display-casing has no dedicated storage key (rebuilt from item tags on
-    // load). Pre-seed state so the rebuild's "if (!has)" keeps the baked casing.
-    if (Array.isArray(data.tagLabels)) {
-      for (const pair of data.tagLabels) {
-        if (Array.isArray(pair) && pair.length === 2) state.tagLabels.set(pair[0], pair[1]);
-      }
-    }
-    console.log('[Game Vault] Seeded from baked-data:',
-      (data.vault || []).length, 'vault,',
-      (data.played || []).length, 'played,',
-      (data.customLists || []).length, 'custom lists');
-  } catch (e) {
-    console.error('[Game Vault] baked-data seed failed:', e);
-  }
-}
-
 async function init() {
   $('#storage-info').textContent = Storage.label;
   $('#vault-status').textContent = 'loading vault…';
   $('#played-status').textContent = 'loading played…';
-
-  // Portable snapshot: seed from baked-in data on first open (no-op otherwise).
-  try { await maybeSeedFromBakedData(); } catch (e) { console.warn('baked-data seed error:', e); }
 
   // Load saved fuzzy threshold
   const ft = await Storage.get('fuzzy-threshold');
@@ -11893,12 +11740,12 @@ async function init() {
   renderPlayed();
   updateStats();
 
-  // Always open on the Vault tab. Portable "Data সহ HTML" snapshots capture the
-  // live DOM (outerHTML fallback in getAppSource on file://), which bakes in
-  // whatever tab was active at download time — normally Settings, since the
-  // download button lives there. Without this, the file opens stuck on Settings
-  // (and on phones the top tab bar is hidden). Normalize so it opens on Vault
-  // with data visible; also syncs the bottom nav.
+  // Always open on the Vault tab. The "HTML + my data" export uses getAppSource's
+  // outerHTML fallback on file://, which bakes in whatever tab was active at
+  // download time — normally Settings, since the download button lives there.
+  // Without this, such a file opens stuck on Settings (and on phones the top tab
+  // bar is hidden). Normalize so it opens on Vault with data visible; also syncs
+  // the bottom nav.
   switchTab('vault');
 
   if (!Storage.available) {
