@@ -1518,6 +1518,11 @@ body {
   /* hide desktop tab bar, switch to bottom nav */
   .tabs { display: none; }
 
+  /* shorter chart canvases on phones (base rule is 750px for desktop) */
+  #db-year-charts-grid .analytics-canvas-wrap, #played-activity-grid .analytics-canvas-wrap {
+    height: 350px;
+  }
+
   /* larger touch-friendly rows on mobile */
   :root { --row-h: 60px; }
   .row { height: 60px; }
@@ -7788,7 +7793,7 @@ function renderDbYearCharts() {
     return {
       zoom: {
         pan:  { enabled: true, mode: 'x', modifierKey: 'shift' },
-        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' },
         limits: { x: { minRange: 2, min: xMin, max: xMax } }
       }
     };
@@ -8100,7 +8105,7 @@ function renderPlayedActivityChart() {
     return {
       zoom: {
         pan:  { enabled: true, mode: 'x', modifierKey: 'shift' },
-        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' },
         limits: { x: { minRange: 2, min: xMin, max: xMax } }
       }
     };
