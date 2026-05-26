@@ -11893,6 +11893,14 @@ async function init() {
   renderPlayed();
   updateStats();
 
+  // Always open on the Vault tab. Portable "Data সহ HTML" snapshots capture the
+  // live DOM (outerHTML fallback in getAppSource on file://), which bakes in
+  // whatever tab was active at download time — normally Settings, since the
+  // download button lives there. Without this, the file opens stuck on Settings
+  // (and on phones the top tab bar is hidden). Normalize so it opens on Vault
+  // with data visible; also syncs the bottom nav.
+  switchTab('vault');
+
   if (!Storage.available) {
     toast('Note: persistent storage unavailable in this context, using in-memory', 'info', 5000);
   }
