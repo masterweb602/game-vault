@@ -7880,6 +7880,34 @@ function renderDbYearCharts() {
       document.addEventListener('mouseup', onUp);
     });
 
+    // Touch drag-scroll (Android): mirror the mouse handler. Single finger only —
+    // two-finger pinch is left to chartjs-plugin-zoom.
+    wrap.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      const dragStartX = e.touches[0].pageX;
+      const dragStartScroll = wrap.scrollLeft;
+      let isDragging = false;
+      const onMove = (ev) => {
+        if (ev.touches.length !== 1) return;
+        const dx = ev.touches[0].pageX - dragStartX;
+        if (!isDragging && Math.abs(dx) > 3) {
+          isDragging = true;
+          wrap.classList.add('is-dragging');
+        }
+        if (isDragging) {
+          wrap.scrollLeft = dragStartScroll - dx;
+          ev.preventDefault();
+        }
+      };
+      const onUp = () => {
+        wrap.classList.remove('is-dragging');
+        document.removeEventListener('touchmove', onMove);
+        document.removeEventListener('touchend', onUp);
+      };
+      document.addEventListener('touchmove', onMove, { passive: false });
+      document.addEventListener('touchend', onUp);
+    });
+
     if (buckets.length === 0 || typeof window.Chart !== 'function') {
       wrap.style.display = 'none';
       const empty = document.createElement('div');
@@ -8259,6 +8287,27 @@ function renderPlayedActivityChart() {
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
+  });
+
+  // Touch drag-scroll (Android): mirror the mouse handler. Single finger only —
+  // two-finger pinch is left to chartjs-plugin-zoom.
+  wrap.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    const dragStartX = e.touches[0].pageX, dragStartScroll = wrap.scrollLeft;
+    let isDragging = false;
+    const onMove = (ev) => {
+      if (ev.touches.length !== 1) return;
+      const dx = ev.touches[0].pageX - dragStartX;
+      if (!isDragging && Math.abs(dx) > 3) { isDragging = true; wrap.classList.add('is-dragging'); }
+      if (isDragging) { wrap.scrollLeft = dragStartScroll - dx; ev.preventDefault(); }
+    };
+    const onUp = () => {
+      wrap.classList.remove('is-dragging');
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onUp);
+    };
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onUp);
   });
 
   if (unknownNote) {
