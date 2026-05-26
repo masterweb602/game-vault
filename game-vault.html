@@ -507,6 +507,8 @@ body {
 /* ─── Toolbar / inputs ───────────────────────────────────── */
 .toolbar { display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px; }
 .toolbar-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.toolbar-toggle { display: none; }       /* mobile-only ⚙️ button */
+.toolbar-collapse { display: contents; } /* PC: transparent — children flow into toolbar-row as before */
 
 .input-group { position: relative; flex: 1; min-width: 0; }
 .input-group .input { padding-left: 36px; }
@@ -1528,7 +1530,7 @@ body {
   /* larger touch-friendly rows on mobile */
   :root { --row-h: 60px; }
   .row { height: 60px; }
-  .row .name { font-size: 15px; }
+  .row .name { font-size: 14px; }
 
   /* keep content clear of the fixed bottom nav */
   .app { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
@@ -1619,6 +1621,78 @@ body {
     word-break: break-word;
   }
 }
+
+/* ─── Phone mode — full optimization (steps 2–7) ─────────────── */
+@media (max-width: 768px) {
+  /* 2 — compact single-line brand header */
+  .header { align-items: center; padding-bottom: 10px; margin-bottom: 12px; gap: 10px; }
+  .brand-mark { display: none; }
+  .brand-title { font-size: 20px; }
+  .stats { width: auto; gap: 6px; }
+  .stat { flex: 0 0 auto; text-align: center; padding: 5px 9px; font-size: 10px; }
+
+  /* 2 — smaller Big Stats header (was 36px) */
+  .big-stats { padding: 12px 16px; gap: 18px; margin-bottom: 10px; }
+  .big-stat-num { font-size: 20px; }
+  .big-stat-sep { font-size: 18px; }
+
+  /* 5 — tighter section spacing */
+  .section-title { font-size: 21px; }
+  .section-desc { font-size: 12px; margin-bottom: 12px; }
+
+  /* 2 + 3 — sticky search + collapsible filter/sort toolbar (list views) */
+  .toolbar-search {
+    position: sticky; top: 0; z-index: 30;
+    background: var(--bg);
+    padding-top: 8px; padding-bottom: 8px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .toolbar-search .toolbar-row { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .toolbar-search .input-group { flex: 1 1 auto; min-width: 150px; }
+  .toolbar-search .toolbar-toggle {
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 4px; flex: 0 0 auto; width: auto; white-space: nowrap;
+  }
+  .toolbar-collapse { display: none; flex-basis: 100%; width: 100%; }
+  .toolbar-collapse.open { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+  .toolbar-collapse .select, .toolbar-collapse .btn { width: 100%; }
+
+  /* 5 — tighter rows (60px height kept, touch-friendly) */
+  .row { padding: 0 12px; gap: 10px; }
+  .row .serial { min-width: 50px; font-size: 12px; }
+  .row-year, .row-playtime { font-size: 10px; }
+
+  /* 6 — analytics: 2 tiles per row + smaller text */
+  .analytics-stats { grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+  .stat-tile { padding: 12px; }
+  .stat-tile-num { font-size: 22px; }
+  .stat-tile-label { font-size: 11px; }
+  .analytics-card-title { font-size: 13px; }
+  .analytics-card-sub { font-size: 11px; }
+  #backlog-forecast th, #backlog-forecast td { font-size: 11px; padding: 5px 6px; }
+
+  /* 4 — modals as bottom sheets */
+  .modal-overlay { align-items: flex-end; padding: 0; }
+  .modal {
+    max-width: 100%; width: 100%;
+    border-radius: 16px 16px 0 0;
+    border-left: none; border-right: none; border-bottom: none;
+    max-height: 88vh; overflow-y: auto;
+    padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+    animation: sheetUp 0.22s ease;
+  }
+  .modal::before {
+    content: ''; display: block;
+    width: 40px; height: 4px;
+    background: var(--border); border-radius: 2px;
+    margin: 0 auto 14px;
+  }
+
+  /* 7 — smoother 120Hz scrolling on the virtual list */
+  .list-scroll { will-change: transform; }
+}
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
 
 /* ─── Serial-jump flash ──────────────────────────────────── */
 .row.serial-flash { animation: serialFlash 1.5s ease-out; }
@@ -1730,23 +1804,26 @@ body {
 
   <div class="bulk-toolbar" id="vault-bulk-toolbar" hidden></div>
 
-  <div class="toolbar">
+  <div class="toolbar toolbar-search">
     <div class="toolbar-row">
       <div class="input-group">
         <span class="input-icon">⌕</span>
         <input class="input" id="vault-search" placeholder="search ভল্ট (fuzzy)..." autocomplete="off">
       </div>
-      <select class="select" id="vault-sort">
-        <option value="recent">Recent first</option>
-        <option value="oldest">Oldest first</option>
-        <option value="az">A → Z</option>
-        <option value="za">Z → A</option>
-        <option value="playtime-desc">Playtime: High → Low</option>
-        <option value="playtime-asc">Playtime: Low → High</option>
-      </select>
-      <button class="btn btn-sm" id="vault-dup-toggle" title="Show duplicates only">Duplicates</button>
-      <button class="btn btn-sm btn-danger" id="vault-dup-remove" title="Review duplicate groups">Remove dups</button>
-      <button class="btn btn-sm" id="vault-bulk-toggle" title="Select multiple to tag">☐ Bulk select</button>
+      <button class="btn btn-sm toolbar-toggle" type="button" aria-expanded="false">⚙️ Filter & Sort</button>
+      <div class="toolbar-collapse">
+        <select class="select" id="vault-sort">
+          <option value="recent">Recent first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="az">A → Z</option>
+          <option value="za">Z → A</option>
+          <option value="playtime-desc">Playtime: High → Low</option>
+          <option value="playtime-asc">Playtime: Low → High</option>
+        </select>
+        <button class="btn btn-sm" id="vault-dup-toggle" title="Show duplicates only">Duplicates</button>
+        <button class="btn btn-sm btn-danger" id="vault-dup-remove" title="Review duplicate groups">Remove dups</button>
+        <button class="btn btn-sm" id="vault-bulk-toggle" title="Select multiple to tag">☐ Bulk select</button>
+      </div>
     </div>
   </div>
 
@@ -1789,22 +1866,25 @@ body {
 
   <div class="big-stats" id="played-big-stats" hidden></div>
 
-  <div class="toolbar">
+  <div class="toolbar toolbar-search">
     <div class="toolbar-row">
       <div class="input-group">
         <span class="input-icon">⌕</span>
         <input class="input" id="played-search" placeholder="search played list..." autocomplete="off">
       </div>
-      <select class="select" id="played-sort">
-        <option value="recent">Recent first</option>
-        <option value="oldest">Oldest first</option>
-        <option value="az">A → Z</option>
-        <option value="za">Z → A</option>
-        <option value="playtime-desc">Playtime: High → Low</option>
-        <option value="playtime-asc">Playtime: Low → High</option>
-      </select>
-      <button class="btn btn-sm" id="played-dup-toggle">Duplicates</button>
-      <button class="btn btn-sm btn-danger" id="played-dup-remove" title="Review duplicate groups">Remove dups</button>
+      <button class="btn btn-sm toolbar-toggle" type="button" aria-expanded="false">⚙️ Filter & Sort</button>
+      <div class="toolbar-collapse">
+        <select class="select" id="played-sort">
+          <option value="recent">Recent first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="az">A → Z</option>
+          <option value="za">Z → A</option>
+          <option value="playtime-desc">Playtime: High → Low</option>
+          <option value="playtime-asc">Playtime: Low → High</option>
+        </select>
+        <button class="btn btn-sm" id="played-dup-toggle">Duplicates</button>
+        <button class="btn btn-sm btn-danger" id="played-dup-remove" title="Review duplicate groups">Remove dups</button>
+      </div>
     </div>
   </div>
 
@@ -1847,24 +1927,27 @@ body {
 
   <div class="big-stats" id="mother-big-stats" hidden></div>
 
-  <div class="toolbar">
+  <div class="toolbar toolbar-search">
     <div class="toolbar-row">
       <div class="input-group">
         <span class="input-icon">⌕</span>
         <input class="input" id="mother-search" placeholder="search mother (fuzzy) — digits jump to serial..." autocomplete="off">
       </div>
-      <select class="select" id="mother-sort">
-        <option value="recent">Recent first</option>
-        <option value="oldest">Oldest first</option>
-        <option value="az">A → Z</option>
-        <option value="za">Z → A</option>
-        <option value="source">Source group</option>
-        <option value="playtime-desc">Playtime: High → Low</option>
-        <option value="playtime-asc">Playtime: Low → High</option>
-      </select>
-      <select class="select" id="mother-source-filter" title="Filter by source">
-        <option value="">All sources</option>
-      </select>
+      <button class="btn btn-sm toolbar-toggle" type="button" aria-expanded="false">⚙️ Filter & Sort</button>
+      <div class="toolbar-collapse">
+        <select class="select" id="mother-sort">
+          <option value="recent">Recent first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="az">A → Z</option>
+          <option value="za">Z → A</option>
+          <option value="source">Source group</option>
+          <option value="playtime-desc">Playtime: High → Low</option>
+          <option value="playtime-asc">Playtime: Low → High</option>
+        </select>
+        <select class="select" id="mother-source-filter" title="Filter by source">
+          <option value="">All sources</option>
+        </select>
+      </div>
     </div>
   </div>
 
@@ -1888,20 +1971,23 @@ body {
 
   <div class="big-stats" id="custom-big-stats" hidden></div>
 
-  <div class="toolbar">
+  <div class="toolbar toolbar-search">
     <div class="toolbar-row">
       <div class="input-group">
         <span class="input-icon">⌕</span>
         <input class="input" id="custom-search" placeholder="search এই database (fuzzy)..." autocomplete="off">
       </div>
-      <select class="select" id="custom-sort">
-        <option value="recent">Recent first</option>
-        <option value="oldest">Oldest first</option>
-        <option value="az">A → Z</option>
-        <option value="za">Z → A</option>
-        <option value="playtime-desc">Playtime: High → Low</option>
-        <option value="playtime-asc">Playtime: Low → High</option>
-      </select>
+      <button class="btn btn-sm toolbar-toggle" type="button" aria-expanded="false">⚙️ Filter & Sort</button>
+      <div class="toolbar-collapse">
+        <select class="select" id="custom-sort">
+          <option value="recent">Recent first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="az">A → Z</option>
+          <option value="za">Z → A</option>
+          <option value="playtime-desc">Playtime: High → Low</option>
+          <option value="playtime-asc">Playtime: Low → High</option>
+        </select>
+      </div>
     </div>
   </div>
 
@@ -5623,6 +5709,13 @@ function makeCustomRow(item, idx, id) {
     onClick: () => deleteCustomItem(item, id)
   }, '×'));
   row.appendChild(actions);
+
+  // Mobile: tap row → action sheet (desktop keeps inline hover actions)
+  row.addEventListener('click', (e) => {
+    if (!matchMedia('(max-width: 768px)').matches) return;
+    if (e.target.closest('.tag-chip')) return;
+    openRowSheet(item, 'custom', id);
+  });
   return row;
 }
 
@@ -8918,6 +9011,13 @@ function makeMotherRow(row, idx) {
   }, '🔍'));
   div.appendChild(actions);
 
+  // Mobile: tap row → action sheet (desktop keeps inline hover actions)
+  div.addEventListener('click', (e) => {
+    if (!matchMedia('(max-width: 768px)').matches) return;
+    if (e.target.closest('.tag-chip, .src-badge')) return;
+    openRowSheet(row.item, 'mother', row);
+  });
+
   return div;
 }
 
@@ -9154,7 +9254,7 @@ if (_bnavOverlay) {
 }
 
 /* ─── Row action sheet (Phone mode step 2) ─── */
-function openRowSheet(item, source) {
+function openRowSheet(item, source, extra) {
   const titleEl = document.getElementById('row-sheet-title');
   const listEl = document.getElementById('row-sheet-actions');
   const ov = document.getElementById('row-sheet-overlay');
@@ -9168,10 +9268,22 @@ function openRowSheet(item, source) {
       onClick: () => { closeRowSheet(); fn(); }
     }, label));
   };
-  if (source === 'vault') mkBtn('✓  Mark as played', () => moveToPlayed(item));
-  else mkBtn('↶  Move to vault', () => moveToVault(item));
-  mkBtn('✏️  Edit', () => editItem(item, source));
-  mkBtn('🗑️  Delete', () => deleteItem(item, source), true);
+  if (source === 'mother') {
+    const row = extra;
+    mkBtn('🔍  Jump to source', () => jumpToMotherSource(row));
+    mkBtn('✏️  Edit', () => {
+      if (row.sourceKind === 'vault') editItem(row.item, 'vault');
+      else if (row.sourceKind === 'custom') editCustomItem(row.item, row.sourceId);
+    });
+  } else if (source === 'custom') {
+    mkBtn('✏️  Edit', () => editCustomItem(item, extra));
+    mkBtn('🗑️  Delete', () => deleteCustomItem(item, extra), true);
+  } else {
+    if (source === 'vault') mkBtn('✓  Mark as played', () => moveToPlayed(item));
+    else mkBtn('↶  Move to vault', () => moveToVault(item));
+    mkBtn('✏️  Edit', () => editItem(item, source));
+    mkBtn('🗑️  Delete', () => deleteItem(item, source), true);
+  }
   ov.hidden = false;
 }
 function closeRowSheet() {
@@ -9182,6 +9294,16 @@ const _rowSheetOverlay = document.getElementById('row-sheet-overlay');
 if (_rowSheetOverlay) {
   _rowSheetOverlay.addEventListener('click', (e) => { if (e.target === _rowSheetOverlay) closeRowSheet(); });
 }
+
+/* Mobile collapsible filter/sort toolbar (Phone mode) */
+document.querySelectorAll('.toolbar-toggle').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const panel = btn.parentElement.querySelector('.toolbar-collapse');
+    if (!panel) return;
+    const open = panel.classList.toggle('open');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+});
 
 const _analyticsRefreshBtn = document.getElementById('analytics-refresh');
 if (_analyticsRefreshBtn) {
