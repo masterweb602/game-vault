@@ -1385,7 +1385,7 @@ body {
 /* Touch: vertical swipe scrolls the page; horizontal swipe + pinch go to the chart
    so chartjs-plugin-zoom can pinch-zoom (mode 'x') on Android. Touch-only — desktop
    wheel-zoom / Shift-drag pan / mouse drag-scroll are unaffected. */
-#db-year-charts-grid canvas, #played-activity-grid canvas { touch-action: pan-y; }
+#db-year-charts-grid canvas, #played-activity-grid canvas { touch-action: none; }
 #db-year-charts-grid .analytics-canvas-wrap.is-dragging, #played-activity-grid .analytics-canvas-wrap.is-dragging { cursor: grabbing; }
 #db-year-charts-grid .analytics-canvas-wrap::-webkit-scrollbar, #played-activity-grid .analytics-canvas-wrap::-webkit-scrollbar { height: 10px; }
 #db-year-charts-grid .analytics-canvas-wrap::-webkit-scrollbar-thumb, #played-activity-grid .analytics-canvas-wrap::-webkit-scrollbar-thumb {
