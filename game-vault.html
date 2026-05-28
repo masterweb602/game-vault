@@ -1346,6 +1346,37 @@ body {
 .setting-card p { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
 .setting-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 
+/* ─── Per-tab DB actions row (Clear + Import buttons) ────── */
+.db-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.db-actions-row .btn { font-size: 12px; }
+
+/* ─── Side-by-side grids (PC default, mobile = 1col) ─────── */
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.settings-grid > .setting-card { margin-bottom: 0; }
+.settings-grid > .setting-card.span-full { grid-column: 1 / -1; }
+
+.years-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.years-grid > .years-sticky-bars,
+.years-grid > .years-empty,
+.years-grid > .year-group[data-year="unknown"] {
+  grid-column: 1 / -1;
+}
+
 /* ─── Analytics ──────────────────────────────────────────── */
 .analytics-grid {
   display: grid;
@@ -1526,6 +1557,16 @@ body {
   #db-year-charts-grid .analytics-canvas-wrap, #played-activity-grid .analytics-canvas-wrap {
     height: 350px;
   }
+
+  /* side-by-side grids collapse to single column on phone */
+  .settings-grid, .years-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .settings-grid > .setting-card { margin-bottom: 0; }
+
+  /* touch-friendly per-tab Clear+Import buttons */
+  .db-actions-row .btn { min-height: 44px; flex: 1; }
 
   /* larger touch-friendly rows on mobile */
   :root { --row-h: 60px; }
@@ -1802,6 +1843,11 @@ body {
 
   <div class="tag-filter-bar" id="vault-tag-filter-bar" title="একাধিক tag select করলে — সব tag আছে এমন games দেখাবে (AND)"></div>
 
+  <div class="db-actions-row">
+    <button class="btn btn-sm" id="vault-import-btn" type="button">📥 Import</button>
+    <button class="btn btn-sm btn-danger" id="vault-clear-btn" type="button">🗑️ Clear</button>
+  </div>
+
   <div class="bulk-toolbar" id="vault-bulk-toolbar" hidden></div>
 
   <div class="toolbar toolbar-search">
@@ -1865,6 +1911,11 @@ body {
   <p class="section-desc">যেগুলো ইতিমধ্যে খেলেছ। আলাদা list, আলাদা search।</p>
 
   <div class="big-stats" id="played-big-stats" hidden></div>
+
+  <div class="db-actions-row">
+    <button class="btn btn-sm" id="played-import-btn" type="button">📥 Import</button>
+    <button class="btn btn-sm btn-danger" id="played-clear-btn" type="button">🗑️ Clear</button>
+  </div>
 
   <div class="toolbar toolbar-search">
     <div class="toolbar-row">
@@ -1970,6 +2021,11 @@ body {
   <p class="section-desc" id="custom-section-desc"></p>
 
   <div class="big-stats" id="custom-big-stats" hidden></div>
+
+  <div class="db-actions-row">
+    <button class="btn btn-sm" id="custom-import-btn" type="button">📥 Import</button>
+    <button class="btn btn-sm btn-danger" id="custom-clear-btn" type="button">🗑️ Clear</button>
+  </div>
 
   <div class="toolbar toolbar-search">
     <div class="toolbar-row">
@@ -2373,7 +2429,7 @@ body {
   </div>
 
   <div class="years-stats" id="years-stats"></div>
-  <div id="years-sections"></div>
+  <div id="years-sections" class="years-grid"></div>
 </section>
 
 <!-- ──── ANALYTICS VIEW ──────────────────────────────────── -->
@@ -2511,6 +2567,7 @@ body {
   <h2 class="section-title">settings</h2>
   <p class="section-desc">data export, import, ও config।</p>
 
+  <div class="settings-grid">
   <div class="setting-card">
     <h4>Export data</h4>
     <p>পুরো vault + played JSON file হিসেবে download হবে। backup করে রাখো।</p>
@@ -2557,7 +2614,7 @@ body {
     <div id="import-info" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:10px;min-height:14px;"></div>
   </div>
 
-  <div class="setting-card" id="cloud-sync-card">
+  <div class="setting-card span-full" id="cloud-sync-card">
     <h4>Cloud Sync — ক্লাউড সিঙ্ক</h4>
     <div id="cloud-sync-body"></div>
   </div>
@@ -2606,7 +2663,7 @@ body {
     </div>
   </div>
 
-  <div class="setting-card" id="custom-dbs-card">
+  <div class="setting-card span-full" id="custom-dbs-card">
     <h4>Custom databases</h4>
     <p>নিজের list বানাও — PS5, Xbox, Wishlist, যেকোনো নাম। প্রতিটা আলাদা search/add/bulk পাবে।</p>
     <div id="custom-dbs-list"></div>
@@ -2625,13 +2682,14 @@ body {
     </div>
   </div>
 
-  <div class="setting-card">
+  <div class="setting-card span-full">
     <h4>About</h4>
     <p style="margin-bottom:0;">
       <span style="font-family:var(--mono);">v1.0</span> — built for fuzzy game library tracking.
       Storage backend: <span style="font-family:var(--mono);" id="storage-info">checking…</span>.
       Engine: normalize → token-sort → Levenshtein.
     </p>
+  </div>
   </div>
 </section>
 
@@ -11131,11 +11189,7 @@ $('#import-any-btn').addEventListener('click', () => {
   tmp.click();
 });
 
-$('#import-file').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  const target = $('#import-target').value; // 'vault' or 'played'
+async function importFileToTarget(file, target) {
   const info = $('#import-info');
   info.style.color = 'var(--muted)';
   info.textContent = '⏳ reading ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)…';
@@ -11172,7 +11226,6 @@ $('#import-file').addEventListener('change', async (e) => {
           info.textContent = '✓ backup restored in ' + dt + 'ms — vault: +' + vAdded +
             ' (' + vSkipped + ' dup), played: +' + pAdded + ' (' + pSkipped + ' dup)';
           toast('Backup restored', 'success');
-          e.target.value = '';
           return;
         }
 
@@ -11180,7 +11233,6 @@ $('#import-file').addEventListener('change', async (e) => {
         if (Array.isArray(data)) {
           const items = data.filter(it => it != null);
           await runImportToTarget(items, target, 'json array', info);
-          e.target.value = '';
           return;
         }
 
@@ -11206,12 +11258,10 @@ $('#import-file').addEventListener('change', async (e) => {
         info.textContent = '✓ csv restored in ' + dt + 'ms — vault: +' + rV.added +
           ' (' + rV.skipped.length + ' dup), played: +' + rP.added + ' (' + rP.skipped.length + ' dup)';
         toast('CSV restored', 'success');
-        e.target.value = '';
         return;
       }
       // Otherwise fall through, send all to target
       await runImportToTarget(parsed.lines, target, 'csv', info);
-      e.target.value = '';
       return;
     }
 
@@ -11241,14 +11291,42 @@ $('#import-file').addEventListener('change', async (e) => {
       return o;
     });
     await runImportToTarget(richItems, target, 'text', info);
-    e.target.value = '';
   } catch (err) {
     info.style.color = 'var(--danger)';
     info.textContent = '✗ error: ' + err.message;
     toast('Import failed: ' + err.message, 'error');
+  }
+}
+
+$('#import-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    await importFileToTarget(file, $('#import-target').value);
+  } finally {
     e.target.value = '';
   }
 });
+
+// Opens a transient file picker that routes the chosen file to the given target
+// (used by per-tab Clear+Import buttons; for custom DBs pass 'cl-{id}').
+function openImportPickerFor(target) {
+  const tmp = document.createElement('input');
+  tmp.type = 'file';
+  tmp.accept = '.json,.txt,.csv,text/plain,application/json,text/csv,text/comma-separated-values';
+  tmp.style.position = 'fixed';
+  tmp.style.left = '0';
+  tmp.style.top = '0';
+  tmp.style.opacity = '0';
+  tmp.style.pointerEvents = 'none';
+  document.body.appendChild(tmp);
+  tmp.addEventListener('change', async (ev) => {
+    const file = ev.target.files[0];
+    if (file) await importFileToTarget(file, target);
+    try { document.body.removeChild(tmp); } catch (_) {}
+  });
+  tmp.click();
+}
 
 async function runImportToTarget(items, target, mode, info) {
   if (!items || items.length === 0) throw new Error('কোনো valid line পাওয়া যায়নি');
@@ -11258,6 +11336,10 @@ async function runImportToTarget(items, target, mode, info) {
   const result = bulkAddRich(items, target);
   const dt = (performance.now() - t0).toFixed(0);
   renderVault(); renderPlayed(); updateStats();
+  if (typeof target === 'string' && target.startsWith('cl-')
+      && typeof renderCustomDbView === 'function') {
+    renderCustomDbView(target.slice(3));
+  }
   info.style.color = 'var(--success)';
   info.textContent = '✓ done in ' + dt + 'ms — ' + target + ': +' + result.added.toLocaleString() +
     ' added, ' + result.skipped.length.toLocaleString() + ' duplicate skipped';
@@ -11391,7 +11473,7 @@ $('#use-worker-toggle').addEventListener('change', e => {
   Storage.set('use-worker', state.useWorker ? '1' : '0');
 });
 
-$('#clear-vault').addEventListener('click', () => {
+function confirmClearVault() {
   modal({
     title: 'Clear vault?',
     body: 'এই action revertible না। ভল্টের সব data delete হবে।',
@@ -11405,8 +11487,8 @@ $('#clear-vault').addEventListener('click', () => {
       toast('Vault cleared', 'success');
     }
   });
-});
-$('#clear-played').addEventListener('click', () => {
+}
+function confirmClearPlayed() {
   modal({
     title: 'Clear played list?',
     body: 'Played list-এর সব data delete হবে।',
@@ -11420,7 +11502,44 @@ $('#clear-played').addEventListener('click', () => {
       toast('Played cleared', 'success');
     }
   });
+}
+function confirmClearCustom(id) {
+  const list = state.customLists && state.customLists[id];
+  if (!list) { toast('Database পাওয়া যায়নি', 'error'); return; }
+  const name = list.name || 'database';
+  modal({
+    title: 'Clear ' + name + '?',
+    body: 'এই database-এর সব data delete হবে। revertible না।',
+    confirmLabel: 'Clear ' + name,
+    confirmKind: 'btn-danger',
+    onConfirm: async () => {
+      list.items = [];
+      rebuildIndexes();
+      await saveList('cl-' + id, []);
+      renderCustomDbView(id);
+      updateStats();
+      toast(name + ' cleared', 'success');
+    }
+  });
+}
+
+$('#clear-vault').addEventListener('click', confirmClearVault);
+$('#clear-played').addEventListener('click', confirmClearPlayed);
+
+// Per-tab Clear + Import buttons (Task 1)
+$('#vault-clear-btn')?.addEventListener('click', confirmClearVault);
+$('#played-clear-btn')?.addEventListener('click', confirmClearPlayed);
+$('#custom-clear-btn')?.addEventListener('click', () => {
+  const id = state.activeCustomId;
+  if (id) confirmClearCustom(id);
 });
+$('#vault-import-btn')?.addEventListener('click', () => openImportPickerFor('vault'));
+$('#played-import-btn')?.addEventListener('click', () => openImportPickerFor('played'));
+$('#custom-import-btn')?.addEventListener('click', () => {
+  const id = state.activeCustomId;
+  if (id) openImportPickerFor('cl-' + id);
+});
+
 $('#clear-all').addEventListener('click', () => {
   modal({
     title: 'Clear EVERYTHING?',
