@@ -2463,6 +2463,30 @@ body {
     <div class="stat-tile" id="stat-playtime-tile" hidden><div class="stat-tile-num" id="stat-playtime">0 hrs</div><div class="stat-tile-label">মোট playtime</div></div>
   </section>
 
+  <div class="analytics-card" id="backlog-forecast-card" style="margin-top: 24px;">
+    <h3 class="analytics-card-title" style="font-size: 16px; margin-bottom: 4px;">Backlog forecast — কবে শেষ হবে?</h3>
+    <p class="analytics-card-sub" id="backlog-summary" style="margin-bottom: 16px;"></p>
+
+    <!-- games/year explorer (moved from grid; all explorer-* IDs preserved) -->
+    <div id="explorer-block" style="margin-bottom: 22px;">
+      <p class="analytics-card-sub" style="margin-bottom: 8px;">🎮 তুমি কতো খেলবে? — slider drag করো, target pace-এ ETA</p>
+      <div class="setting-row">
+        <input type="range" id="explorer-slider" min="1" max="100" step="1" value="10" style="flex: 1; accent-color: var(--accent);">
+        <span id="explorer-slider-val" style="font-family: var(--mono); color: var(--accent); min-width: 32px; text-align: right;">10</span>
+      </div>
+      <div id="explorer-display" hidden style="margin-top: 16px;">
+        <p style="font-size: 24px; font-family: var(--mono); color: var(--accent); text-align: center; margin: 0 0 8px;"><span id="explorer-rate">10</span> games/year</p>
+        <p style="text-align: center; color: var(--muted); font-size: 13px; margin: 0 0 4px;">ETA: <span id="explorer-eta" style="color: var(--accent);"></span></p>
+        <p style="text-align: center; color: var(--muted); font-size: 12px; margin: 0;" id="explorer-compare"></p>
+      </div>
+      <div class="analytics-empty" id="explorer-empty" hidden>Played-এ অন্তত ১ বছরের data দরকার forecast-এর জন্য।</div>
+    </div>
+
+    <!-- hours/day backlog table (rendered by renderBacklogForecast) -->
+    <p class="analytics-card-sub" style="margin-bottom: 8px;">⏱️ প্রতিদিন কত ঘণ্টা খেললে backlog শেষ হবে</p>
+    <div id="backlog-forecast"></div>
+  </div>
+
   <div class="analytics-grid">
     <div class="analytics-card">
       <h3 class="analytics-card-title">প্রতি বছরে যোগ করা games</h3>
@@ -2541,30 +2565,6 @@ body {
     <h3 class="analytics-card-title" style="font-size: 16px; margin-bottom: 8px;">প্রতি database — release year অনুযায়ী</h3>
     <p class="section-desc" style="margin-bottom: 16px;">প্রতিটা list-এ কোন release year-এর কত games আর কত playtime। Played list-এ থাকা games তাদের source DB থেকে বাদ।</p>
     <div class="analytics-grid" id="db-year-charts-grid"></div>
-  </div>
-
-  <div class="analytics-card" id="backlog-forecast-card" style="margin-top: 24px;">
-    <h3 class="analytics-card-title" style="font-size: 16px; margin-bottom: 4px;">Backlog forecast — কবে শেষ হবে?</h3>
-    <p class="analytics-card-sub" id="backlog-summary" style="margin-bottom: 16px;"></p>
-
-    <!-- games/year explorer (moved from grid; all explorer-* IDs preserved) -->
-    <div id="explorer-block" style="margin-bottom: 22px;">
-      <p class="analytics-card-sub" style="margin-bottom: 8px;">🎮 তুমি কতো খেলবে? — slider drag করো, target pace-এ ETA</p>
-      <div class="setting-row">
-        <input type="range" id="explorer-slider" min="1" max="100" step="1" value="10" style="flex: 1; accent-color: var(--accent);">
-        <span id="explorer-slider-val" style="font-family: var(--mono); color: var(--accent); min-width: 32px; text-align: right;">10</span>
-      </div>
-      <div id="explorer-display" hidden style="margin-top: 16px;">
-        <p style="font-size: 24px; font-family: var(--mono); color: var(--accent); text-align: center; margin: 0 0 8px;"><span id="explorer-rate">10</span> games/year</p>
-        <p style="text-align: center; color: var(--muted); font-size: 13px; margin: 0 0 4px;">ETA: <span id="explorer-eta" style="color: var(--accent);"></span></p>
-        <p style="text-align: center; color: var(--muted); font-size: 12px; margin: 0;" id="explorer-compare"></p>
-      </div>
-      <div class="analytics-empty" id="explorer-empty" hidden>Played-এ অন্তত ১ বছরের data দরকার forecast-এর জন্য।</div>
-    </div>
-
-    <!-- hours/day backlog table (rendered by renderBacklogForecast) -->
-    <p class="analytics-card-sub" style="margin-bottom: 8px;">⏱️ প্রতিদিন কত ঘণ্টা খেললে backlog শেষ হবে</p>
-    <div id="backlog-forecast"></div>
   </div>
 </section>
 
