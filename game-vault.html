@@ -1442,6 +1442,22 @@ body {
   font-size: 20px; line-height: 1; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
+/* Android landscape (short viewport): a fullscreen chart fills the whole screen —
+   minimal margins, hide sub/summary, keep the small title + compact ◀▶/✕ floating
+   controls. max-height:600px never matches a normal PC, so PC mode is untouched. */
+@media (orientation: landscape) and (max-height: 600px) {
+  .chart-fs-overlay { padding: 4px; }
+  .chart-fs-slot { padding: 6px 8px; border-radius: 8px; }
+  .chart-fs-slot > .analytics-card { padding: 4px 6px; }
+  .chart-fs-slot .analytics-card-title { font-size: 12px; margin-bottom: 0; }
+  .chart-fs-slot .analytics-card-sub,
+  .chart-fs-slot .analytics-card-summary,
+  .chart-fs-slot .analytics-scroll-hint { display: none; }
+  .chart-fs-slot .analytics-canvas-wrap { min-height: 0; }
+  .chart-fs-nav-bar { top: 6px; gap: 8px; }
+  .chart-fs-nav { min-height: 34px; padding: 0 10px; font-size: 12px; }
+  .chart-fs-close { top: 6px; right: 6px; width: 34px; height: 34px; font-size: 15px; }
+}
 .analytics-card-title { font-size: 14px; margin-bottom: 4px; }
 .analytics-card-sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
 .analytics-canvas-wrap { position: relative; height: 280px; }
@@ -1629,10 +1645,19 @@ body {
   /* touch-friendly Analytics migrate buttons */
   .analytics-migrate-row .btn { min-height: 44px; flex: 1; }
 
-  /* larger touch-friendly rows on mobile */
-  :root { --row-h: 60px; }
-  .row { height: 60px; }
-  .row .name { font-size: 14px; }
+  /* taller rows so the FULL game name shows (wraps to 2 lines); badges drop below */
+  :root { --row-h: 80px; }
+  .row { height: 80px; align-items: center; padding: 8px 12px; gap: 10px; }
+  .row .serial { min-width: 0; }
+  .row .actions { display: none; }        /* redundant on phones — row-tap opens the action sheet */
+  .name-cluster { flex: 1; flex-wrap: wrap; align-items: baseline; row-gap: 3px; column-gap: 6px; }
+  .row .name {
+    flex: 1 1 100%;                        /* name takes the whole first line */
+    font-size: 14px; line-height: 1.3;
+    white-space: normal;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;                      /* clamp at 2 lines → keeps uniform row height */
+  }
 
   /* keep content clear of the fixed bottom nav */
   .app { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
