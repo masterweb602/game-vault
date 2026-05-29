@@ -2516,20 +2516,6 @@ body {
       <div class="analytics-empty" id="scenario-empty" hidden>Played-এ অন্তত ১ বছরের data দরকার forecast-এর জন্য।</div>
     </div>
     <div class="analytics-card">
-      <h3 class="analytics-card-title">তুমি কতো খেলবে?</h3>
-      <p class="analytics-card-sub">Slider drag করো — তোমার target pace-এ ETA দেখাও</p>
-      <div class="setting-row">
-        <input type="range" id="explorer-slider" min="1" max="100" step="1" value="10" style="flex: 1; accent-color: var(--accent);">
-        <span id="explorer-slider-val" style="font-family: var(--mono); color: var(--accent); min-width: 32px; text-align: right;">10</span>
-      </div>
-      <div id="explorer-display" hidden style="margin-top: 16px;">
-        <p style="font-size: 24px; font-family: var(--mono); color: var(--accent); text-align: center; margin: 0 0 8px;"><span id="explorer-rate">10</span> games/year</p>
-        <p style="text-align: center; color: var(--muted); font-size: 13px; margin: 0 0 4px;">ETA: <span id="explorer-eta" style="color: var(--accent);"></span></p>
-        <p style="text-align: center; color: var(--muted); font-size: 12px; margin: 0;" id="explorer-compare"></p>
-      </div>
-      <div class="analytics-empty" id="explorer-empty" hidden>Played-এ অন্তত ১ বছরের data দরকার forecast-এর জন্য।</div>
-    </div>
-    <div class="analytics-card">
       <h3 class="analytics-card-title">Collection-এর decades</h3>
       <p class="analytics-card-sub">তোমার games কোন era থেকে এসেছে</p>
       <div class="analytics-canvas-wrap">
@@ -2557,7 +2543,29 @@ body {
     <div class="analytics-grid" id="db-year-charts-grid"></div>
   </div>
 
-  <div class="analytics-db-section" id="backlog-forecast" style="margin-top: 24px;"></div>
+  <div class="analytics-card" id="backlog-forecast-card" style="margin-top: 24px;">
+    <h3 class="analytics-card-title" style="font-size: 16px; margin-bottom: 4px;">Backlog forecast — কবে শেষ হবে?</h3>
+    <p class="analytics-card-sub" id="backlog-summary" style="margin-bottom: 16px;"></p>
+
+    <!-- games/year explorer (moved from grid; all explorer-* IDs preserved) -->
+    <div id="explorer-block" style="margin-bottom: 22px;">
+      <p class="analytics-card-sub" style="margin-bottom: 8px;">🎮 তুমি কতো খেলবে? — slider drag করো, target pace-এ ETA</p>
+      <div class="setting-row">
+        <input type="range" id="explorer-slider" min="1" max="100" step="1" value="10" style="flex: 1; accent-color: var(--accent);">
+        <span id="explorer-slider-val" style="font-family: var(--mono); color: var(--accent); min-width: 32px; text-align: right;">10</span>
+      </div>
+      <div id="explorer-display" hidden style="margin-top: 16px;">
+        <p style="font-size: 24px; font-family: var(--mono); color: var(--accent); text-align: center; margin: 0 0 8px;"><span id="explorer-rate">10</span> games/year</p>
+        <p style="text-align: center; color: var(--muted); font-size: 13px; margin: 0 0 4px;">ETA: <span id="explorer-eta" style="color: var(--accent);"></span></p>
+        <p style="text-align: center; color: var(--muted); font-size: 12px; margin: 0;" id="explorer-compare"></p>
+      </div>
+      <div class="analytics-empty" id="explorer-empty" hidden>Played-এ অন্তত ১ বছরের data দরকার forecast-এর জন্য।</div>
+    </div>
+
+    <!-- hours/day backlog table (rendered by renderBacklogForecast) -->
+    <p class="analytics-card-sub" style="margin-bottom: 8px;">⏱️ প্রতিদিন কত ঘণ্টা খেললে backlog শেষ হবে</p>
+    <div id="backlog-forecast"></div>
+  </div>
 </section>
 
 <!-- ──── NOTES VIEW ──────────────────────────────────────── -->
@@ -8598,12 +8606,12 @@ function renderBacklogForecast() {
   }
   totalHours = Math.round(totalHours * 10) / 10;
 
+  // Shared summary line lives in the merged card header, above the explorer.
+  const summaryEl = document.getElementById('backlog-summary');
+
   if (gamesWithPlaytime === 0 || totalHours <= 0) {
-    host.innerHTML = ''
-      + '<div class="analytics-card">'
-      +   '<h3 class="analytics-card-title">প্রতিদিন কত ঘণ্টা খেললে backlog শেষ হবে</h3>'
-      +   '<div class="analytics-empty">Vault-এ কোনো remaining item-এ playtime set নেই।</div>'
-      + '</div>';
+    if (summaryEl) summaryEl.textContent = 'Vault-এ কোনো remaining item-এ playtime set নেই (Played বাদ)।';
+    host.innerHTML = '<div class="analytics-empty">Vault-এ কোনো remaining item-এ playtime set নেই।</div>';
     return;
   }
 
@@ -8620,10 +8628,12 @@ function renderBacklogForecast() {
       + '</tr>';
   }
 
+  if (summaryEl) {
+    summaryEl.textContent = gamesWithPlaytime + ' games · '
+      + Math.round(totalHours).toLocaleString() + ' ঘণ্টা remaining (Vault, playtime set; Played বাদ)';
+  }
+
   host.innerHTML = ''
-    + '<div class="analytics-card">'
-    +   '<h3 class="analytics-card-title">প্রতিদিন কত ঘণ্টা খেললে backlog শেষ হবে</h3>'
-    +   '<p class="analytics-card-sub">' + gamesWithPlaytime + ' games · ' + Math.round(totalHours).toLocaleString() + ' ঘণ্টা remaining (Vault, playtime set; Played বাদ)</p>'
     +   '<table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:13px;">'
     +     '<thead><tr style="text-align:left;color:#76716a;border-bottom:1px solid rgba(255,255,255,0.08);">'
     +       '<th style="padding:6px 8px;font-weight:600;">ঘণ্টা/দিন</th>'
@@ -8638,8 +8648,7 @@ function renderBacklogForecast() {
     +       '<input type="range" id="backlog-slider" min="1" max="12" step="1" value="2" style="flex:1;min-width:140px;accent-color:#f5a623;">'
     +       '<span id="backlog-slider-out" style="color:#f0ece4;flex-basis:100%;"></span>'
     +     '</label>'
-    +   '</div>'
-    + '</div>';
+    +   '</div>';
 
   const slider = document.getElementById('backlog-slider');
   const out    = document.getElementById('backlog-slider-out');
