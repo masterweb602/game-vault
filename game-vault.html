@@ -1497,16 +1497,19 @@ body {
   border-radius: 5px;
 }
 @media (min-width: 769px) {
-  /* Per-DB release-year section reclaims wasted viewport side space: centered
-     breakout capped at 1760px (16px min side gap) with exactly 3 wider cards
-     per row. Other analytics grids stay at the .app cap. */
+  /* Full-width sidebar layout: the per-DB section just fills the main column
+     (the old centered 50vw breakout would misalign against the left sidebar). */
   #db-year-section {
-    width: min(100vw - 32px, 1760px);
-    margin-left:  calc(50% - min(50vw - 16px, 880px));
-    margin-right: calc(50% - min(50vw - 16px, 880px));
+    width: auto;
+    margin-left: 0;
+    margin-right: 0;
     box-sizing: border-box;
   }
   #db-year-charts-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 1600px) {
+  /* extra width → more analytics charts per row */
+  #db-year-charts-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 /* ─── PC sidebar layout (desktop only) ───────────────────────
@@ -1519,6 +1522,9 @@ body {
     grid-template-columns: 220px 1fr;
     height: 100vh;
     padding: 0;
+    max-width: none;
+    width: 100%;
+    margin: 0;
   }
   .app-sidebar {
     display: flex;
@@ -1719,7 +1725,7 @@ body {
 }
 
 @media (min-width: 1400px) {
-  .app { max-width: 1400px; }
+  .app { max-width: none; }   /* desktop sidebar layout spans full viewport width */
 }
 
 /* ─── Mobile bottom navigation (Phone mode step 1) ─────────── */
