@@ -11514,7 +11514,8 @@ function confirmClearCustom(id) {
     confirmKind: 'btn-danger',
     onConfirm: async () => {
       list.items = [];
-      rebuildIndexes();
+      list.index = new SearchIndex();   // reset THIS db's index — rebuildIndexes() only covers vault/played
+      state.motherDirty = true;
       await saveList('cl-' + id, []);
       renderCustomDbView(id);
       updateStats();
