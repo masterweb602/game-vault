@@ -8037,6 +8037,23 @@ function _resizeCardCharts(card) {
   });
 }
 
+// Show/hide per-dataset value labels for every chart in a card. Used so compact
+// cards stay clean and fullscreen reveals the numbers. Skips charts without
+// per-dataset datalabels (e.g. the decade bar chart) and uses update('none') so
+// zoom/pan/baseline state is preserved with no re-animation.
+function _toggleCardDataLabels(card, show) {
+  if (!card || typeof Chart === 'undefined' || !Chart.getChart) return;
+  card.querySelectorAll('canvas').forEach((cv) => {
+    const ch = Chart.getChart(cv);
+    if (!ch || !ch.data || !ch.data.datasets) return;
+    let changed = false;
+    ch.data.datasets.forEach((ds) => {
+      if (ds.datalabels) { ds.datalabels.display = show; changed = true; }
+    });
+    if (changed) ch.update('none');
+  });
+}
+
 // Ordered list of chart cards captured when fullscreen opens, so ◀/▶ can cycle
 // through them without closing the overlay. _chartFsIndex = card currently shown.
 let _chartFsCards = [];
@@ -8097,6 +8114,7 @@ function openChartFullscreen(card) {
   _mountChartCard(card);
   overlay.hidden = false;
   document.body.style.overflow = 'hidden';
+  _toggleCardDataLabels(card, true);     // reveal value labels in fullscreen
   _resizeCardCharts(card);
 }
 
@@ -8105,10 +8123,12 @@ function openChartFullscreen(card) {
 function navigateChartFullscreen(dir) {
   const overlay = document.getElementById('chart-fs-overlay');
   if (!overlay || overlay.hidden || !_chartFsCards.length) return;
-  _unmountChartCard();
+  const old = _unmountChartCard();
+  if (old) _toggleCardDataLabels(old, false);
   _chartFsIndex = (_chartFsIndex + dir + _chartFsCards.length) % _chartFsCards.length;
   const next = _chartFsCards[_chartFsIndex];
   _mountChartCard(next);
+  _toggleCardDataLabels(next, true);
   _resizeCardCharts(next);
 }
 
@@ -8121,7 +8141,10 @@ function closeChartFullscreen() {
   document.body.style.overflow = '';
   _chartFsCards = [];
   _chartFsIndex = -1;
-  if (card && card.isConnected) _resizeCardCharts(card);
+  if (card && card.isConnected) {
+    _toggleCardDataLabels(card, false);  // back to clean compact card
+    _resizeCardCharts(card);
+  }
 }
 
 (function wireChartFullscreen() {
@@ -8193,6 +8216,7 @@ function renderDbYearCharts() {
   const _dbChartValueLabel = (color, placement, offset = 6) => ({
     anchor: 'end', align: placement, offset,
     color,
+    display: false,                 // hidden in compact card; fullscreen toggles on
     font: { size: 9, weight: 'bold' },
     backgroundColor: 'rgba(20,20,20,0.78)',
     borderRadius: 4,
@@ -8535,6 +8559,7 @@ function renderPlayedActivityChart() {
   };
   const _valueLabel = (color) => ({
     anchor: 'end', align: 'top', offset: 6, color,
+    display: false,                 // hidden in compact card; fullscreen toggles on
     font: { size: 9, weight: 'bold' },
     backgroundColor: 'rgba(20,20,20,0.78)', borderRadius: 4,
     padding: { top: 2, bottom: 2, left: 4, right: 4 },
