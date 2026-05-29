@@ -7942,7 +7942,9 @@ function renderDbYearCharts() {
     g.addColorStop(1, hex + '00');
     return g;
   };
-  // All-point value labels with chip background. placement is 'top' (Count) or 'bottom' (Playtime).
+  // All-point value labels with chip background. placement is the datalabels
+  // align ('top'/'bottom'); both Count and Playtime use 'top' so neither
+  // collides with the x-axis year labels.
   const _dbChartValueLabel = (color, placement) => ({
     anchor: 'end', align: placement, offset: 6,
     color,
@@ -8175,7 +8177,7 @@ function renderDbYearCharts() {
             pointHoverBackgroundColor: success,
             pointHoverBorderColor: '#fff',
             yAxisID: 'yHours',
-            datalabels: _dbChartValueLabel(success, 'bottom')
+            datalabels: _dbChartValueLabel(success, 'top')
           }
         ]
       },
