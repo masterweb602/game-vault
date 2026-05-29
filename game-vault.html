@@ -1434,22 +1434,13 @@ body {
 .analytics-card-title { font-size: 14px; margin-bottom: 4px; }
 .analytics-card-sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
 .analytics-canvas-wrap { position: relative; height: 280px; }
-/* Phase 10: per-DB release-year charts get full-width single column + taller canvas */
-/* Full-bleed: chart sections break out of .app's 1200/1400px cap to span the full
-   window width. The ~scrollbar-width overflow is clipped by html,body{overflow-x:clip}.
-   #played-activity-* pre-wired for the Played activity chart (step 2). */
-#db-year-section, #played-activity-section {
-  width: 100vw;
-  margin-left:  calc(50% - 50vw);
-  margin-right: calc(50% - 50vw);
-  box-sizing: border-box;
-  padding-left: 12px;
-  padding-right: 12px;
-}
-#db-year-charts-grid, #played-activity-grid { grid-template-columns: 1fr; }
+/* Per-DB release-year + Played activity charts: compact uniform grid cards that
+   inherit .analytics-grid (auto-fit minmax 360px ≈ 3 cols inside .app, 280px canvas)
+   — same look as the other analytics cards. ⛶ opens any one fullscreen for detail.
+   Horizontal scroll / drag / pinch still work inside the small card. */
 #db-year-charts-grid .analytics-card, #played-activity-grid .analytics-card { min-width: 0; padding: 12px; }
 #db-year-charts-grid .analytics-canvas-wrap, #played-activity-grid .analytics-canvas-wrap {
-  height: 900px;
+  height: 280px;
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
@@ -1594,9 +1585,9 @@ body {
   /* hide desktop tab bar, switch to bottom nav */
   .tabs { display: none; }
 
-  /* shorter chart canvases on phones (base rule is 750px for desktop) */
+  /* shorter chart canvases on phones (base rule is 280px for desktop) */
   #db-year-charts-grid .analytics-canvas-wrap, #played-activity-grid .analytics-canvas-wrap {
-    height: 420px;
+    height: 300px;
   }
 
   /* side-by-side grids collapse to single column on phone */
