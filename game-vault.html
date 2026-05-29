@@ -1474,6 +1474,18 @@ body {
   background: rgba(255,255,255,0.06);
   border-radius: 5px;
 }
+@media (min-width: 769px) {
+  /* Per-DB release-year section reclaims wasted viewport side space: centered
+     breakout capped at 1760px (16px min side gap) with exactly 3 wider cards
+     per row. Other analytics grids stay at the .app cap. */
+  #db-year-section {
+    width: min(100vw - 32px, 1760px);
+    margin-left:  calc(50% - min(50vw - 16px, 880px));
+    margin-right: calc(50% - min(50vw - 16px, 880px));
+    box-sizing: border-box;
+  }
+  #db-year-charts-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 .db-chart-scroll-inner { height: 100%; position: relative; }
 .analytics-scroll-hint {
   color: var(--muted);
@@ -1600,6 +1612,9 @@ body {
   #db-year-charts-grid .analytics-canvas-wrap, #played-activity-grid .analytics-canvas-wrap {
     height: 300px;
   }
+
+  /* per-DB chart grid stays single column on phones */
+  #db-year-charts-grid { grid-template-columns: 1fr; }
 
   /* side-by-side grids collapse to single column on phone */
   .settings-grid, .years-grid {
@@ -7832,9 +7847,12 @@ function renderQuickStats() {
 
   const vault  = state.vault;
   const played = state.played;
-  const total  = (typeof aggregateMotherList === 'function')
-    ? aggregateMotherList(state).length
-    : vault.length + played.length;
+  // Mother aggregate (vault + every custom DB) — same source as the "All games"
+  // tile, reused for the total-playtime tile below.
+  const motherItems = (typeof aggregateMotherList === 'function')
+    ? aggregateMotherList(state).map(r => r.item)
+    : vault.concat(played);
+  const total  = motherItems.length;
 
   totalEl.textContent  = String(total);
   vaultEl.textContent  = String(vault.length);
@@ -7852,7 +7870,7 @@ function renderQuickStats() {
   yearsEl.textContent = String(yearsSet.size);
 
   if (playtimeTile && playtimeEl) {
-    const hours = totalPlaytimeHours(vault.concat(played));
+    const hours = totalPlaytimeHours(motherItems);
     if (hours > 0) {
       playtimeTile.hidden = false;
       playtimeEl.textContent = Math.round(hours).toLocaleString('en-US') + ' hrs';
