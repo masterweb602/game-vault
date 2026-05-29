@@ -1410,7 +1410,7 @@ body {
 #db-year-charts-grid, #played-activity-grid { grid-template-columns: 1fr; }
 #db-year-charts-grid .analytics-card, #played-activity-grid .analytics-card { min-width: 0; padding: 12px; }
 #db-year-charts-grid .analytics-canvas-wrap, #played-activity-grid .analytics-canvas-wrap {
-  height: 750px;
+  height: 900px;
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
@@ -1557,7 +1557,7 @@ body {
 
   /* shorter chart canvases on phones (base rule is 750px for desktop) */
   #db-year-charts-grid .analytics-canvas-wrap, #played-activity-grid .analytics-canvas-wrap {
-    height: 350px;
+    height: 420px;
   }
 
   /* side-by-side grids collapse to single column on phone */
@@ -7957,9 +7957,6 @@ function renderDbYearCharts() {
       const n = (v && typeof v === 'object') ? v.y : v;
       return n > 0 ? n : '';
     },
-    // Auto-hide any label that would overlap another — offsets give a good
-    // baseline, the plugin drops collisions and restores them on zoom-in.
-    display: 'auto',
     clamp: true, clip: false
   });
   // Zoom config: wheel-zoom + Shift+drag-pan (plain drag still scrolls the wrapper).
@@ -8220,13 +8217,13 @@ function renderDbYearCharts() {
             grid: { color: 'rgba(255,255,255,0.04)' }
           },
           yCount: {
-            type: 'linear', position: 'left', beginAtZero: true, min: 0,
+            type: 'linear', position: 'left', beginAtZero: true, min: 0, grace: '12%',
             ticks: { color: '#76716a', precision: 0 },
             grid: { color: 'rgba(255,255,255,0.04)' },
             title: { display: true, text: 'count', color: '#76716a' }
           },
           yHours: {
-            type: 'linear', position: 'right', beginAtZero: true, min: 0,
+            type: 'linear', position: 'right', beginAtZero: true, min: 0, grace: '12%',
             ticks: { color: '#76716a' },
             grid: { drawOnChartArea: false },
             title: { display: true, text: 'hours', color: '#76716a' }
@@ -8298,11 +8295,10 @@ function renderPlayedActivityChart() {
   };
   const _valueLabel = (color) => ({
     anchor: 'end', align: 'top', offset: 6, color,
-    font: { size: 10, weight: 'bold' },
+    font: { size: 9, weight: 'bold' },
     backgroundColor: 'rgba(20,20,20,0.78)', borderRadius: 4,
     padding: { top: 2, bottom: 2, left: 4, right: 4 },
     formatter: (v) => { const n = (v && typeof v === 'object') ? v.y : v; return n > 0 ? n : ''; },
-    display: 'auto',   // auto-hide overlapping labels; restored on zoom-in
     clamp: true, clip: false
   });
   const _zoomCfg = (xMin, xMax) => {
@@ -8535,7 +8531,7 @@ function renderPlayedActivityChart() {
           grid: { color: 'rgba(255,255,255,0.04)' }
         },
         y: {
-          type: 'linear', beginAtZero: true, min: 0,
+          type: 'linear', beginAtZero: true, min: 0, grace: '12%',
           ticks: { color: '#76716a', precision: 0 },
           grid: { color: 'rgba(255,255,255,0.04)' },
           title: { display: true, text: 'games', color: '#76716a' }
