@@ -5700,7 +5700,7 @@ function makeRow(item, idx, source) {
   const row = el('div', { class: 'row' });
   const serialMap = source === 'vault' ? state.vaultSerialMap : state.playedSerialMap;
   const origIdx = serialMap.get(item.id);
-  const serialText = origIdx === undefined ? '#----' : '#' + String(origIdx + 1).padStart(4, '0');
+  const serialText = origIdx === undefined ? '----' : String(origIdx + 1).padStart(4, '0');
 
   // Bulk-mode checkbox replaces the leading visual slot when active in vault tab.
   if (source === 'vault' && state.bulkMode) {
@@ -5960,7 +5960,7 @@ function makeCustomRow(item, idx, id) {
   const row = el('div', { class: 'row' });
   const serialMap = state.customSerialMaps[id];
   const origIdx = serialMap ? serialMap.get(item.id) : undefined;
-  const serialText = origIdx === undefined ? '#----' : '#' + String(origIdx + 1).padStart(4, '0');
+  const serialText = origIdx === undefined ? '----' : String(origIdx + 1).padStart(4, '0');
   row.appendChild(el('span', { class: 'serial' }, serialText));
 
   const cluster = el('div', { class: 'name-cluster' });
@@ -9431,7 +9431,7 @@ function makeMotherRow(row, idx) {
   // index, but we want the serial to be the position in the unfiltered
   // mother list. That's set by the caller via row._motherSerial.
   const serialNum = (typeof row._motherSerial === 'number') ? (row._motherSerial + 1) : (idx + 1);
-  div.appendChild(el('span', { class: 'serial' }, '#' + String(serialNum).padStart(4, '0')));
+  div.appendChild(el('span', { class: 'serial' }, String(serialNum).padStart(4, '0')));
 
   const cluster = el('div', { class: 'name-cluster' });
   const name = el('span', { class: 'name' });
