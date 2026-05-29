@@ -1569,8 +1569,13 @@ body {
     padding: 9px 12px;
     border-bottom: none;
     border-left: 2px solid transparent;
+    color: var(--text);
+    font-weight: 600;
   }
+  .app-sidebar .tab:hover { color: #fff; }
+  .app-sidebar .tab .tab-count { color: var(--muted); }
   .app-sidebar .tab.active {
+    color: var(--accent);
     border-left-color: var(--accent);
     background: var(--bg-soft);
   }
