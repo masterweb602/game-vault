@@ -1391,6 +1391,45 @@ body {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 20px;
+  position: relative;
+}
+/* ── Click-to-fullscreen for analytics charts ── */
+.chart-expand-btn {
+  position: absolute; top: 8px; right: 8px; z-index: 2;
+  width: 30px; height: 30px; border-radius: 6px;
+  background: rgba(28,28,34,0.85); color: #f0ece4;
+  border: 1px solid rgba(255,255,255,0.14); cursor: pointer;
+  font-size: 14px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+@media (hover: hover) {
+  .chart-expand-btn { opacity: 0.5; transition: opacity 0.15s; }
+  .analytics-card:hover .chart-expand-btn { opacity: 1; }
+}
+.chart-fs-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(0,0,0,0.82);
+  display: flex; padding: 16px;
+}
+.chart-fs-overlay[hidden] { display: none; }
+.chart-fs-slot {
+  flex: 1; min-width: 0;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px; overflow: auto;
+  display: flex; flex-direction: column;
+}
+.chart-fs-slot > .analytics-card {
+  flex: 1; margin: 0; display: flex; flex-direction: column;
+}
+.chart-fs-slot .analytics-canvas-wrap { flex: 1; height: 100%; min-height: 240px; }
+.chart-fs-slot .chart-expand-btn { display: none; }
+.chart-fs-close {
+  position: absolute; top: 24px; right: 24px; z-index: 1;
+  width: 44px; height: 44px; border-radius: 8px;
+  background: #1c1c22; color: #f0ece4;
+  border: 1px solid rgba(255,255,255,0.2);
+  font-size: 20px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
 }
 .analytics-card-title { font-size: 14px; margin-bottom: 4px; }
 .analytics-card-sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
@@ -2747,6 +2786,11 @@ body {
 </div>
 <div class="modal-overlay" id="modal">
   <div class="modal" id="modal-content"></div>
+</div>
+
+<div id="chart-fs-overlay" class="chart-fs-overlay" hidden>
+  <button id="chart-fs-close" class="chart-fs-close" type="button" aria-label="Close fullscreen">✕</button>
+  <div id="chart-fs-slot" class="chart-fs-slot"></div>
 </div>
 
 <script>
@@ -7908,7 +7952,103 @@ function renderInsights() {
   }
 }
 
+/* ── Click-to-fullscreen for analytics charts ──────────────────
+   Moves the clicked chart's whole .analytics-card into a fullscreen
+   overlay (and back on close). Reuses the live Chart instance + all
+   its wiring (pinch-zoom, drag-scroll, range buttons) — no second
+   instance, no duplicated chart logic. */
+function addChartExpandButtons() {
+  const cards = document.querySelectorAll(
+    '#view-analytics .analytics-card, #backlog-forecast-card'
+  );
+  for (const card of cards) {
+    if (!card.querySelector('canvas')) continue;       // chart cards only
+    if (card.querySelector('.chart-expand-btn')) continue; // idempotent
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'chart-expand-btn';
+    btn.title = 'Fullscreen';
+    btn.setAttribute('aria-label', 'Open chart fullscreen');
+    btn.textContent = '⛶';
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openChartFullscreen(card);
+    });
+    card.appendChild(btn);
+  }
+}
+
+function _resizeCardCharts(card) {
+  if (!card || typeof Chart === 'undefined' || !Chart.getChart) return;
+  requestAnimationFrame(() => {
+    card.querySelectorAll('canvas').forEach((cv) => {
+      const ch = Chart.getChart(cv);
+      if (ch) ch.resize();
+    });
+  });
+}
+
+function openChartFullscreen(card) {
+  const overlay = document.getElementById('chart-fs-overlay');
+  const slot = document.getElementById('chart-fs-slot');
+  if (!overlay || !slot || !card) return;
+  // Remember position for restore.
+  const ph = document.createComment('chart-fs-placeholder');
+  card.__fsPlaceholder = ph;
+  card.__fsParent = card.parentNode;
+  card.parentNode.insertBefore(ph, card);
+  // Let the inner scroll area fill the wide overlay (restore px width on close).
+  card.querySelectorAll('.db-chart-scroll-inner').forEach((inner) => {
+    inner.dataset.fsPrevWidth = inner.style.width || '';
+    inner.style.width = '100%';
+  });
+  slot.appendChild(card);
+  overlay.hidden = false;
+  document.body.style.overflow = 'hidden';
+  _resizeCardCharts(card);
+}
+
+function closeChartFullscreen() {
+  const overlay = document.getElementById('chart-fs-overlay');
+  const slot = document.getElementById('chart-fs-slot');
+  if (!overlay || overlay.hidden || !slot) return;       // no-op when closed
+  const card = slot.firstElementChild;
+  if (card) {
+    card.querySelectorAll('.db-chart-scroll-inner').forEach((inner) => {
+      inner.style.width = inner.dataset.fsPrevWidth || '';
+      delete inner.dataset.fsPrevWidth;
+    });
+    const ph = card.__fsPlaceholder;
+    if (ph && ph.parentNode) {
+      ph.parentNode.insertBefore(card, ph);
+      ph.remove();
+    } else if (card.__fsParent && card.__fsParent.isConnected) {
+      card.__fsParent.appendChild(card);                 // placeholder lost (re-render)
+    } else {
+      card.remove();                                     // original gone; a fresh card exists
+    }
+    card.__fsPlaceholder = null;
+    card.__fsParent = null;
+  }
+  overlay.hidden = true;
+  document.body.style.overflow = '';
+  if (card && card.isConnected) _resizeCardCharts(card);
+}
+
+(function wireChartFullscreen() {
+  const overlay = document.getElementById('chart-fs-overlay');
+  const closeBtn = document.getElementById('chart-fs-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeChartFullscreen);
+  if (overlay) overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeChartFullscreen();    // backdrop tap
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && overlay && !overlay.hidden) closeChartFullscreen();
+  });
+})();
+
 function renderDbYearCharts() {
+  closeChartFullscreen();                                // exit FS before rebuild
   const grid = document.getElementById('db-year-charts-grid');
   if (!grid) return;
 
@@ -8260,6 +8400,7 @@ function renderDbYearCharts() {
     btnAll.addEventListener('click',() => applyRange(null));
     btnRst.addEventListener('click',() => { if (typeof chartRef.resetZoom === 'function') chartRef.resetZoom(); });
   }
+  addChartExpandButtons();
 }
 
 // ── Phase 19 step 3: Played activity chart with year → month → day drill-down ─
@@ -8269,6 +8410,7 @@ function renderDbYearCharts() {
 // month view, {year,month} = day view. Pure helpers (tested):
 // groupPlayedByYear / groupPlayedByMonth / groupPlayedByDay.
 function renderPlayedActivityChart() {
+  closeChartFullscreen();                                // exit FS before rebuild
   const grid = document.getElementById('played-activity-grid');
   if (!grid) return;
 
@@ -8564,6 +8706,7 @@ function renderPlayedActivityChart() {
   };
   rangeBtns.forEach(b => b.addEventListener('click', () => applyRange(b._n)));
   btnRst.addEventListener('click', () => { if (typeof chart.resetZoom === 'function') chart.resetZoom(); });
+  addChartExpandButtons();
 }
 
 // ── Phase 16: backlog completion forecast ──────────────────────────────────
@@ -9275,6 +9418,7 @@ function switchTab(name) {
     renderDbYearCharts();
     renderPlayedActivityChart();
     renderBacklogForecast();
+    addChartExpandButtons();
   }
   if (name === 'notes') refreshNotesStatus();
   if (name === 'mother') renderMotherView();
@@ -9402,6 +9546,7 @@ if (_analyticsRefreshBtn) {
     renderDbYearCharts();
     renderPlayedActivityChart();
     renderBacklogForecast();
+    addChartExpandButtons();
   });
 }
 
