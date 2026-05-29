@@ -3,7 +3,10 @@
 (function () {
   'use strict';
 
-  const browser = window.browser;
+  // Robust API ref: webextension-polyfill defines `browser`; fall back to the
+  // native `chrome` global (MV3 supports promises on chrome.storage). This makes
+  // the popup work even if the polyfill failed to load.
+  const browser = window.browser || (typeof chrome !== 'undefined' ? chrome : undefined);
   const VM = window.VaultMatch;
   const KEY_DATA = 'vaultData';
   const KEY_ENABLED = 'enabled';
@@ -18,9 +21,46 @@
   const thresholdInput = $('threshold-input');
   const statusEl = $('status');
 
+  const hasStorage = !!(browser && browser.storage && browser.storage.local);
+
   function setStatus(msg, kind) {
     statusEl.textContent = msg || '';
     statusEl.className = 'status' + (kind ? ' ' + kind : '');
+  }
+
+  // Promise wrappers that work with both the polyfill (promise) and bare chrome.
+  function storageGet(keys) {
+    return new Promise((resolve, reject) => {
+      try {
+        const r = browser.storage.local.get(keys, (res) => {
+          const err = browser.runtime && browser.runtime.lastError;
+          if (err) reject(new Error(err.message)); else resolve(res);
+        });
+        if (r && typeof r.then === 'function') r.then(resolve, reject); // polyfill path
+      } catch (e) { reject(e); }
+    });
+  }
+  function storageSet(obj) {
+    return new Promise((resolve, reject) => {
+      try {
+        const r = browser.storage.local.set(obj, () => {
+          const err = browser.runtime && browser.runtime.lastError;
+          if (err) reject(new Error(err.message)); else resolve();
+        });
+        if (r && typeof r.then === 'function') r.then(resolve, reject);
+      } catch (e) { reject(e); }
+    });
+  }
+  function storageRemove(key) {
+    return new Promise((resolve, reject) => {
+      try {
+        const r = browser.storage.local.remove(key, () => {
+          const err = browser.runtime && browser.runtime.lastError;
+          if (err) reject(new Error(err.message)); else resolve();
+        });
+        if (r && typeof r.then === 'function') r.then(resolve, reject);
+      } catch (e) { reject(e); }
+    });
   }
 
   function clampThreshold(v) {
@@ -29,15 +69,19 @@
     return Math.min(0.95, Math.max(0.5, n));
   }
 
-  /* Parse a vault export (or a fallback name list) into unique game names.
-     Real export shape: { version, vault:[{name}], played:[{name}] }. */
+  /* Parse an export into { names, playedNorms }. Supports:
+     - v3 Mother: { version:3, type:"mother", games:[{name, played}] }
+     - legacy:    { vault:[{name}], played:[{name}] }  (played → completed)
+     - generic:   { games:[...] }, array of strings/objects, or a plain list. */
   function extractNames(raw) {
     raw = String(raw || '').trim();
     if (!raw) return { error: 'Paste your vault JSON (or a list of names) first.' };
 
     let names = [];
+    const playedNames = [];      // names flagged as played/completed
     let vaultCount = 0, playedCount = 0;
-    let parsedJson = true;
+    let isMother = false, parsedJson = true;
+
     try {
       const data = JSON.parse(raw);
       if (Array.isArray(data)) {
@@ -46,17 +90,22 @@
           else if (x && x.name) names.push(x.name);
         }
       } else if (data && typeof data === 'object') {
-        if (Array.isArray(data.vault)) {
-          for (const it of data.vault) if (it && it.name) { names.push(it.name); vaultCount++; }
-        }
-        if (Array.isArray(data.played)) {
-          for (const it of data.played) if (it && it.name) { names.push(it.name); playedCount++; }
-        }
-        // tolerate a generic { games: [...] } shape
-        if (!data.vault && !data.played && Array.isArray(data.games)) {
+        if (data.type === 'mother' && Array.isArray(data.games)) {
+          isMother = true;
+          for (const g of data.games) {
+            if (!g || !g.name) continue;
+            names.push(g.name);
+            if (g.played) playedNames.push(g.name);
+          }
+        } else if (Array.isArray(data.vault) || Array.isArray(data.played)) {
+          if (Array.isArray(data.vault))
+            for (const it of data.vault) if (it && it.name) { names.push(it.name); vaultCount++; }
+          if (Array.isArray(data.played))
+            for (const it of data.played) if (it && it.name) { names.push(it.name); playedNames.push(it.name); playedCount++; }
+        } else if (Array.isArray(data.games)) {
           for (const it of data.games) {
             if (typeof it === 'string') names.push(it);
-            else if (it && it.name) names.push(it.name);
+            else if (it && it.name) { names.push(it.name); if (it.played) playedNames.push(it.name); }
           }
         }
       }
@@ -64,32 +113,49 @@
       parsedJson = false;
     }
 
-    // Not JSON → treat as plain newline/comma separated list of names.
-    if (!parsedJson) {
-      names = raw.split(/[\n,]+/);
-    }
+    if (!parsedJson) names = raw.split(/[\n,]+/);   // plain newline/comma list
 
     names = names.map((s) => String(s == null ? '' : s).trim()).filter(Boolean);
     if (names.length === 0) {
-      return { error: parsedJson ? 'No game names found in that JSON (need vault[].name / played[].name).' : 'No names found.' };
+      return { error: parsedJson ? 'No game names found in that JSON.' : 'No names found.' };
     }
 
-    // Dedup by the vault's normalize() so the same game isn't stored twice.
+    // Dedup by normalize() so the same game isn't stored twice.
     const seen = new Set();
     const uniq = [];
     for (const n of names) {
-      const norm = VM.normalize(n);
-      const key = norm || n.toLowerCase();
+      const key = VM.normalize(n) || n.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
       uniq.push(n);
     }
-    return { names: uniq, vaultCount, playedCount, rawTotal: names.length };
+    // Normalized set of played/completed names.
+    const playedNormSet = new Set();
+    for (const n of playedNames) {
+      const key = VM.normalize(n) || n.toLowerCase();
+      if (key) playedNormSet.add(key);
+    }
+
+    return {
+      names: uniq,
+      playedNorms: Array.from(playedNormSet),
+      vaultCount, playedCount,
+      isMother
+    };
+  }
+
+  function loadedMsg(d) {
+    const completed = (d.playedNorms && d.playedNorms.length) || 0;
+    return 'Loaded ' + d.names.length + ' games' + (completed ? ' (' + completed + ' completed)' : '') + '.';
   }
 
   async function init() {
+    if (!hasStorage) {
+      setStatus('Extension storage unavailable — reload the extension.', 'err');
+      return;
+    }
     try {
-      const res = await browser.storage.local.get([KEY_DATA, KEY_ENABLED]);
+      const res = await storageGet([KEY_DATA, KEY_ENABLED]);
       const isOn = res[KEY_ENABLED] !== false;
       enabledToggle.checked = isOn;
       toggleState.textContent = isOn ? 'On' : 'Off';
@@ -97,24 +163,21 @@
       const d = res[KEY_DATA];
       if (d && Array.isArray(d.names)) {
         thresholdInput.value = clampThreshold(d.threshold);
-        const parts = [];
-        if (d.vaultCount) parts.push('vault ' + d.vaultCount);
-        if (d.playedCount) parts.push('played ' + d.playedCount);
-        const detail = parts.length ? ' (' + parts.join(' + ') + ')' : '';
-        setStatus('Loaded ' + d.names.length + ' games' + detail + '.', 'ok');
+        setStatus(loadedMsg(d), 'ok');
       } else {
         thresholdInput.value = VM.DEFAULT_THRESHOLD;
         setStatus('No vault loaded yet.', '');
       }
     } catch (e) {
-      setStatus('Storage unavailable: ' + e.message, 'err');
+      setStatus('Storage error: ' + e.message, 'err');
     }
   }
 
   enabledToggle.addEventListener('change', async () => {
     const isOn = enabledToggle.checked;
     toggleState.textContent = isOn ? 'On' : 'Off';
-    try { await browser.storage.local.set({ [KEY_ENABLED]: isOn }); }
+    if (!hasStorage) { setStatus('Storage unavailable.', 'err'); return; }
+    try { await storageSet({ [KEY_ENABLED]: isOn }); }
     catch (e) { setStatus('Could not save toggle: ' + e.message, 'err'); }
   });
 
@@ -128,12 +191,14 @@
   });
 
   loadBtn.addEventListener('click', async () => {
+    if (!hasStorage) { setStatus('Extension storage unavailable — reload the extension.', 'err'); return; }
     const parsed = extractNames(jsonInput.value);
     if (parsed.error) { setStatus(parsed.error, 'err'); return; }
     const threshold = clampThreshold(thresholdInput.value);
     thresholdInput.value = threshold;
     const data = {
       names: parsed.names,
+      playedNorms: parsed.playedNorms,
       count: parsed.names.length,
       vaultCount: parsed.vaultCount,
       playedCount: parsed.playedCount,
@@ -141,20 +206,17 @@
       updatedAt: Date.now()
     };
     try {
-      await browser.storage.local.set({ [KEY_DATA]: data });
-      const parts = [];
-      if (parsed.vaultCount) parts.push('vault ' + parsed.vaultCount);
-      if (parsed.playedCount) parts.push('played ' + parsed.playedCount);
-      const detail = parts.length ? ' (' + parts.join(' + ') + ')' : '';
-      setStatus('Loaded ' + parsed.names.length + ' games' + detail + '.', 'ok');
+      await storageSet({ [KEY_DATA]: data });
+      setStatus(loadedMsg(data), 'ok');
     } catch (e) {
       setStatus('Save failed: ' + e.message, 'err');
     }
   });
 
   clearBtn.addEventListener('click', async () => {
+    if (!hasStorage) { setStatus('Storage unavailable.', 'err'); return; }
     try {
-      await browser.storage.local.remove(KEY_DATA);
+      await storageRemove(KEY_DATA);
       jsonInput.value = '';
       setStatus('Vault cleared.', '');
     } catch (e) {

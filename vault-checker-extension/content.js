@@ -1,34 +1,54 @@
 /* content.js — runs on every page. Detects text selections, splits them into
- * individual game names, matches each against the stored Game Vault using the
- * verbatim match engine, and shows a small Shadow-DOM panel near the selection.
- *
+ * individual game names, matches each against the stored Game Vault (Mother
+ * aggregate) using the verbatim match engine, and shows a small Shadow-DOM panel
+ * near the selection with three states per name:
+ *   matched + played  → ✓ completed   (teal)
+ *   matched + !played → ✓ in vault     (green)
+ *   no match          → ✗ not in vault (red)
  * Honors the ON/OFF toggle in storage.local: when disabled, no panel is shown.
  */
 (function () {
   'use strict';
 
-  const browser = (typeof self !== 'undefined' && self.browser) || window.browser;
+  // Robust API ref: polyfill `browser`, else native `chrome` (MV3 promises).
+  const browser = (typeof self !== 'undefined' && self.browser) ||
+                  window.browser ||
+                  (typeof chrome !== 'undefined' ? chrome : undefined);
   const VM = (typeof self !== 'undefined' && self.VaultMatch) || window.VaultMatch;
-  if (!browser || !VM) return; // polyfill / engine not loaded — bail quietly
+  if (!browser || !browser.storage || !VM) return; // missing deps — bail quietly
 
   const KEY_DATA = 'vaultData';
   const KEY_ENABLED = 'enabled';
-  const MAX_NAMES = 25;          // cap rows so a huge selection can't make a giant panel
+  const MAX_NAMES = 25;
   const DEBOUNCE_MS = 150;
 
   let enabled = true;            // default ON
-  let vaultData = null;          // { names:[], threshold, count, ... }
-  let index = null;              // VM.SearchIndex, built lazily and cached
+  let vaultData = null;          // { names:[], playedNorms:[], threshold, ... }
+  let index = null;              // VM.SearchIndex, built lazily
+  let playedSet = new Set();     // normalized names flagged completed/played
   let host = null, shadow = null, listEl = null, titleEl = null;
 
-  /* ─── State / storage ─────────────────────────────────────────── */
+  /* ─── Storage ─────────────────────────────────────────────────── */
+  function storageGet(keys) {
+    return new Promise((resolve, reject) => {
+      try {
+        const r = browser.storage.local.get(keys, (res) => {
+          const err = browser.runtime && browser.runtime.lastError;
+          if (err) reject(new Error(err.message)); else resolve(res);
+        });
+        if (r && typeof r.then === 'function') r.then(resolve, reject); // polyfill
+      } catch (e) { reject(e); }
+    });
+  }
+
   async function loadState() {
     try {
-      const res = await browser.storage.local.get([KEY_DATA, KEY_ENABLED]);
-      enabled = res[KEY_ENABLED] !== false;       // anything but explicit false ⇒ ON
+      const res = await storageGet([KEY_DATA, KEY_ENABLED]);
+      enabled = res[KEY_ENABLED] !== false;
       vaultData = res[KEY_DATA] || null;
-      index = null;                                 // rebuild lazily
-    } catch (e) { /* storage unavailable — leave defaults */ }
+      index = null;
+      playedSet = new Set((vaultData && vaultData.playedNorms) || []);
+    } catch (e) { /* leave defaults */ }
   }
 
   function ensureIndex() {
@@ -49,13 +69,9 @@
   function splitNames(text) {
     return text.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
   }
-
   function debounce(fn, ms) {
     let t = null;
-    return function () {
-      if (t) clearTimeout(t);
-      t = setTimeout(fn, ms);
-    };
+    return function () { if (t) clearTimeout(t); t = setTimeout(fn, ms); };
   }
 
   /* ─── Shadow-DOM panel ─────────────────────────────────────────── */
@@ -63,8 +79,7 @@
     if (host) return;
     host = document.createElement('div');
     host.id = '__vault_checker_host';
-    host.style.cssText =
-      'all:initial;position:fixed;top:0;left:0;z-index:2147483647;display:none;';
+    host.style.cssText = 'all:initial;position:fixed;top:0;left:0;z-index:2147483647;display:none;';
     shadow = host.attachShadow({ mode: 'open' });
 
     const style = document.createElement('style');
@@ -72,24 +87,26 @@
       ':host{ all:initial; }',
       '.vc-panel{',
       '  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;',
-      '  width:max-content;max-width:320px;min-width:180px;',
+      '  width:max-content;max-width:340px;min-width:200px;',
       '  background:#16161b;color:#f0ece4;border:1px solid #2a2a31;',
       '  border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,0.45);',
       '  overflow:hidden;font-size:13px;line-height:1.4;}',
       '.vc-head{display:flex;align-items:center;justify-content:space-between;',
       '  gap:8px;padding:8px 10px;background:#1c1c22;border-bottom:1px solid #2a2a31;}',
-      '.vc-title{font-size:11px;font-weight:600;letter-spacing:.08em;',
-      '  text-transform:uppercase;color:#f5a623;white-space:nowrap;}',
+      '.vc-title{font-size:11px;font-weight:600;letter-spacing:.04em;color:#cfcabf;white-space:nowrap;}',
       '.vc-close{appearance:none;background:none;border:none;color:#9a948b;',
       '  cursor:pointer;font-size:16px;line-height:1;padding:2px 4px;border-radius:4px;}',
       '.vc-close:hover{color:#fff;background:rgba(255,255,255,.08);}',
-      '.vc-list{margin:0;padding:4px 0;max-height:260px;overflow-y:auto;}',
+      '.vc-list{margin:0;padding:4px 0;max-height:280px;overflow-y:auto;}',
       '.vc-row{display:flex;align-items:center;gap:8px;padding:5px 12px;}',
       '.vc-mark{flex:none;width:16px;text-align:center;font-weight:700;}',
-      '.vc-hit .vc-mark{color:#4ade80;}',
-      '.vc-miss .vc-mark{color:#f87171;}',
       '.vc-name{flex:1;word-break:break-word;}',
+      '.vc-status{flex:none;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;}',
       '.vc-sub{display:block;font-size:11px;color:#76716a;margin-top:1px;}',
+      // state colors
+      '.vc-done .vc-mark,.vc-done .vc-status{color:#38bdf8;}',   // completed (teal)
+      '.vc-hit  .vc-mark,.vc-hit  .vc-status{color:#4ade80;}',   // in vault (green)
+      '.vc-miss .vc-mark,.vc-miss .vc-status{color:#f87171;}',   // not in vault (red)
       '.vc-note{padding:8px 12px;color:#9a948b;font-size:12px;}',
       '.vc-more{padding:4px 12px 8px;color:#76716a;font-size:11px;}'
     ].join('\n');
@@ -122,9 +139,11 @@
     document.documentElement.appendChild(host);
   }
 
-  function hidePanel() {
-    if (host) host.style.display = 'none';
-  }
+  function hidePanel() { if (host) host.style.display = 'none'; }
+
+  // state: 'done' | 'hit' | 'miss'
+  const STATUS_TEXT = { done: 'completed', hit: 'in vault', miss: 'not in vault' };
+  const MARK = { done: '✓', hit: '✓', miss: '✗' };
 
   function renderRows(rows, note, total) {
     listEl.innerHTML = '';
@@ -136,21 +155,25 @@
     }
     for (const r of rows) {
       const row = document.createElement('div');
-      row.className = 'vc-row ' + (r.hit ? 'vc-hit' : 'vc-miss');
+      row.className = 'vc-row vc-' + r.state;
       const mark = document.createElement('span');
       mark.className = 'vc-mark';
-      mark.textContent = r.hit ? '✓' : '✗';
+      mark.textContent = MARK[r.state];
       const nameWrap = document.createElement('span');
       nameWrap.className = 'vc-name';
       nameWrap.textContent = r.name;
-      if (r.hit && r.match && r.match.toLowerCase() !== r.name.toLowerCase()) {
+      if (r.match && r.match.toLowerCase() !== r.name.toLowerCase()) {
         const sub = document.createElement('span');
         sub.className = 'vc-sub';
         sub.textContent = 'matched: ' + r.match;
         nameWrap.appendChild(sub);
       }
+      const status = document.createElement('span');
+      status.className = 'vc-status';
+      status.textContent = STATUS_TEXT[r.state];
       row.appendChild(mark);
       row.appendChild(nameWrap);
+      row.appendChild(status);
       listEl.appendChild(row);
     }
     if (total && total > rows.length) {
@@ -163,12 +186,12 @@
 
   function setTitle(rows, note) {
     if (note) { titleEl.textContent = 'Vault Checker'; return; }
-    const hits = rows.filter((r) => r.hit).length;
-    titleEl.textContent = 'In vault: ' + hits + ' / ' + rows.length;
+    let done = 0, hit = 0, miss = 0;
+    for (const r of rows) { if (r.state === 'done') done++; else if (r.state === 'hit') hit++; else miss++; }
+    titleEl.textContent = 'Completed ' + done + ' · Vault ' + hit + ' · Missing ' + miss;
   }
 
   function positionPanel(rect) {
-    // host is position:fixed → rect (viewport coords) maps directly.
     const panel = shadow.querySelector('.vc-panel');
     const pw = panel.offsetWidth, ph = panel.offsetHeight;
     const vw = window.innerWidth, vh = window.innerHeight;
@@ -176,7 +199,7 @@
     let top = rect.bottom + 8;
     if (left + pw > vw - 8) left = vw - pw - 8;
     if (left < 8) left = 8;
-    if (top + ph > vh - 8) top = Math.max(8, rect.top - ph - 8); // flip above selection
+    if (top + ph > vh - 8) top = Math.max(8, rect.top - ph - 8);
     host.style.left = Math.round(left) + 'px';
     host.style.top = Math.round(top) + 'px';
   }
@@ -200,10 +223,10 @@
     ensurePanel();
 
     const idx = ensureIndex();
-    let rows = [];
+    const rows = [];
     let note = '';
     if (!idx) {
-      note = 'No vault loaded — open the extension and paste your Game Vault JSON.';
+      note = 'No vault loaded — open the extension and load your Game Vault export.';
     } else {
       const th = getThreshold();
       const seen = new Set();
@@ -213,7 +236,14 @@
         if (seen.has(key)) continue;
         seen.add(key);
         const m = idx.matchOne(nm, true, th);
-        rows.push({ name: nm, hit: !!m, match: (m && m.item) ? m.item.name : null });
+        let state, match = null;
+        if (!m) {
+          state = 'miss';
+        } else {
+          match = m.item.name;
+          state = playedSet.has(VM.normalize(match)) ? 'done' : 'hit';
+        }
+        rows.push({ name: nm, state: state, match: match });
       }
     }
 
@@ -232,12 +262,18 @@
   window.addEventListener('scroll', hidePanel, true);
   window.addEventListener('resize', hidePanel, true);
 
-  browser.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local') return;
-    if (KEY_ENABLED in changes) enabled = changes[KEY_ENABLED].newValue !== false;
-    if (KEY_DATA in changes) { vaultData = changes[KEY_DATA].newValue || null; index = null; }
-    if (!enabled) hidePanel();
-  });
+  if (browser.storage.onChanged && browser.storage.onChanged.addListener) {
+    browser.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local') return;
+      if (KEY_ENABLED in changes) enabled = changes[KEY_ENABLED].newValue !== false;
+      if (KEY_DATA in changes) {
+        vaultData = changes[KEY_DATA].newValue || null;
+        index = null;
+        playedSet = new Set((vaultData && vaultData.playedNorms) || []);
+      }
+      if (!enabled) hidePanel();
+    });
+  }
 
   loadState();
 })();

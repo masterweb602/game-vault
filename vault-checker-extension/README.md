@@ -1,7 +1,11 @@
 # Vault Checker — cross-browser extension
 
 Select one or more game names on **any** webpage and a small floating panel shows
-whether each name is in your **Game Vault** — ✓ in vault (green) / ✗ not in vault (red).
+each name's status against your **Game Vault**:
+
+- **✓ completed** (teal) — in the vault **and** marked Played
+- **✓ in vault** (green) — present but not yet played
+- **✗ not in vault** (red) — not found
 
 Works on **Chromium** (Chrome / Edge / Brave / Opera) and **Firefox**, Manifest V3.
 
@@ -17,8 +21,12 @@ Works on **Chromium** (Chrome / Edge / Brave / Opera) and **Firefox**, Manifest 
   machine.
 
 ## First-time setup (load your vault)
-1. In Game Vault, export your library as JSON (Settings → Export JSON). The shape is
-   `{ "version": 2, "vault": [ { "name": "..." } ], "played": [ ... ] }`.
+1. In Game Vault → Settings → **Export for Vault Checker**. This exports the full
+   Mother aggregate (vault + every custom DB + played-only games), deduplicated, with
+   a `played` flag per game:
+   `{ "version": 3, "type": "mother", "games": [ { "name": "...", "played": false } ] }`.
+   *(The older `Download JSON` export — `{ vault:[], played:[] }` — also works; its
+   `played` list maps to the “completed” state.)*
 2. Click the **Vault Checker** toolbar icon to open the popup.
 3. **Paste** the JSON into the textarea (or use **Choose File** to pick the `.json`).
    You can also paste a plain list of names (one per line / comma-separated).

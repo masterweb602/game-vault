@@ -2799,6 +2799,7 @@ body {
     <div class="setting-row">
       <button class="btn" id="export-json">Download JSON</button>
       <button class="btn" id="export-csv">Download CSV</button>
+      <button class="btn" id="export-mother">Export for Vault Checker</button>
     </div>
   </div>
 
@@ -11326,6 +11327,43 @@ $('#export-json').addEventListener('click', () => {
     'application/json'
   );
   toast(ok ? 'Exported · vault: ' + state.vault.length + ', played: ' + state.played.length : 'Export failed', ok ? 'success' : 'error');
+});
+
+/* New JSON export for the Vault Checker browser extension: the full Mother
+   aggregate (vault + every custom DB) plus any Played-only games, deduped by
+   normalize(), each tagged with a `played` flag (exact-norm membership in the
+   Played list — same test the app uses). Existing JSON/CSV exports unchanged. */
+$('#export-mother').addEventListener('click', () => {
+  const customCount = (state.customListsOrder || []).reduce(
+    (n, id) => n + ((state.customLists[id] && state.customLists[id].items.length) || 0), 0);
+  if (state.vault.length === 0 && state.played.length === 0 && customCount === 0) {
+    toast('কোনো game নেই, export করার মতো কিছু নাই', 'info');
+    return;
+  }
+  const rows = (typeof aggregateMotherList === 'function') ? aggregateMotherList(state) : [];
+  const isPlayed = (name) => {
+    const n = normalize(name);
+    return !!(n && state.pIndex && state.pIndex.byNorm.has(n));
+  };
+  const map = new Map();                       // norm → { name, played }  (dedup by normalize)
+  const add = (name, played) => {
+    if (!name) return;
+    const key = normalize(name) || name.toLowerCase();
+    const cur = map.get(key);
+    if (cur) { if (played) cur.played = true; return; }
+    map.set(key, { name: name, played: !!played });
+  };
+  for (const r of rows) add(r.item.name, isPlayed(r.item.name));   // vault + customs
+  for (const it of (state.played || [])) add(it.name, true);       // fold in played-only games
+  const data = { version: 3, type: 'mother', games: Array.from(map.values()) };
+  const ok = downloadFile(
+    JSON.stringify(data, null, 2),
+    'game-vault-mother-' + new Date().toISOString().slice(0, 10) + '.json',
+    'application/json'
+  );
+  const played = data.games.filter(g => g.played).length;
+  toast(ok ? ('Exported · ' + data.games.length + ' games (' + played + ' completed)') : 'Export failed',
+    ok ? 'success' : 'error');
 });
 
 $('#export-csv').addEventListener('click', () => {
