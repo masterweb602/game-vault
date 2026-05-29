@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Vault Checker",
+  "version": "1.0.0",
+  "description": "Select game names on any webpage to instantly see which ones are in your Game Vault (✓ in vault / ✗ not in vault).",
+  "permissions": ["storage"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Vault Checker"
+  },
+  "icons": {
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["vendor/browser-polyfill.js", "match-engine.js", "content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "vault-checker@local",
+      "strict_min_version": "115.0"
+    }
+  }
+}

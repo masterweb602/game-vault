@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vault Checker</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    width: 340px; margin: 0; padding: 14px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px; background: #0f0f12; color: #f0ece4;
+  }
+  h1 { font-size: 14px; margin: 0 0 2px; letter-spacing: .02em; }
+  .sub { font-size: 11px; color: #76716a; margin: 0 0 12px; }
+
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .card { background: #16161b; border: 1px solid #2a2a31; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+
+  /* toggle switch */
+  .switch { position: relative; display: inline-block; width: 42px; height: 24px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; cursor: pointer; inset: 0; background: #3a3a42; transition: .18s; border-radius: 24px; }
+  .slider::before { content: ""; position: absolute; height: 18px; width: 18px; left: 3px; bottom: 3px; background: #fff; transition: .18s; border-radius: 50%; }
+  .switch input:checked + .slider { background: #f5a623; }
+  .switch input:checked + .slider::before { transform: translateX(18px); }
+  .toggle-label { font-weight: 600; }
+  .toggle-state { font-size: 11px; color: #76716a; }
+
+  label.field { display: block; font-size: 11px; color: #9a948b; margin: 0 0 4px; text-transform: uppercase; letter-spacing: .06em; }
+  textarea {
+    width: 100%; height: 110px; resize: vertical; background: #0f0f12; color: #f0ece4;
+    border: 1px solid #2a2a31; border-radius: 6px; padding: 8px; font-family: ui-monospace, "JetBrains Mono", monospace; font-size: 12px;
+  }
+  .controls { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+  button {
+    appearance: none; border: 1px solid #2a2a31; background: #1c1c22; color: #f0ece4;
+    border-radius: 6px; padding: 7px 12px; font-size: 12px; cursor: pointer;
+  }
+  button:hover { background: #24242c; }
+  button.primary { background: #f5a623; color: #1a1408; border-color: #f5a623; font-weight: 600; }
+  button.primary:hover { background: #ffb733; }
+  button.danger:hover { border-color: #f87171; color: #f87171; }
+  input[type="file"] { font-size: 11px; color: #9a948b; max-width: 100%; }
+  .thresh { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .thresh input { width: 70px; background: #0f0f12; color: #f0ece4; border: 1px solid #2a2a31; border-radius: 6px; padding: 5px 7px; }
+  .status { font-size: 12px; margin-top: 4px; min-height: 16px; }
+  .status.ok { color: #4ade80; }
+  .status.err { color: #f87171; }
+  .hint { font-size: 11px; color: #76716a; margin-top: 6px; line-height: 1.45; }
+</style>
+</head>
+<body>
+  <h1>Vault Checker</h1>
+  <p class="sub">Select game names on any page → see ✓ in vault / ✗ not in vault.</p>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <div class="toggle-label">Detection</div>
+        <div class="toggle-state" id="toggle-state">On</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="enabled-toggle" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <label class="field" for="json-input">Paste Game Vault JSON export</label>
+    <textarea id="json-input" placeholder='{ "version": 2, "vault": [ { "name": "Elden Ring" } ], "played": [ ... ] }
+
+— or upload the .json file below, or paste a plain list of names (one per line / comma-separated).'></textarea>
+    <div class="controls">
+      <input type="file" id="file-input" accept=".json,application/json,.txt,text/plain">
+      <button class="primary" id="load-btn" type="button">Load vault</button>
+      <button class="danger" id="clear-btn" type="button">Clear</button>
+    </div>
+    <div class="thresh">
+      <label class="field" for="threshold-input" style="margin:0;">Fuzzy threshold</label>
+      <input type="number" id="threshold-input" min="0.5" max="0.95" step="0.01" value="0.82">
+    </div>
+    <div class="status" id="status"></div>
+    <div class="hint">Matching uses the exact same normalize() + fuzzy logic as Game Vault, so results agree with the app. Default threshold 0.82.</div>
+  </div>
+
+  <script src="vendor/browser-polyfill.js"></script>
+  <script src="match-engine.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
