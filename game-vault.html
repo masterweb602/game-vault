@@ -62,6 +62,12 @@ body {
 
 .app { max-width: 1200px; margin: 0 auto; padding: 24px 20px 80px; }
 
+/* PC sidebar layout — wrappers dissolve by default (mobile = original flow);
+   the slot stays invisible until desktop. Desktop grid lives in the
+   min-width:769px block further down. */
+.app-sidebar, .app-main { display: contents; }
+.sidebar-slot { display: none; }
+
 /* ─── Header ─────────────────────────────────────────────── */
 .header {
   display: flex;
@@ -1502,6 +1508,107 @@ body {
   }
   #db-year-charts-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* ─── PC sidebar layout (desktop only) ───────────────────────
+   Pure relocation of the existing header/tabs/per-view stats+import into a
+   left sidebar so the main-area game list fills the full height. Mobile
+   (<=768px) is untouched — the wrappers are display:contents below 769px. */
+@media (min-width: 769px) {
+  .app {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    height: 100vh;
+    padding: 0;
+  }
+  .app-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 24px 16px;
+    border-right: 1px solid var(--border);
+    box-sizing: border-box;
+  }
+  .app-main {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    padding: 24px 24px 16px;
+    box-sizing: border-box;
+  }
+
+  /* header → vertical block (logo, then count chips) */
+  .app-sidebar .header {
+    display: block;
+    padding: 0;
+    margin: 0;
+    border-bottom: none;
+  }
+  .app-sidebar .brand-title { font-size: 30px; }
+  .app-sidebar .stats { margin-top: 12px; }
+
+  /* tabs → vertical list; active uses a left accent bar instead of bottom border */
+  .app-sidebar .tabs {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    border-bottom: none;
+    overflow: visible;
+  }
+  .app-sidebar .tab {
+    text-align: left;
+    padding: 9px 12px;
+    border-bottom: none;
+    border-left: 2px solid transparent;
+  }
+  .app-sidebar .tab.active {
+    border-left-color: var(--accent);
+    background: var(--bg-soft);
+  }
+
+  /* moved stats + import/clear sit at the bottom of the sidebar */
+  .sidebar-slot {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: auto;
+  }
+  .sidebar-slot .big-stats {
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 16px;
+    margin: 0;
+  }
+  .sidebar-slot .big-stat-sep { display: none; }
+  .sidebar-slot .db-actions-row { margin: 0; }
+
+  /* list views fill the main area; only the list scrolls */
+  #view-vault.active, #view-played.active,
+  #view-mother.active, #view-custom.active {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .app-main > .view.active:not(#view-vault):not(#view-played):not(#view-mother):not(#view-custom) {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .list-wrap {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .list-scroll {
+    height: auto;
+    flex: 1;
+    min-height: 0;
+  }
+}
 .db-chart-scroll-inner { height: 100%; position: relative; }
 .analytics-scroll-hint {
   color: var(--muted);
@@ -1874,6 +1981,7 @@ body {
 <body>
 <div class="app">
 
+<div class="app-sidebar">
 <header class="header">
   <div>
     <span class="brand-mark">◆ vault.sys / v1</span>
@@ -1898,6 +2006,9 @@ body {
   <button class="tab" data-tab="settings">Settings</button>
 </nav>
 
+  <div class="sidebar-slot" id="sidebar-slot"></div>
+</div>
+
 <!-- ──── MOBILE BOTTOM NAV (Phone mode step 1) ────────────── -->
 <nav class="bnav" id="bottom-nav" aria-label="Mobile navigation">
   <button class="bnav-btn active" data-tab="vault"><span class="bnav-ico">🗄️</span><span class="bnav-label">Vault</span></button>
@@ -1920,6 +2031,7 @@ body {
   </div>
 </div>
 
+<div class="app-main">
 <!-- ──── VAULT VIEW ──────────────────────────────────────── -->
 <section class="view active" id="view-vault">
   <h2 class="section-title">main vault</h2>
@@ -2795,6 +2907,7 @@ body {
   </div>
   </div>
 </section>
+</div>
 
 </div>
 
@@ -9506,6 +9619,36 @@ $('#mother-source-filter')?.addEventListener('change', e => {
   renderMotherView();
 });
 
+/* ─── PC sidebar: relocate active list-view's stats + import/clear ───
+   Pure move (same placeholder pattern as chart-fullscreen) — the existing
+   .big-stats and .db-actions-row elements keep their IDs + listeners. Desktop
+   only; below 769px the elements are returned to their original DOM position so
+   mobile layout is unchanged. */
+let _sidebarMoved = [];
+function _sidebarReturnAll() {
+  for (const m of _sidebarMoved)
+    if (m.ph && m.ph.parentNode) { m.ph.parentNode.insertBefore(m.el, m.ph); m.ph.remove(); }
+  _sidebarMoved = [];
+}
+function syncSidebarSlots() {
+  const slot = document.getElementById('sidebar-slot');
+  if (!slot) return;
+  _sidebarReturnAll();                                       // restore previous occupants first
+  if (!matchMedia('(min-width: 769px)').matches) return;     // mobile → leave in original DOM
+  const view = document.querySelector('.app-main > .view.active');
+  if (!view) return;
+  for (const sel of ['.big-stats', '.db-actions-row']) {
+    const el = view.querySelector(sel);
+    if (!el) continue;
+    const ph = document.createComment('sidebar-slot-ph');
+    el.parentNode.insertBefore(ph, el);                      // remember home position
+    _sidebarMoved.push({ el, ph });
+    slot.appendChild(el);
+  }
+}
+if (typeof matchMedia === 'function')
+  matchMedia('(min-width: 769px)').addEventListener('change', syncSidebarSlots);
+
 /* ─── Tab switching ──────────────────────────────────────── */
 function switchTab(name) {
   state.currentTab = name;
@@ -9517,6 +9660,7 @@ function switchTab(name) {
     state.activeCustomId = id;
     $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-custom'));
     renderCustomDbView(id);
+    syncSidebarSlots();
     return;
   }
   state.activeCustomId = null;
@@ -9537,6 +9681,7 @@ function switchTab(name) {
   }
   if (name === 'notes') refreshNotesStatus();
   if (name === 'mother') renderMotherView();
+  syncSidebarSlots();
 }
 
 $$('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
