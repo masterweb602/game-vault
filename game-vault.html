@@ -7963,7 +7963,7 @@ function renderDbYearCharts() {
     return {
       zoom: {
         pan:  { enabled: true, mode: 'x', modifierKey: 'shift' },
-        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' },
+        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
         limits: { x: { minRange: 2, min: xMin, max: xMax }, yCount: { min: 0 }, yHours: { min: 0 } }
       }
     };
@@ -8303,7 +8303,7 @@ function renderPlayedActivityChart() {
     return {
       zoom: {
         pan:  { enabled: true, mode: 'x', modifierKey: 'shift' },
-        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' },
+        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
         limits: { x: { minRange: 2, min: xMin, max: xMax }, y: { min: 0 } }
       }
     };
