@@ -7957,6 +7957,9 @@ function renderDbYearCharts() {
       const n = (v && typeof v === 'object') ? v.y : v;
       return n > 0 ? n : '';
     },
+    // Auto-hide any label that would overlap another — offsets give a good
+    // baseline, the plugin drops collisions and restores them on zoom-in.
+    display: 'auto',
     clamp: true, clip: false
   });
   // Zoom config: wheel-zoom + Shift+drag-pan (plain drag still scrolls the wrapper).
@@ -8299,6 +8302,7 @@ function renderPlayedActivityChart() {
     backgroundColor: 'rgba(20,20,20,0.78)', borderRadius: 4,
     padding: { top: 2, bottom: 2, left: 4, right: 4 },
     formatter: (v) => { const n = (v && typeof v === 'object') ? v.y : v; return n > 0 ? n : ''; },
+    display: 'auto',   // auto-hide overlapping labels; restored on zoom-in
     clamp: true, clip: false
   });
   const _zoomCfg = (xMin, xMax) => {
