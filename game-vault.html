@@ -7964,7 +7964,7 @@ function renderDbYearCharts() {
       zoom: {
         pan:  { enabled: true, mode: 'x', modifierKey: 'shift' },
         zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' },
-        limits: { x: { minRange: 2, min: xMin, max: xMax } }
+        limits: { x: { minRange: 2, min: xMin, max: xMax }, yCount: { min: 0 }, yHours: { min: 0 } }
       }
     };
   };
@@ -8214,13 +8214,13 @@ function renderDbYearCharts() {
             grid: { color: 'rgba(255,255,255,0.04)' }
           },
           yCount: {
-            type: 'linear', position: 'left', beginAtZero: true,
+            type: 'linear', position: 'left', beginAtZero: true, min: 0,
             ticks: { color: '#76716a', precision: 0 },
             grid: { color: 'rgba(255,255,255,0.04)' },
             title: { display: true, text: 'count', color: '#76716a' }
           },
           yHours: {
-            type: 'linear', position: 'right', beginAtZero: true,
+            type: 'linear', position: 'right', beginAtZero: true, min: 0,
             ticks: { color: '#76716a' },
             grid: { drawOnChartArea: false },
             title: { display: true, text: 'hours', color: '#76716a' }
@@ -8304,7 +8304,7 @@ function renderPlayedActivityChart() {
       zoom: {
         pan:  { enabled: true, mode: 'x', modifierKey: 'shift' },
         zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' },
-        limits: { x: { minRange: 2, min: xMin, max: xMax } }
+        limits: { x: { minRange: 2, min: xMin, max: xMax }, y: { min: 0 } }
       }
     };
   };
@@ -8528,7 +8528,7 @@ function renderPlayedActivityChart() {
           grid: { color: 'rgba(255,255,255,0.04)' }
         },
         y: {
-          type: 'linear', beginAtZero: true,
+          type: 'linear', beginAtZero: true, min: 0,
           ticks: { color: '#76716a', precision: 0 },
           grid: { color: 'rgba(255,255,255,0.04)' },
           title: { display: true, text: 'games', color: '#76716a' }
