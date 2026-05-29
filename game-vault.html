@@ -1378,6 +1378,8 @@ body {
 }
 
 /* ─── Analytics ──────────────────────────────────────────── */
+#analytics-migrate-card { margin-top: 20px; }
+.analytics-migrate-row { display: flex; gap: 10px; flex-wrap: wrap; }
 .analytics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
@@ -1567,6 +1569,9 @@ body {
 
   /* touch-friendly per-tab Clear+Import buttons */
   .db-actions-row .btn { min-height: 44px; flex: 1; }
+
+  /* touch-friendly Analytics migrate buttons */
+  .analytics-migrate-row .btn { min-height: 44px; flex: 1; }
 
   /* larger touch-friendly rows on mobile */
   :root { --row-h: 60px; }
@@ -2439,6 +2444,15 @@ body {
     <button class="btn btn-sm" id="analytics-refresh" type="button">🔄 Refresh</button>
   </div>
   <p class="section-desc">📊 তোমার collection-এর pattern, growth, ও activity trends।</p>
+
+  <div class="analytics-card" id="analytics-migrate-card">
+    <h3 class="analytics-card-title">🔧 Data migrate</h3>
+    <p class="analytics-card-sub">নামের ভেতরে embedded year/playtime আর Played-এর inline date structured field-এ তুলে আনো — chart ঠিকমতো দেখাতে। চালানোর আগে Export backup নাও।</p>
+    <div class="analytics-migrate-row">
+      <button class="btn" id="analytics-migrate-name-meta">🧹 [year][playtime] structured field-এ আনো</button>
+      <button class="btn" id="analytics-migrate-month-day">📅 month/day structured field-এ আনো</button>
+    </div>
+  </div>
 
   <section class="analytics-stats">
     <div class="stat-tile"><div class="stat-tile-num" id="stat-total">0</div><div class="stat-tile-label">All games</div></div>
@@ -11643,7 +11657,8 @@ $('#toggle-debug-panel').addEventListener('click', () => {
   if ($('#debug-panel').classList.contains('show')) hideDebugPanel();
   else showDebugPanel();
 });
-$('#migrate-name-meta').addEventListener('click', () => {
+// Single source for both the Settings and Analytics migrate buttons.
+function confirmMigrateNameMeta() {
   modal({
     title: 'নামের meta migrate করবো?',
     body: 'পুরোনো নামের ভেতরে থাকা [2026] / [3.4 hours] / [57 minutes] structured field-এ তোলা হবে এবং bracket-গুলো নাম থেকে strip হবে। ভুল হলে undo নেই — চালানোর আগে Settings → Export data থেকে JSON backup নিয়ে রাখো। Manual ভাবে set করা year/playtime overwrite হবে না।',
@@ -11663,8 +11678,8 @@ $('#migrate-name-meta').addEventListener('click', () => {
       }
     }
   });
-});
-$('#migrate-month-day').addEventListener('click', () => {
+}
+function confirmMigrateMonthDay() {
   modal({
     title: 'Month/day migrate করবো?',
     body: 'Played items যাদের dateAdded একটা parsed date এনকোড করে (noon local time, Jan 1 না) — সেগুলো থেকে month/day field-এ তোলা হবে। ভুল হলে undo নেই — চালানোর আগে Settings → Export data থেকে JSON backup নিয়ে রাখো।',
@@ -11684,7 +11699,11 @@ $('#migrate-month-day').addEventListener('click', () => {
       }
     }
   });
-});
+}
+$('#migrate-name-meta').addEventListener('click', confirmMigrateNameMeta);
+$('#migrate-month-day').addEventListener('click', confirmMigrateMonthDay);
+$('#analytics-migrate-name-meta')?.addEventListener('click', confirmMigrateNameMeta);
+$('#analytics-migrate-month-day')?.addEventListener('click', confirmMigrateMonthDay);
 $('#debug-panel-close').addEventListener('click', hideDebugPanel);
 $('#debug-copy-stats').addEventListener('click', async () => {
   const blob = {
