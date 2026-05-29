@@ -7942,13 +7942,14 @@ function renderDbYearCharts() {
     g.addColorStop(1, hex + '00');
     return g;
   };
-  // All-point value labels with chip background. placement is the datalabels
-  // align ('top'/'bottom'); both Count and Playtime use 'top' so neither
-  // collides with the x-axis year labels.
-  const _dbChartValueLabel = (color, placement) => ({
-    anchor: 'end', align: placement, offset: 6,
+  // All-point value labels with chip background. Both Count and Playtime use
+  // align 'top' (above the line, clear of the x-axis year labels) but at
+  // different offsets so they stack: Count at offset 6 (just above the line),
+  // Playtime at offset 20 (higher, above the count label).
+  const _dbChartValueLabel = (color, placement, offset = 6) => ({
+    anchor: 'end', align: placement, offset,
     color,
-    font: { size: 10, weight: 'bold' },
+    font: { size: 9, weight: 'bold' },
     backgroundColor: 'rgba(20,20,20,0.78)',
     borderRadius: 4,
     padding: { top: 2, bottom: 2, left: 4, right: 4 },
@@ -8161,7 +8162,7 @@ function renderDbYearCharts() {
             pointHoverBackgroundColor: accent,
             pointHoverBorderColor: '#fff',
             yAxisID: 'yCount',
-            datalabels: _dbChartValueLabel(accent, 'top')
+            datalabels: _dbChartValueLabel(accent, 'top', 6)
           },
           {
             label: 'Playtime (hrs)',
@@ -8177,7 +8178,7 @@ function renderDbYearCharts() {
             pointHoverBackgroundColor: success,
             pointHoverBorderColor: '#fff',
             yAxisID: 'yHours',
-            datalabels: _dbChartValueLabel(success, 'top')
+            datalabels: _dbChartValueLabel(success, 'top', 20)
           }
         ]
       },
@@ -8188,7 +8189,7 @@ function renderDbYearCharts() {
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        layout: { padding: { top: 28, bottom: 28, left: 8, right: 8 } },
+        layout: { padding: { top: 40, bottom: 28, left: 8, right: 8 } },
         interaction: { mode: 'index', intersect: false, axis: 'x' },
         hover:       { mode: 'index', intersect: false, axis: 'x' },
         plugins: {
