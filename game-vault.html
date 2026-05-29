@@ -3972,7 +3972,10 @@ function groupByReleaseYear(items) {
   const hours  = new Map();
   for (const it of items) {
     if (!it) continue;
-    const y = Number(it.year);
+    // Fallback to the name-embedded year for un-migrated custom-DB items
+    // (e.g. "King's Field 1994 12"). Read-only — does not mutate the item;
+    // getPlaytimeForItem already falls back to name-embedded playtime.
+    const y = resolveItemYear(it);
     if (!Number.isFinite(y)) continue;
     counts.set(y, (counts.get(y) || 0) + 1);
     const p = getPlaytimeForItem(it);

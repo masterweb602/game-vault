@@ -3396,7 +3396,10 @@ function groupByReleaseYear(items) {
   const hours  = new Map();
   for (const it of items) {
     if (!it) continue;
-    const y = Number(it.year);
+    // Fallback to the name-embedded year for un-migrated custom-DB items
+    // (e.g. "King's Field 1994 12"). Read-only — does not mutate the item;
+    // getPlaytimeForItem already falls back to name-embedded playtime.
+    const y = resolveItemYear(it);
     if (!Number.isFinite(y)) continue;
     counts.set(y, (counts.get(y) || 0) + 1);
     const p = getPlaytimeForItem(it);
@@ -3461,6 +3464,25 @@ describe('groupByReleaseYear (Phase 9C)', () => {
     ];
     const years = groupByReleaseYear(items).map(b => b.year);
     expect(years).toEqual([1999, 2010, 2020]);
+  });
+
+  test('falls back to name-embedded year when item.year is absent (custom DB)', () => {
+    const items = [
+      { name: "King's Field 1994 12" },          // no item.year → year from name
+      { name: 'God of War 2005 10.5' },           // playtime also lifted from name
+      { name: 'Shadow of the Colossus', year: 2005 } // structured field still works
+    ];
+    expect(groupByReleaseYear(items)).toEqual([
+      { year: 1994, count: 1, hours: 12  },
+      { year: 2005, count: 2, hours: 10.5 }
+    ]);
+  });
+
+  test('structured item.year wins over a different name-embedded year', () => {
+    const items = [{ name: 'Remake 1998 5', year: 2020 }];
+    expect(groupByReleaseYear(items)).toEqual([
+      { year: 2020, count: 1, hours: 5 }
+    ]);
   });
 });
 
