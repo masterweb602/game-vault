@@ -1409,9 +1409,20 @@ body {
 .chart-fs-overlay {
   position: fixed; inset: 0; z-index: 300;
   background: rgba(0,0,0,0.82);
-  display: flex; padding: 16px;
+  display: flex; padding: 76px 16px 16px;
 }
 .chart-fs-overlay[hidden] { display: none; }
+.chart-fs-nav-bar {
+  position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
+  z-index: 1; display: flex; gap: 12px;
+}
+.chart-fs-nav {
+  min-height: 44px; padding: 0 18px; border-radius: 8px;
+  background: #1c1c22; color: #f0ece4;
+  border: 1px solid rgba(255,255,255,0.2);
+  font-size: 14px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
 .chart-fs-slot {
   flex: 1; min-width: 0;
   background: var(--card); border: 1px solid var(--border);
@@ -2781,6 +2792,10 @@ body {
 
 <div id="chart-fs-overlay" class="chart-fs-overlay" hidden>
   <button id="chart-fs-close" class="chart-fs-close" type="button" aria-label="Close fullscreen">✕</button>
+  <div class="chart-fs-nav-bar">
+    <button id="chart-fs-prev" class="chart-fs-nav" type="button" aria-label="Previous chart">◀ Previous</button>
+    <button id="chart-fs-next" class="chart-fs-nav" type="button" aria-label="Next chart">Next ▶</button>
+  </div>
   <div id="chart-fs-slot" class="chart-fs-slot"></div>
 </div>
 
@@ -7979,62 +7994,109 @@ function _resizeCardCharts(card) {
   });
 }
 
-function openChartFullscreen(card) {
-  const overlay = document.getElementById('chart-fs-overlay');
+// Ordered list of chart cards captured when fullscreen opens, so ◀/▶ can cycle
+// through them without closing the overlay. _chartFsIndex = card currently shown.
+let _chartFsCards = [];
+let _chartFsIndex = -1;
+
+function _getChartCards() {
+  return Array.from(document.querySelectorAll(
+    '#view-analytics .analytics-card, #backlog-forecast-card'
+  )).filter((c) => c.querySelector('canvas'));
+}
+
+// Move a card into the fullscreen slot (remembering its spot for restore) and let
+// its scroll-inner fill the wide overlay. Caller shows the overlay + resizes.
+function _mountChartCard(card) {
   const slot = document.getElementById('chart-fs-slot');
-  if (!overlay || !slot || !card) return;
-  // Remember position for restore.
+  if (!slot || !card) return;
   const ph = document.createComment('chart-fs-placeholder');
   card.__fsPlaceholder = ph;
   card.__fsParent = card.parentNode;
   card.parentNode.insertBefore(ph, card);
-  // Let the inner scroll area fill the wide overlay (restore px width on close).
   card.querySelectorAll('.db-chart-scroll-inner').forEach((inner) => {
     inner.dataset.fsPrevWidth = inner.style.width || '';
     inner.style.width = '100%';
   });
   slot.appendChild(card);
+}
+
+// Restore the card currently in the slot back to its original position.
+function _unmountChartCard() {
+  const slot = document.getElementById('chart-fs-slot');
+  if (!slot) return null;
+  const card = slot.firstElementChild;
+  if (!card) return null;
+  card.querySelectorAll('.db-chart-scroll-inner').forEach((inner) => {
+    inner.style.width = inner.dataset.fsPrevWidth || '';
+    delete inner.dataset.fsPrevWidth;
+  });
+  const ph = card.__fsPlaceholder;
+  if (ph && ph.parentNode) {
+    ph.parentNode.insertBefore(card, ph);
+    ph.remove();
+  } else if (card.__fsParent && card.__fsParent.isConnected) {
+    card.__fsParent.appendChild(card);                   // placeholder lost (re-render)
+  } else {
+    card.remove();                                       // original gone; a fresh card exists
+  }
+  card.__fsPlaceholder = null;
+  card.__fsParent = null;
+  return card;
+}
+
+function openChartFullscreen(card) {
+  const overlay = document.getElementById('chart-fs-overlay');
+  const slot = document.getElementById('chart-fs-slot');
+  if (!overlay || !slot || !card) return;
+  _chartFsCards = _getChartCards();
+  _chartFsIndex = _chartFsCards.indexOf(card);
+  _mountChartCard(card);
   overlay.hidden = false;
   document.body.style.overflow = 'hidden';
   _resizeCardCharts(card);
+}
+
+// Jump to the prev (dir -1) / next (dir +1) chart card, wrapping around, without
+// closing the overlay.
+function navigateChartFullscreen(dir) {
+  const overlay = document.getElementById('chart-fs-overlay');
+  if (!overlay || overlay.hidden || !_chartFsCards.length) return;
+  _unmountChartCard();
+  _chartFsIndex = (_chartFsIndex + dir + _chartFsCards.length) % _chartFsCards.length;
+  const next = _chartFsCards[_chartFsIndex];
+  _mountChartCard(next);
+  _resizeCardCharts(next);
 }
 
 function closeChartFullscreen() {
   const overlay = document.getElementById('chart-fs-overlay');
   const slot = document.getElementById('chart-fs-slot');
   if (!overlay || overlay.hidden || !slot) return;       // no-op when closed
-  const card = slot.firstElementChild;
-  if (card) {
-    card.querySelectorAll('.db-chart-scroll-inner').forEach((inner) => {
-      inner.style.width = inner.dataset.fsPrevWidth || '';
-      delete inner.dataset.fsPrevWidth;
-    });
-    const ph = card.__fsPlaceholder;
-    if (ph && ph.parentNode) {
-      ph.parentNode.insertBefore(card, ph);
-      ph.remove();
-    } else if (card.__fsParent && card.__fsParent.isConnected) {
-      card.__fsParent.appendChild(card);                 // placeholder lost (re-render)
-    } else {
-      card.remove();                                     // original gone; a fresh card exists
-    }
-    card.__fsPlaceholder = null;
-    card.__fsParent = null;
-  }
+  const card = _unmountChartCard();
   overlay.hidden = true;
   document.body.style.overflow = '';
+  _chartFsCards = [];
+  _chartFsIndex = -1;
   if (card && card.isConnected) _resizeCardCharts(card);
 }
 
 (function wireChartFullscreen() {
   const overlay = document.getElementById('chart-fs-overlay');
   const closeBtn = document.getElementById('chart-fs-close');
+  const prevBtn = document.getElementById('chart-fs-prev');
+  const nextBtn = document.getElementById('chart-fs-next');
   if (closeBtn) closeBtn.addEventListener('click', closeChartFullscreen);
+  if (prevBtn) prevBtn.addEventListener('click', () => navigateChartFullscreen(-1));
+  if (nextBtn) nextBtn.addEventListener('click', () => navigateChartFullscreen(1));
   if (overlay) overlay.addEventListener('click', (e) => {
     if (e.target === overlay) closeChartFullscreen();    // backdrop tap
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && overlay && !overlay.hidden) closeChartFullscreen();
+    if (!overlay || overlay.hidden) return;
+    if (e.key === 'Escape') closeChartFullscreen();
+    else if (e.key === 'ArrowLeft') navigateChartFullscreen(-1);
+    else if (e.key === 'ArrowRight') navigateChartFullscreen(1);
   });
 })();
 
@@ -8249,15 +8311,9 @@ function renderDbYearCharts() {
     summary.textContent = 'মোট ' + totalGames + ' games · ' + Math.round(totalHours) + ' ঘণ্টা · peak year ' + peakYear + ' · ~' + avg + ' games/year';
     card.appendChild(summary);
 
-    const containerWidth = wrap.clientWidth || 600;
-    const minWidth = Math.max(containerWidth, buckets.length * 85);
-    inner.style.width = minWidth + 'px';
-    if (minWidth > containerWidth) {
-      const hint = document.createElement('p');
-      hint.className = 'analytics-scroll-hint';
-      hint.textContent = '← ডানে-বামে scroll করো →';
-      card.appendChild(hint);
-    }
+    // Default card view: fit all release years compressed into the card (no scroll).
+    // ⛶ fullscreen stretches inner to 100% of the wide overlay → years spread out.
+    inner.style.width = '100%';
     // ---- Phase 16: range buttons + reset zoom (above canvas, below summary) ----
     const toolbar = document.createElement('div');
     toolbar.className = 'analytics-chart-toolbar';
@@ -8631,8 +8687,8 @@ function renderPlayedActivityChart() {
     card.appendChild(note);
   }
 
-  const containerWidth = wrap.clientWidth || 600;
-  inner.style.width = Math.max(containerWidth, spacing * 85) + 'px';
+  // Default card view: fit all data compressed (no scroll); ⛶ fullscreen spreads it out.
+  inner.style.width = '100%';
 
   const chart = new Chart(canvas.getContext('2d'), {
     type: 'line',
