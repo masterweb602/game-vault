@@ -3971,6 +3971,7 @@ async function saveList(name, items) {
   }
   Profiler.record('save.' + name, performance.now() - _tProf, { n: items.length });
   if (typeof schedulePush === 'function') schedulePush();
+  if (typeof scheduleVaultCheckerSync === 'function') scheduleVaultCheckerSync();
 }
 
 async function loadList(name) {
@@ -4013,6 +4014,7 @@ async function saveCustomListsRegistry(entries) {
   // entries: array of { id, name, createdAt }
   await Storage.set('customLists-registry', JSON.stringify(entries));
   if (typeof schedulePush === 'function') schedulePush();
+  if (typeof scheduleVaultCheckerSync === 'function') scheduleVaultCheckerSync();
 }
 
 /* ─── Fuzzy matching engine ──────────────────────────────── */
@@ -4781,6 +4783,17 @@ function parsePlainMeta(name) {
     year: parseInt(m[2], 10),
     hours: parseFloat(m[3])
   };
+}
+
+// Cleaned BASE name (year+playtime stripped) for export / Vault Checker sync.
+// Bracket parser first, then plain; only strips year-anchored meta — bare game
+// numbers ("Portal 2") pass through. The vault's stored items are NOT mutated;
+// only the exported/synced copy is cleaned.
+function cleanForExport(name) {
+  let m = parseNameMeta(name);
+  if (m.year === null && m.hours === null) m = parsePlainMeta(name);
+  const metaMatched = m.year !== null || m.hours !== null;
+  return (metaMatched && m.cleanName) ? m.cleanName : name;
 }
 
 // Re-runnable migration for the bracket + plain trailing formats. Walks
@@ -9348,6 +9361,52 @@ function aggregateMotherList(stateLike) {
   return out;
 }
 
+/* ─── Vault Checker auto-sync ──────────────────────────────────────
+   Mirrors the full Mother aggregate (vault + played + every custom DB) into
+   localStorage so the Vault Checker browser extension can sync with NO manual
+   upload, and stays fresh as the vault changes. Cleaned names only — the
+   vault's stored items are never mutated. Same dedup/clean logic as the
+   "Export for Vault Checker" button, extended with a per-game `db` source. */
+function buildVaultCheckerPayload() {
+  const rows = (typeof aggregateMotherList === 'function') ? aggregateMotherList(state) : [];
+  const isPlayed = (name) => {
+    const n = normalize(name);
+    return !!(n && state.pIndex && state.pIndex.byNorm.has(n));
+  };
+  const map = new Map();                 // norm → { name, played, db }  (dedup by normalize)
+  const add = (rawName, played, db) => {
+    if (!rawName) return;
+    const name = cleanForExport(rawName);
+    const key = normalize(name) || name.toLowerCase();
+    const cur = map.get(key);
+    if (cur) { if (played) cur.played = true; return; }   // first db source wins
+    map.set(key, { name: name, played: !!played, db: db || '' });
+  };
+  for (const r of rows) add(r.item.name, isPlayed(r.item.name), r.sourceLabel);  // vault + customs
+  for (const it of (state.played || [])) add(it.name, true, 'Played');           // played-only games
+  return { version: 4, type: 'mother', games: Array.from(map.values()) };
+}
+
+// Write the payload + a timestamp, then notify same-tab listeners via a passive
+// CustomEvent (the storage event does NOT fire in the writing document). All
+// guarded — localStorage may be unavailable or full. The page always writes
+// regardless of the extension's on/off state; the extension decides what to do.
+function writeVaultCheckerSync() {
+  try {
+    const payload = buildVaultCheckerPayload();
+    localStorage.setItem('vaultCheckerSync', JSON.stringify(payload));
+    localStorage.setItem('vaultCheckerSyncTs', String(Date.now()));
+    window.dispatchEvent(new CustomEvent('vault-checker-sync'));
+  } catch (e) { /* non-fatal */ }
+}
+
+// Debounced so bulk saves (import/migrate/clear) collapse to one write. No setInterval.
+let _vcSyncTimer = null;
+function scheduleVaultCheckerSync() {
+  if (_vcSyncTimer) clearTimeout(_vcSyncTimer);
+  _vcSyncTimer = setTimeout(() => { _vcSyncTimer = null; writeVaultCheckerSync(); }, 600);
+}
+
 function filterMotherRows(rows, opts) {
   opts = opts || {};
   const search = (opts.search || '').trim().toLowerCase();
@@ -11345,15 +11404,8 @@ $('#export-mother').addEventListener('click', () => {
     const n = normalize(name);
     return !!(n && state.pIndex && state.pIndex.byNorm.has(n));
   };
-  // Export the cleaned BASE name (year+playtime stripped) so the Vault Checker
-  // matches clean selections. Reuses the existing name-meta parsers; the user's
-  // stored vault items are NOT touched — only this exported copy is cleaned.
-  const cleanForExport = (name) => {
-    let m = parseNameMeta(name);
-    if (m.year === null && m.hours === null) m = parsePlainMeta(name);
-    const metaMatched = m.year !== null || m.hours !== null;
-    return (metaMatched && m.cleanName) ? m.cleanName : name;
-  };
+  // Names are cleaned via the module-level cleanForExport() so the Vault Checker
+  // matches clean selections. The user's stored vault items are NOT touched.
   const map = new Map();                       // norm → { name, played }  (dedup by normalize)
   const add = (rawName, played) => {
     if (!rawName) return;
@@ -12534,6 +12586,9 @@ async function init() {
   renderVault();
   renderPlayed();
   updateStats();
+
+  // Seed the Vault Checker sync mirror once the vault is fully loaded.
+  writeVaultCheckerSync();
 
   // Always open on the Vault tab. The "HTML + my data" export uses getAppSource's
   // outerHTML fallback on file://, which bakes in whatever tab was active at

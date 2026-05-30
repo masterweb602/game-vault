@@ -32,7 +32,8 @@
   const MAX_NAMES = 25;
   const DEBOUNCE_MS = 150;
 
-  let enabled = true;            // default ON
+  let enabled = false;           // default OFF — fully inert until toggled on
+  let listenersOn = false;       // whether selection listeners are attached
   let vaultData = null;          // { names:[], playedNorms:[], threshold, ... }
   let index = null;              // VM.SearchIndex, built lazily
   let playedSet = new Set();     // normalized names flagged completed/played
@@ -54,7 +55,7 @@
   async function loadState() {
     try {
       const res = await storageGet([KEY_DATA, KEY_ENABLED]);
-      enabled = res[KEY_ENABLED] !== false;
+      enabled = res[KEY_ENABLED] === true;   // default OFF unless explicitly enabled
       vaultData = res[KEY_DATA] || null;
       index = null;
       playedSet = new Set((vaultData && vaultData.playedNorms) || []);
@@ -279,24 +280,46 @@
   const debouncedCheck = debounce(checkSelection, DEBOUNCE_MS);
 
   /* ─── Events ──────────────────────────────────────────────────── */
-  document.addEventListener('selectionchange', debouncedCheck, true);
-  document.addEventListener('mouseup', () => setTimeout(checkSelection, 0), true);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hidePanel(); }, true);
-  window.addEventListener('scroll', hidePanel, true);
-  window.addEventListener('resize', hidePanel, true);
+  // Stable handler refs so they can be detached when the toggle goes OFF.
+  const onMouseUp = () => setTimeout(checkSelection, 0);
+  const onKeyDown = (e) => { if (e.key === 'Escape') hidePanel(); };
 
+  // Attach selection detection only while enabled — fully inert otherwise.
+  function enable() {
+    if (listenersOn) return;
+    listenersOn = true;
+    document.addEventListener('selectionchange', debouncedCheck, true);
+    document.addEventListener('mouseup', onMouseUp, true);
+    document.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('scroll', hidePanel, true);
+    window.addEventListener('resize', hidePanel, true);
+  }
+  function disable() {
+    if (!listenersOn) return;
+    listenersOn = false;
+    document.removeEventListener('selectionchange', debouncedCheck, true);
+    document.removeEventListener('mouseup', onMouseUp, true);
+    document.removeEventListener('keydown', onKeyDown, true);
+    window.removeEventListener('scroll', hidePanel, true);
+    window.removeEventListener('resize', hidePanel, true);
+    hidePanel();
+  }
+
+  // Passive flip listener — the only thing alive while OFF.
   if (STORAGE_NS && STORAGE_NS.onChanged && STORAGE_NS.onChanged.addListener) {
     STORAGE_NS.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
-      if (KEY_ENABLED in changes) enabled = changes[KEY_ENABLED].newValue !== false;
+      if (KEY_ENABLED in changes) {
+        enabled = changes[KEY_ENABLED].newValue === true;
+        if (enabled) enable(); else disable();
+      }
       if (KEY_DATA in changes) {
         vaultData = changes[KEY_DATA].newValue || null;
         index = null;
         playedSet = new Set((vaultData && vaultData.playedNorms) || []);
       }
-      if (!enabled) hidePanel();
     });
   }
 
-  loadState();
+  loadState().then(() => { if (enabled) enable(); });
 })();

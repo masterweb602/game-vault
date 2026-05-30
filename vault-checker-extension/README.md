@@ -20,19 +20,39 @@ Works on **Chromium** (Chrome / Edge / Brave / Opera) and **Firefox**, Manifest 
 - Your vault list is stored **offline** in `browser.storage.local`. Nothing leaves your
   machine.
 
-## First-time setup (load your vault)
-1. In Game Vault → Settings → **Export for Vault Checker**. This exports the full
-   Mother aggregate (vault + every custom DB + played-only games), deduplicated, with
-   a `played` flag per game:
-   `{ "version": 3, "type": "mother", "games": [ { "name": "...", "played": false } ] }`.
-   *(The older `Download JSON` export — `{ vault:[], played:[] }` — also works; its
-   `played` list maps to the “completed” state.)*
-2. Click the **Vault Checker** toolbar icon to open the popup.
-3. **Paste** the JSON into the textarea (or use **Choose File** to pick the `.json`).
+## Off by default
+The extension ships **OFF**. Nothing runs — no selection detection, no syncing —
+until you open the popup and flip the **Detection** switch **On**. When OFF both
+content scripts are fully inert. State is saved in `chrome.storage.local`
+(`enabled`, default `false`).
+
+## Auto-sync (recommended — no manual upload)
+The extension syncs your **full game database** straight from a Game Vault page
+(vault + played + every custom DB), so you never have to export/upload by hand,
+and it stays fresh as you add/remove games.
+
+1. Open your **Game Vault** — either the local file (`…/game-vault.html`) or the
+   hosted copy (`https://masterweb602.github.io/game-vault/…`).
+2. Click the **Vault Checker** toolbar icon and flip **Detection On**.
+3. That's it — the popup shows **“Synced from Game Vault: N games · last synced …”**.
+   Each game is stored with its source database and `played` flag; names are the
+   cleaned base names (year/playtime stripped) so matching is accurate.
+4. **Live updates:** while a Game Vault tab is open, adding/deleting a game
+   re-syncs automatically (via a page event + the cross-tab storage event +
+   on tab focus — no polling).
+
+> **Local file users:** for sync to work on a `file://` Game Vault page you must
+> enable **“Allow access to file URLs”** on the extension's details page
+> (`chrome://extensions` → Vault Checker → **Details** → *Allow access to file URLs*).
+> The hosted GitHub Pages copy needs no such permission.
+
+## Manual load (fallback)
+You can still load a vault by hand (e.g. on a device without the Game Vault page):
+1. In Game Vault → Settings → **Export for Vault Checker** (`{ "version": 3,
+   "type": "mother", "games": [ { "name": "...", "played": false } ] }`).
+2. Open the popup, **paste** the JSON (or **Choose File**), press **Load vault**.
    You can also paste a plain list of names (one per line / comma-separated).
-4. Press **Load vault**. It shows how many games were loaded.
-5. Use the **Detection** switch to turn checking on/off (default **On**).
-   Optionally adjust the **Fuzzy threshold** (0.50–0.95; default 0.82) and re-load.
+3. Optionally adjust the **Fuzzy threshold** (0.50–0.95; default 0.82) and re-load.
 
 Then on any page: select text (a name, or several names separated by new lines /
 commas) and the panel appears near the selection. Click the **×**, press **Esc**, or
@@ -55,13 +75,15 @@ click away to dismiss.
 manifest.json              MV3 manifest (Chrome + Firefox)
 match-engine.js            verbatim Game Vault matching pipeline (do not edit)
 content.js                 selection detection + Shadow-DOM result panel
+sync.js                    auto-sync the game DB from a Game Vault page
 popup.html / popup.js      load/clear vault, on/off toggle, threshold
 vendor/browser-polyfill.js webextension-polyfill 0.12.0 (local)
 icons/                     toolbar icons
 ```
 
 ## Notes
-- The export only contains `vault` + `played`; custom databases (e.g. ps2/ps3) are not
-  part of the JSON export, so they aren't checked.
-- Re-export and re-load whenever your vault changes to keep results current.
+- Auto-sync covers the **full** database — vault + played + every custom DB
+  (e.g. ps2/ps3) — with each game's source database recorded.
+- With auto-sync you don't need to re-export; live updates keep results current.
+  The manual export/load remains available as a fallback.
 - Selections are checked in the top frame only (not inside cross-origin iframes).

@@ -15,6 +15,9 @@
   const RT = (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime
            : (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime
            : null;
+  const STORAGE_NS = (typeof chrome !== 'undefined' && chrome.storage) ? chrome.storage
+                   : (typeof browser !== 'undefined' && browser.storage) ? browser.storage
+                   : null;
 
   const VM = window.VaultMatch;
   const KEY_DATA = 'vaultData';
@@ -160,6 +163,28 @@
     return 'Loaded ' + d.names.length + ' games' + (completed ? ' (' + completed + ' completed)' : '') + '.';
   }
 
+  function timeAgo(ts) {
+    if (!ts) return 'just now';
+    const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+    if (s < 60) return 'just now';
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + ' min ago';
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + ' hr ago';
+    const d = Math.floor(h / 24);
+    return d + ' day' + (d > 1 ? 's' : '') + ' ago';
+  }
+
+  // Auto-synced vaults (source:'game-vault') get the sync message; manual loads
+  // keep the existing "Loaded N games" text.
+  function statusMsg(d) {
+    if (!d || !Array.isArray(d.names)) return null;
+    if (d.source === 'game-vault') {
+      return 'Synced from Game Vault: ' + d.names.length + ' games · last synced ' + timeAgo(d.lastSynced) + '.';
+    }
+    return loadedMsg(d);
+  }
+
   async function init() {
     if (!hasStorage) {
       setStatus('Extension storage unavailable — reload the extension.', 'err');
@@ -167,14 +192,15 @@
     }
     try {
       const res = await storageGet([KEY_DATA, KEY_ENABLED]);
-      const isOn = res[KEY_ENABLED] !== false;
+      const isOn = res[KEY_ENABLED] === true;   // default OFF unless explicitly enabled
       enabledToggle.checked = isOn;
       toggleState.textContent = isOn ? 'On' : 'Off';
 
       const d = res[KEY_DATA];
-      if (d && Array.isArray(d.names)) {
+      const msg = statusMsg(d);
+      if (msg) {
         thresholdInput.value = clampThreshold(d.threshold);
-        setStatus(loadedMsg(d), 'ok');
+        setStatus(msg, 'ok');
       } else {
         thresholdInput.value = VM.DEFAULT_THRESHOLD;
         setStatus('No vault loaded yet.', '');
@@ -214,6 +240,7 @@
       vaultCount: parsed.vaultCount,
       playedCount: parsed.playedCount,
       threshold: threshold,
+      source: 'manual',
       updatedAt: Date.now()
     };
     try {
@@ -234,6 +261,17 @@
       setStatus('Clear failed: ' + e.message, 'err');
     }
   });
+
+  // Live-refresh the status if an auto-sync lands while the popup is open
+  // (e.g. right after the user flips the toggle ON and sync.js syncs).
+  if (STORAGE_NS && STORAGE_NS.onChanged && STORAGE_NS.onChanged.addListener) {
+    STORAGE_NS.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !(KEY_DATA in changes)) return;
+      const d = changes[KEY_DATA].newValue;
+      const msg = statusMsg(d);
+      if (msg) { thresholdInput.value = clampThreshold(d.threshold); setStatus(msg, 'ok'); }
+    });
+  }
 
   init();
 })();
