@@ -83,6 +83,17 @@
   </div>
 
   <div class="card">
+    <div class="row">
+      <div>
+        <div class="toggle-label">Results</div>
+        <div class="toggle-state" id="results-count">0 collected</div>
+      </div>
+      <button class="primary" id="view-results" type="button">View results</button>
+    </div>
+    <div class="hint">Detected games (auto-scan + manual select) collected into 3 lists. Opens in a new tab.</div>
+  </div>
+
+  <div class="card">
     <label class="field" for="json-input">Paste Game Vault JSON export</label>
     <textarea id="json-input" placeholder='{ "version": 2, "vault": [ { "name": "Elden Ring" } ], "played": [ ... ] }
 

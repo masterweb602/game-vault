@@ -277,7 +277,7 @@
         // pasted "Crimson Desert 2025 30" matches the same as "Crimson Desert".
         const cleanedNm = VM.cleanGameName(nm);
         const m = idx.matchOne(cleanedNm, true, th);
-        let state, match = null;
+        let state, match = null, db = '';
         if (!m) {
           state = 'miss';
         } else {
@@ -286,8 +286,12 @@
           match = m.item.name;
           const rawNorm = VM.normalize(m.item._raw || m.item.name);
           state = playedSet.has(rawNorm) ? 'done' : 'hit';
+          db = (vaultData && vaultData.dbMap && vaultData.dbMap[rawNorm]) || '';
         }
         rows.push({ name: nm, state: state, match: match });
+        // Collect manual selections into the same store as auto-scan (nothing
+        // lost). collectResult dedups by normalize across all three lists.
+        collectResult(state, cleanedNm, match, db);
       }
     }
 
@@ -326,6 +330,7 @@
   let scanResults = { inVault: [], completed: [], notInVault: [] };
   let scanResultsLoaded = false;
   let _scanWriteTimer = null;
+  let _lastWrittenTs = 0;            // updatedAt of our own last write (to ignore the echo)
 
   /* — exclusion filters: drop non-game candidates before matching — */
   const UI_WORDS = new Set([
@@ -421,24 +426,29 @@
     el.setAttribute('data-vc-scanned', state);
   }
 
+  // Load the in-memory copy from the given stored object (or storage). Rebuilds
+  // scanSeen so dedup reflects exactly what's stored — this is also how an
+  // external change (e.g. Clear from the results page) is taken into account so
+  // cleared entries are not resurrected, and re-detected games can be re-added.
+  function applyStoredResults(r) {
+    scanResults.inVault = Array.isArray(r && r.inVault) ? r.inVault : [];
+    scanResults.completed = Array.isArray(r && r.completed) ? r.completed : [];
+    scanResults.notInVault = Array.isArray(r && r.notInVault) ? r.notInVault : [];
+    scanSeen = new Set();
+    for (const arr of [scanResults.inVault, scanResults.completed, scanResults.notInVault]) {
+      for (const e of arr) {
+        const n = VM.normalize(e && e.name) || ((e && e.name) || '').toLowerCase();
+        if (n) scanSeen.add(n);
+      }
+    }
+  }
+
   async function loadScanResults() {
     if (scanResultsLoaded) return;
     scanResultsLoaded = true;
     try {
       const res = await storageGet([KEY_RESULTS]);
-      const r = res[KEY_RESULTS];
-      if (r) {
-        scanResults.inVault = Array.isArray(r.inVault) ? r.inVault : [];
-        scanResults.completed = Array.isArray(r.completed) ? r.completed : [];
-        scanResults.notInVault = Array.isArray(r.notInVault) ? r.notInVault : [];
-        scanSeen = new Set();
-        for (const arr of [scanResults.inVault, scanResults.completed, scanResults.notInVault]) {
-          for (const e of arr) {
-            const n = VM.normalize(e && e.name) || ((e && e.name) || '').toLowerCase();
-            if (n) scanSeen.add(n);
-          }
-        }
-      }
+      if (res[KEY_RESULTS]) applyStoredResults(res[KEY_RESULTS]);
     } catch (e) { /* start empty */ }
   }
 
@@ -446,11 +456,12 @@
     if (_scanWriteTimer) clearTimeout(_scanWriteTimer);
     _scanWriteTimer = setTimeout(() => {
       _scanWriteTimer = null;
+      _lastWrittenTs = Date.now();
       storageSet({ [KEY_RESULTS]: {
         inVault: scanResults.inVault,
         completed: scanResults.completed,
         notInVault: scanResults.notInVault,
-        updatedAt: Date.now()
+        updatedAt: _lastWrittenTs
       }}).catch(() => {});
     }, 500);
   }
@@ -576,6 +587,7 @@
   function enable() {
     if (listenersOn) return;
     listenersOn = true;
+    loadScanResults();   // so manual selections collect into the shared store
     document.addEventListener('selectionchange', debouncedCheck, true);
     document.addEventListener('mouseup', onMouseUp, true);
     document.addEventListener('keydown', onKeyDown, true);
@@ -611,6 +623,13 @@
         playedSet = new Set((vaultData && vaultData.playedNorms) || []);
         // Vault (re)synced — re-observe so far-unscanned candidates get evaluated.
         if (scanOn) observeCandidates(document);
+      }
+      // Results changed elsewhere (e.g. Clear from the results page, or another
+      // tab). Refresh our in-memory copy so we don't resurrect cleared entries.
+      // Skip our own write (matched by updatedAt) to avoid clobbering pending data.
+      if (KEY_RESULTS in changes && scanResultsLoaded) {
+        const nv = changes[KEY_RESULTS].newValue;
+        if (!nv || nv.updatedAt !== _lastWrittenTs) applyStoredResults(nv || {});
       }
     });
   }

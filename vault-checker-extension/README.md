@@ -40,8 +40,25 @@ mark: green **✓** in vault · teal **✓** completed · red **✗** not in vau
 - Fully inert when off (no observers, no page changes). Turning it off removes all
   inline marks.
 - Detected names are accumulated into three lists in `chrome.storage.local`
-  (`scanResults`, with each entry's source URL) for an upcoming results view.
+  (`scanResults`, with each entry's source URL).
   This data is **preserved** when you toggle Auto-scan off.
+
+## Results page
+The popup's **View results** button opens a full-page view (in a new tab) of
+everything collected — from **both** Auto-scan **and** manual selection — in three
+organized lists:
+
+- **Not in vault**
+- **In vault** (shows the source database per game, e.g. `Elden Ring — ps2`)
+- **Completed** (played)
+
+Each list has a **count**, a **Copy** button (copies that list's names, one per
+line) and a per-list **Clear**; there's also a global **Clear all**. Clears ask
+for confirmation. The page **live-updates** via `chrome.storage.onChanged` as new
+results arrive, and each entry links back to the page it was seen on.
+
+Manual text selection (Detection) collects into the **same** `scanResults` store
+as Auto-scan — one place, nothing lost — deduplicated by `normalize()`.
 
 ## Auto-sync (recommended — no manual upload)
 The extension syncs your **full game database** straight from a Game Vault page
@@ -93,7 +110,8 @@ manifest.json              MV3 manifest (Chrome + Firefox)
 match-engine.js            verbatim Game Vault matching pipeline (do not edit)
 content.js                 selection detection + Shadow-DOM result panel
 sync.js                    auto-sync the game DB from a Game Vault page
-popup.html / popup.js      load/clear vault, on/off toggle, threshold
+results.html / results.js  full-page results view (3 lists, copy/clear)
+popup.html / popup.js      load/clear vault, toggles, results, threshold
 vendor/browser-polyfill.js webextension-polyfill 0.12.0 (local)
 icons/                     toolbar icons
 ```

@@ -19,16 +19,22 @@
                    : (typeof browser !== 'undefined' && browser.storage) ? browser.storage
                    : null;
 
+  const TABS = (typeof chrome !== 'undefined' && chrome.tabs) ? chrome.tabs
+             : (typeof browser !== 'undefined' && browser.tabs) ? browser.tabs : null;
+
   const VM = window.VaultMatch;
   const KEY_DATA = 'vaultData';
   const KEY_ENABLED = 'enabled';
   const KEY_AUTOSCAN = 'autoScan';
+  const KEY_RESULTS = 'scanResults';
 
   const $ = (id) => document.getElementById(id);
   const enabledToggle = $('enabled-toggle');
   const toggleState = $('toggle-state');
   const autoscanToggle = $('autoscan-toggle');
   const autoscanState = $('autoscan-state');
+  const viewResultsBtn = $('view-results');
+  const resultsCount = $('results-count');
   const jsonInput = $('json-input');
   const fileInput = $('file-input');
   const loadBtn = $('load-btn');
@@ -194,7 +200,7 @@
       return;
     }
     try {
-      const res = await storageGet([KEY_DATA, KEY_ENABLED, KEY_AUTOSCAN]);
+      const res = await storageGet([KEY_DATA, KEY_ENABLED, KEY_AUTOSCAN, KEY_RESULTS]);
       const isOn = res[KEY_ENABLED] === true;   // default OFF unless explicitly enabled
       enabledToggle.checked = isOn;
       toggleState.textContent = isOn ? 'On' : 'Off';
@@ -202,6 +208,8 @@
       const scanOn = res[KEY_AUTOSCAN] === true;   // default OFF
       autoscanToggle.checked = scanOn;
       autoscanState.textContent = scanOn ? 'On' : 'Off';
+
+      renderResultsCount(res[KEY_RESULTS]);
 
       const d = res[KEY_DATA];
       const msg = statusMsg(d);
@@ -231,6 +239,17 @@
     if (!hasStorage) { setStatus('Storage unavailable.', 'err'); return; }
     try { await storageSet({ [KEY_AUTOSCAN]: isOn }); }
     catch (e) { setStatus('Could not save toggle: ' + e.message, 'err'); }
+  });
+
+  function renderResultsCount(r) {
+    const n = r ? ((r.inVault || []).length + (r.completed || []).length + (r.notInVault || []).length) : 0;
+    resultsCount.textContent = n + ' collected';
+  }
+
+  viewResultsBtn.addEventListener('click', () => {
+    const url = (RT && RT.getURL) ? RT.getURL('results.html') : 'results.html';
+    if (TABS && TABS.create) TABS.create({ url: url });
+    else window.open(url, '_blank');
   });
 
   fileInput.addEventListener('change', () => {
@@ -281,10 +300,13 @@
   // (e.g. right after the user flips the toggle ON and sync.js syncs).
   if (STORAGE_NS && STORAGE_NS.onChanged && STORAGE_NS.onChanged.addListener) {
     STORAGE_NS.onChanged.addListener((changes, area) => {
-      if (area !== 'local' || !(KEY_DATA in changes)) return;
-      const d = changes[KEY_DATA].newValue;
-      const msg = statusMsg(d);
-      if (msg) { thresholdInput.value = clampThreshold(d.threshold); setStatus(msg, 'ok'); }
+      if (area !== 'local') return;
+      if (KEY_DATA in changes) {
+        const d = changes[KEY_DATA].newValue;
+        const msg = statusMsg(d);
+        if (msg) { thresholdInput.value = clampThreshold(d.threshold); setStatus(msg, 'ok'); }
+      }
+      if (KEY_RESULTS in changes) renderResultsCount(changes[KEY_RESULTS].newValue);
     });
   }
 
