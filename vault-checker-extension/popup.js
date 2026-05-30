@@ -3,10 +3,28 @@
 (function () {
   'use strict';
 
-  // Robust API ref: webextension-polyfill defines `browser`; fall back to the
-  // native `chrome` global (MV3 supports promises on chrome.storage). This makes
-  // the popup work even if the polyfill failed to load.
-  const browser = window.browser || (typeof chrome !== 'undefined' ? chrome : undefined);
+  // Storage MUST NOT depend on the webextension-polyfill — `window.browser` is
+  // never set if the polyfill throws on load, which is the real cause of the
+  // "storage unavailable" error. Use chrome.storage.local directly: it exists
+  // natively on BOTH Chromium MV3 and Firefox MV3. Fall back to
+  // browser.storage.local only if `chrome` is entirely absent.
+  const S = (typeof chrome !== 'undefined' && chrome.storage) ? chrome.storage.local
+          : (typeof browser !== 'undefined' && browser.storage) ? browser.storage.local
+          : null;
+  // Independent runtime ref, used only for lastError reporting.
+  const RT = (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime
+           : (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime
+           : null;
+
+  // One-time diagnostic: if it still fails, this shows exactly what's missing.
+  console.log('VC diag:', {
+    chrome: typeof chrome,
+    chromeStorage: typeof chrome !== 'undefined' && !!chrome.storage,
+    browser: typeof browser,
+    perm: (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest)
+            ? chrome.runtime.getManifest().permissions : undefined
+  });
+
   const VM = window.VaultMatch;
   const KEY_DATA = 'vaultData';
   const KEY_ENABLED = 'enabled';
@@ -21,30 +39,32 @@
   const thresholdInput = $('threshold-input');
   const statusEl = $('status');
 
-  const hasStorage = !!(browser && browser.storage && browser.storage.local);
+  const hasStorage = !!S;
 
   function setStatus(msg, kind) {
     statusEl.textContent = msg || '';
     statusEl.className = 'status' + (kind ? ' ' + kind : '');
   }
 
-  // Promise wrappers that work with both the polyfill (promise) and bare chrome.
+  // Promise wrappers around chrome.storage.local. MV3 chrome.storage returns a
+  // promise when called without a callback; we pass a callback AND handle the
+  // returned promise so this works whether the API is callback- or promise-based.
   function storageGet(keys) {
     return new Promise((resolve, reject) => {
       try {
-        const r = browser.storage.local.get(keys, (res) => {
-          const err = browser.runtime && browser.runtime.lastError;
+        const r = S.get(keys, (res) => {
+          const err = RT && RT.lastError;
           if (err) reject(new Error(err.message)); else resolve(res);
         });
-        if (r && typeof r.then === 'function') r.then(resolve, reject); // polyfill path
+        if (r && typeof r.then === 'function') r.then(resolve, reject);
       } catch (e) { reject(e); }
     });
   }
   function storageSet(obj) {
     return new Promise((resolve, reject) => {
       try {
-        const r = browser.storage.local.set(obj, () => {
-          const err = browser.runtime && browser.runtime.lastError;
+        const r = S.set(obj, () => {
+          const err = RT && RT.lastError;
           if (err) reject(new Error(err.message)); else resolve();
         });
         if (r && typeof r.then === 'function') r.then(resolve, reject);
@@ -54,8 +74,8 @@
   function storageRemove(key) {
     return new Promise((resolve, reject) => {
       try {
-        const r = browser.storage.local.remove(key, () => {
-          const err = browser.runtime && browser.runtime.lastError;
+        const r = S.remove(key, () => {
+          const err = RT && RT.lastError;
           if (err) reject(new Error(err.message)); else resolve();
         });
         if (r && typeof r.then === 'function') r.then(resolve, reject);

@@ -10,12 +10,22 @@
 (function () {
   'use strict';
 
-  // Robust API ref: polyfill `browser`, else native `chrome` (MV3 promises).
-  const browser = (typeof self !== 'undefined' && self.browser) ||
-                  window.browser ||
-                  (typeof chrome !== 'undefined' ? chrome : undefined);
+  // Storage MUST NOT depend on window.browser (the polyfill may be absent or
+  // may have thrown on load). Use chrome.storage.local directly — native on
+  // BOTH Chromium MV3 and Firefox MV3 — falling back to browser.storage.local
+  // only if `chrome` is missing entirely.
+  const S = (typeof chrome !== 'undefined' && chrome.storage) ? chrome.storage.local
+          : (typeof browser !== 'undefined' && browser.storage) ? browser.storage.local
+          : null;
+  const RT = (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime
+           : (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime
+           : null;
+  // onChanged lives on the storage namespace itself, not storage.local.
+  const STORAGE_NS = (typeof chrome !== 'undefined' && chrome.storage) ? chrome.storage
+                   : (typeof browser !== 'undefined' && browser.storage) ? browser.storage
+                   : null;
   const VM = (typeof self !== 'undefined' && self.VaultMatch) || window.VaultMatch;
-  if (!browser || !browser.storage || !VM) return; // missing deps — bail quietly
+  if (!S || !VM) return; // missing deps — bail quietly
 
   const KEY_DATA = 'vaultData';
   const KEY_ENABLED = 'enabled';
@@ -32,11 +42,11 @@
   function storageGet(keys) {
     return new Promise((resolve, reject) => {
       try {
-        const r = browser.storage.local.get(keys, (res) => {
-          const err = browser.runtime && browser.runtime.lastError;
+        const r = S.get(keys, (res) => {
+          const err = RT && RT.lastError;
           if (err) reject(new Error(err.message)); else resolve(res);
         });
-        if (r && typeof r.then === 'function') r.then(resolve, reject); // polyfill
+        if (r && typeof r.then === 'function') r.then(resolve, reject);
       } catch (e) { reject(e); }
     });
   }
@@ -262,8 +272,8 @@
   window.addEventListener('scroll', hidePanel, true);
   window.addEventListener('resize', hidePanel, true);
 
-  if (browser.storage.onChanged && browser.storage.onChanged.addListener) {
-    browser.storage.onChanged.addListener((changes, area) => {
+  if (STORAGE_NS && STORAGE_NS.onChanged && STORAGE_NS.onChanged.addListener) {
+    STORAGE_NS.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
       if (KEY_ENABLED in changes) enabled = changes[KEY_ENABLED].newValue !== false;
       if (KEY_DATA in changes) {
