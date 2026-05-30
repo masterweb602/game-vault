@@ -16,15 +16,6 @@
            : (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime
            : null;
 
-  // One-time diagnostic: if it still fails, this shows exactly what's missing.
-  console.log('VC diag:', {
-    chrome: typeof chrome,
-    chromeStorage: typeof chrome !== 'undefined' && !!chrome.storage,
-    browser: typeof browser,
-    perm: (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest)
-            ? chrome.runtime.getManifest().permissions : undefined
-  });
-
   const VM = window.VaultMatch;
   const KEY_DATA = 'vaultData';
   const KEY_ENABLED = 'enabled';

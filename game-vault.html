@@ -11345,9 +11345,19 @@ $('#export-mother').addEventListener('click', () => {
     const n = normalize(name);
     return !!(n && state.pIndex && state.pIndex.byNorm.has(n));
   };
+  // Export the cleaned BASE name (year+playtime stripped) so the Vault Checker
+  // matches clean selections. Reuses the existing name-meta parsers; the user's
+  // stored vault items are NOT touched — only this exported copy is cleaned.
+  const cleanForExport = (name) => {
+    let m = parseNameMeta(name);
+    if (m.year === null && m.hours === null) m = parsePlainMeta(name);
+    const metaMatched = m.year !== null || m.hours !== null;
+    return (metaMatched && m.cleanName) ? m.cleanName : name;
+  };
   const map = new Map();                       // norm → { name, played }  (dedup by normalize)
-  const add = (name, played) => {
-    if (!name) return;
+  const add = (rawName, played) => {
+    if (!rawName) return;
+    const name = cleanForExport(rawName);      // ← clean only the exported name
     const key = normalize(name) || name.toLowerCase();
     const cur = map.get(key);
     if (cur) { if (played) cur.played = true; return; }

@@ -430,12 +430,77 @@
     }
   }
 
+  /* ─── cleanGameName — strip year-anchored trailing meta for MATCHING ─────
+   * The vault stores names with a trailing "[year][playtime]" bracket block or
+   * a plain " <year> <hours>" suffix (e.g. "Crimson Desert 2025 30"). normalize()
+   * removes the year but leaves the bare playtime number ("crimson desert 30"),
+   * so a clean selection "Crimson Desert" never matches. cleanGameName lifts that
+   * meta off BEFORE normalize runs. It is YEAR-ANCHORED: it only strips when a
+   * valid 1970–2030 year token is present, so bare game numbers survive intact
+   * ("Portal 2", "Devil May Cry 5"). "Devil May Cry 5 2019 20" → "Devil May Cry 5".
+   *
+   * parseNameMeta + parsePlainMeta are copied verbatim from game-vault.html
+   * (Phase 12 name-meta migration). DO NOT use these to mutate the user's vault —
+   * they only build the extension's matching copy / the cleaned export. */
+  const _NAMEMETA_BRACKET_RX = /\[([^\]]*)\]/g;
+  const _NAMEMETA_YEAR_RX    = /^\s*(19[7-9]\d|20[0-2]\d|2030)\s*$/;
+  const _NAMEMETA_HOURS_RX   = /^\s*(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\s*$/i;
+  const _NAMEMETA_MINUTES_RX = /^\s*(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m)\s*$/i;
+  function parseNameMeta(name) {
+    if (typeof name !== 'string' || !name) {
+      return { cleanName: '', year: null, hours: null };
+    }
+    let year = null, hours = null;
+    let yearConsumed = false, ptConsumed = false;
+    const cleaned = name.replace(_NAMEMETA_BRACKET_RX, (full, inner) => {
+      if (!yearConsumed) {
+        const ym = _NAMEMETA_YEAR_RX.exec(inner);
+        if (ym) { year = parseInt(ym[1], 10); yearConsumed = true; return ' '; }
+      }
+      if (!ptConsumed) {
+        const hm = _NAMEMETA_HOURS_RX.exec(inner);
+        if (hm) { hours = parseFloat(hm[1]);          ptConsumed = true; return ' '; }
+        const mm = _NAMEMETA_MINUTES_RX.exec(inner);
+        if (mm) { hours = parseFloat(mm[1]) / 60;      ptConsumed = true; return ' '; }
+      }
+      return full;
+    });
+    const cleanName = cleaned.replace(/\s+/g, ' ').trim();
+    return { cleanName, year, hours };
+  }
+
+  const _PLAINMETA_RX = /^(.*?)\s+(19[7-9]\d|20[0-2]\d|2030)\s+(\d+(?:\.\d+)?)\s*$/;
+  function parsePlainMeta(name) {
+    if (typeof name !== 'string' || !name) {
+      return { cleanName: '', year: null, hours: null };
+    }
+    const m = _PLAINMETA_RX.exec(name);
+    if (!m) return { cleanName: name.trim(), year: null, hours: null };
+    return {
+      cleanName: m[1].trim(),
+      year: parseInt(m[2], 10),
+      hours: parseFloat(m[3])
+    };
+  }
+
+  // Returns the base name with year-anchored trailing meta removed. Bracket
+  // parser first; fall back to the plain parser only if the bracket parser
+  // found nothing. If neither matched, the name passes through untouched.
+  function cleanGameName(name) {
+    if (typeof name !== 'string' || !name) return '';
+    let m = parseNameMeta(name);
+    if (m.year === null && m.hours === null) m = parsePlainMeta(name);
+    const metaMatched = m.year !== null || m.hours !== null;
+    return (metaMatched && m.cleanName) ? m.cleanName : name;
+  }
+
   root.VaultMatch = {
     normalize: normalize,
     normalizeDedup: normalizeDedup,
     tokenSort: tokenSort,
     levenshtein: levenshtein,
     stringSim: stringSim,
+    cleanGameName: cleanGameName,
     SearchIndex: SearchIndex,
     DEFAULT_THRESHOLD: 0.82
   };

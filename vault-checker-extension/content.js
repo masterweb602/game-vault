@@ -65,7 +65,14 @@
     if (index) return index;
     if (!vaultData || !Array.isArray(vaultData.names) || vaultData.names.length === 0) return null;
     const idx = new VM.SearchIndex();
-    idx.rebuild(vaultData.names.map((name, i) => ({ id: i, name: String(name) })));
+    // Match on the cleaned base name (year+playtime stripped) but keep the raw
+    // name in _raw so the played lookup still works against the stored
+    // playedNorms (which were computed from the raw names). This is what lets the
+    // fix work on the CURRENTLY loaded data with just an extension reload.
+    idx.rebuild(vaultData.names.map((name, i) => {
+      const raw = String(name);
+      return { id: i, name: VM.cleanGameName(raw), _raw: raw };
+    }));
     index = idx;
     return index;
   }
@@ -245,13 +252,19 @@
         const key = nm.toLowerCase();
         if (seen.has(key)) continue;
         seen.add(key);
-        const m = idx.matchOne(nm, true, th);
+        // Clean the selection too (harmless if it carries no year meta), so a
+        // pasted "Crimson Desert 2025 30" matches the same as "Crimson Desert".
+        const cleanedNm = VM.cleanGameName(nm);
+        const m = idx.matchOne(cleanedNm, true, th);
         let state, match = null;
         if (!m) {
           state = 'miss';
         } else {
+          // Display the cleaned matched name; resolve played via the RAW name's
+          // norm so it lines up with the stored (raw-derived) playedNorms.
           match = m.item.name;
-          state = playedSet.has(VM.normalize(match)) ? 'done' : 'hit';
+          const rawNorm = VM.normalize(m.item._raw || m.item.name);
+          state = playedSet.has(rawNorm) ? 'done' : 'hit';
         }
         rows.push({ name: nm, state: state, match: match });
       }
