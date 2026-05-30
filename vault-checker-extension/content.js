@@ -29,7 +29,6 @@
 
   const KEY_DATA = 'vaultData';
   const KEY_ENABLED = 'enabled';
-  const MAX_NAMES = 25;
   const DEBOUNCE_MS = 150;
 
   let enabled = false;           // default OFF — fully inert until toggled on
@@ -115,7 +114,9 @@
       '.vc-close{appearance:none;background:none;border:none;color:#9a948b;',
       '  cursor:pointer;font-size:16px;line-height:1;padding:2px 4px;border-radius:4px;}',
       '.vc-close:hover{color:#fff;background:rgba(255,255,255,.08);}',
-      '.vc-list{margin:0;padding:4px 0;max-height:280px;overflow-y:auto;}',
+      '.vc-list{margin:0;padding:0 0 4px;max-height:60vh;overflow-y:auto;}',
+      '.vc-summary{padding:7px 12px;font-size:11px;font-weight:600;color:#cfcabf;',
+      '  border-bottom:1px solid #2a2a31;position:sticky;top:0;background:#16161b;z-index:1;}',
       '.vc-row{display:flex;align-items:center;gap:8px;padding:5px 12px;}',
       '.vc-mark{flex:none;width:16px;text-align:center;font-weight:700;}',
       '.vc-name{flex:1;word-break:break-word;}',
@@ -163,14 +164,24 @@
   const STATUS_TEXT = { done: 'completed', hit: 'in vault', miss: 'not in vault' };
   const MARK = { done: '✓', hit: '✓', miss: '✗' };
 
-  function renderRows(rows, note, total) {
+  function renderRows(rows, note) {
     listEl.innerHTML = '';
     if (note) {
       const n = document.createElement('div');
       n.className = 'vc-note';
       n.textContent = note;
       listEl.appendChild(n);
+      return;
     }
+    // Summary line (sticky at the top while scrolling). Every detected game is
+    // represented in the rows below — there is no cap.
+    let done = 0, hit = 0, miss = 0;
+    for (const r of rows) { if (r.state === 'done') done++; else if (r.state === 'hit') hit++; else miss++; }
+    const sum = document.createElement('div');
+    sum.className = 'vc-summary';
+    sum.textContent = rows.length + (rows.length === 1 ? ' game' : ' games') +
+      ' — ' + hit + ' in vault · ' + done + ' completed · ' + miss + ' not in vault';
+    listEl.appendChild(sum);
     for (const r of rows) {
       const row = document.createElement('div');
       row.className = 'vc-row vc-' + r.state;
@@ -193,12 +204,6 @@
       row.appendChild(nameWrap);
       row.appendChild(status);
       listEl.appendChild(row);
-    }
-    if (total && total > rows.length) {
-      const more = document.createElement('div');
-      more.className = 'vc-more';
-      more.textContent = '+' + (total - rows.length) + ' more selected (not shown)';
-      listEl.appendChild(more);
     }
   }
 
@@ -249,7 +254,6 @@
       const th = getThreshold();
       const seen = new Set();
       for (const nm of names) {
-        if (rows.length >= MAX_NAMES) break;
         const key = nm.toLowerCase();
         if (seen.has(key)) continue;
         seen.add(key);
@@ -271,7 +275,7 @@
       }
     }
 
-    renderRows(rows, note, names.length);
+    renderRows(rows, note);
     setTitle(rows, note);
     host.style.display = 'block';
     positionPanel(rect);
