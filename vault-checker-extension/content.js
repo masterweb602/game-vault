@@ -31,12 +31,14 @@
   const KEY_ENABLED = 'enabled';
   const KEY_AUTOSCAN = 'autoScan';
   const KEY_RESULTS = 'scanResults';
+  const KEY_FUZZY = 'fuzzy';
   const DEBOUNCE_MS = 150;
 
   let enabled = false;           // default OFF — fully inert until toggled on
   let listenersOn = false;       // whether selection listeners are attached
   let autoScan = false;          // Auto-scan toggle (independent of Detection)
   let scanOn = false;            // whether scan observers are attached
+  let fuzzy = true;              // fuzzy match on/off (default ON; off = exact path)
   let vaultData = null;          // { names:[], playedNorms:[], dbMap, threshold, ... }
   let index = null;              // VM.SearchIndex, built lazily
   let playedSet = new Set();     // normalized names flagged completed/played
@@ -68,9 +70,10 @@
 
   async function loadState() {
     try {
-      const res = await storageGet([KEY_DATA, KEY_ENABLED, KEY_AUTOSCAN]);
+      const res = await storageGet([KEY_DATA, KEY_ENABLED, KEY_AUTOSCAN, KEY_FUZZY]);
       enabled = res[KEY_ENABLED] === true;   // default OFF unless explicitly enabled
       autoScan = res[KEY_AUTOSCAN] === true; // default OFF
+      fuzzy = res[KEY_FUZZY] !== false;      // default ON
       vaultData = res[KEY_DATA] || null;
       index = null;
       playedSet = new Set((vaultData && vaultData.playedNorms) || []);
@@ -137,6 +140,7 @@
       '.vc-mark{flex:none;width:16px;text-align:center;font-weight:700;}',
       '.vc-name{flex:1;word-break:break-word;}',
       '.vc-status{flex:none;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;}',
+      '.vc-conf{flex:none;font-size:11px;color:#9a948b;font-variant-numeric:tabular-nums;}',
       '.vc-sub{display:block;font-size:11px;color:#76716a;margin-top:1px;}',
       // state colors
       '.vc-done .vc-mark,.vc-done .vc-status{color:#38bdf8;}',   // completed (teal)
@@ -213,11 +217,18 @@
         sub.textContent = 'matched: ' + r.match;
         nameWrap.appendChild(sub);
       }
+      row.appendChild(mark);
+      row.appendChild(nameWrap);
+      // Confidence % — only for matches (exact = 100%, fuzzy = match score).
+      if (r.state !== 'miss' && typeof r.score === 'number') {
+        const conf = document.createElement('span');
+        conf.className = 'vc-conf';
+        conf.textContent = Math.round(r.score * 100) + '%';
+        row.appendChild(conf);
+      }
       const status = document.createElement('span');
       status.className = 'vc-status';
       status.textContent = STATUS_TEXT[r.state];
-      row.appendChild(mark);
-      row.appendChild(nameWrap);
       row.appendChild(status);
       listEl.appendChild(row);
     }
@@ -244,61 +255,80 @@
   }
 
   /* ─── Core check ──────────────────────────────────────────────── */
+  // Match a list of names → rows (+ collect). Shared by manual selection and the
+  // right-click "Check in Vault" context-menu action.
+  function buildRows(names) {
+    const idx = ensureIndex();
+    if (!idx) {
+      return { rows: [], note: 'No vault loaded — open the extension and load your Game Vault export.' };
+    }
+    const th = getThreshold();
+    const seen = new Set();
+    const rows = [];
+    for (const nm of names) {
+      const key = nm.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      // Clean the selection too (harmless if it carries no year meta), so a
+      // pasted "Crimson Desert 2025 30" matches the same as "Crimson Desert".
+      const cleanedNm = VM.cleanGameName(nm);
+      const m = idx.matchOne(cleanedNm, fuzzy, th);   // fuzzy off = exact path
+      let state, match = null, db = '', score = null;
+      if (!m) {
+        state = 'miss';
+      } else {
+        // Display the cleaned matched name; resolve played via the RAW name's
+        // norm so it lines up with the stored (raw-derived) playedNorms.
+        match = m.item.name;
+        const rawNorm = VM.normalize(m.item._raw || m.item.name);
+        state = playedSet.has(rawNorm) ? 'done' : 'hit';
+        db = (vaultData && vaultData.dbMap && vaultData.dbMap[rawNorm]) || '';
+        score = m.score;
+      }
+      rows.push({ name: nm, state: state, match: match, score: score });
+      // Collect into the same store as auto-scan (nothing lost), deduped by norm.
+      collectResult(state, cleanedNm, match, db, score);
+    }
+    return { rows: rows, note: '' };
+  }
+
+  // Run a check on raw text and show the panel at rect.
+  function runCheck(text, rect) {
+    if (!text || !text.trim()) { hidePanel(); return; }
+    const names = splitNames(text);
+    if (names.length === 0) { hidePanel(); return; }
+    ensurePanel();
+    const out = buildRows(names);
+    renderRows(out.rows, out.note);
+    setTitle(out.rows, out.note);
+    host.style.display = 'block';
+    positionPanel(rect);
+  }
+
   function checkSelection() {
     if (!enabled) { hidePanel(); return; }
-
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || sel.rangeCount === 0) { hidePanel(); return; }
     const text = sel.toString();
     if (!text || !text.trim()) { hidePanel(); return; }
-
-    const names = splitNames(text);
-    if (names.length === 0) { hidePanel(); return; }
-
     let rect;
     try { rect = sel.getRangeAt(0).getBoundingClientRect(); } catch (e) { hidePanel(); return; }
     if (!rect || (rect.width === 0 && rect.height === 0)) { hidePanel(); return; }
+    runCheck(text, rect);
+  }
 
-    ensurePanel();
-
-    const idx = ensureIndex();
-    const rows = [];
-    let note = '';
-    if (!idx) {
-      note = 'No vault loaded — open the extension and load your Game Vault export.';
-    } else {
-      const th = getThreshold();
-      const seen = new Set();
-      for (const nm of names) {
-        const key = nm.toLowerCase();
-        if (seen.has(key)) continue;
-        seen.add(key);
-        // Clean the selection too (harmless if it carries no year meta), so a
-        // pasted "Crimson Desert 2025 30" matches the same as "Crimson Desert".
-        const cleanedNm = VM.cleanGameName(nm);
-        const m = idx.matchOne(cleanedNm, true, th);
-        let state, match = null, db = '';
-        if (!m) {
-          state = 'miss';
-        } else {
-          // Display the cleaned matched name; resolve played via the RAW name's
-          // norm so it lines up with the stored (raw-derived) playedNorms.
-          match = m.item.name;
-          const rawNorm = VM.normalize(m.item._raw || m.item.name);
-          state = playedSet.has(rawNorm) ? 'done' : 'hit';
-          db = (vaultData && vaultData.dbMap && vaultData.dbMap[rawNorm]) || '';
-        }
-        rows.push({ name: nm, state: state, match: match });
-        // Collect manual selections into the same store as auto-scan (nothing
-        // lost). collectResult dedups by normalize across all three lists.
-        collectResult(state, cleanedNm, match, db);
+  // Selection rect if there's a live selection, else a viewport-anchored box
+  // (used by the context-menu path where we may only have the text).
+  function currentSelectionRect() {
+    try {
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed && sel.rangeCount) {
+        const r = sel.getRangeAt(0).getBoundingClientRect();
+        if (r && (r.width || r.height)) return r;
       }
-    }
-
-    renderRows(rows, note);
-    setTitle(rows, note);
-    host.style.display = 'block';
-    positionPanel(rect);
+    } catch (e) { /* ignore */ }
+    const cx = Math.max(8, (window.innerWidth / 2) - 150);
+    return { left: cx, right: cx + 200, top: 64, bottom: 64 };
   }
 
   const debouncedCheck = debounce(checkSelection, DEBOUNCE_MS);
@@ -466,11 +496,12 @@
     }, 500);
   }
 
-  function collectResult(state, name, match, db) {
+  function collectResult(state, name, match, db, score) {
     const norm = VM.normalize(name) || name.toLowerCase();
     if (!norm || scanSeen.has(norm)) return;   // rolling dedup by normalize
     scanSeen.add(norm);
-    const entry = { name: name, match: match || null, db: db || '', url: location.href };
+    const entry = { name: name, match: match || null, db: db || '',
+                    score: (typeof score === 'number' ? score : null), url: location.href };
     const bucket = state === 'done' ? scanResults.completed
                  : state === 'hit'  ? scanResults.inVault
                  : scanResults.notInVault;
@@ -506,8 +537,8 @@
     if (isExcluded(text)) { el.setAttribute('data-vc-scanned', 'skip'); return; }
     const clean = VM.cleanGameName(text);
     if (!clean || isExcluded(clean)) { el.setAttribute('data-vc-scanned', 'skip'); return; }
-    const m = idx.matchOne(clean, true, getThreshold());
-    let state, matchName = null, db = '';
+    const m = idx.matchOne(clean, fuzzy, getThreshold());   // fuzzy off = exact path
+    let state, matchName = null, db = '', score = null;
     if (!m) {
       state = 'miss';
     } else {
@@ -515,9 +546,10 @@
       const rawNorm = VM.normalize(m.item._raw || m.item.name);
       state = playedSet.has(rawNorm) ? 'done' : 'hit';
       db = (vaultData && vaultData.dbMap && vaultData.dbMap[rawNorm]) || '';
+      score = m.score;
     }
     placeMark(el, state);
-    collectResult(state, clean, matchName, db);
+    collectResult(state, clean, matchName, db, score);
   }
 
   function onIntersect(entries) {
@@ -617,6 +649,9 @@
         autoScan = changes[KEY_AUTOSCAN].newValue === true;
         if (autoScan) scanEnable(); else scanDisable();
       }
+      if (KEY_FUZZY in changes) {
+        fuzzy = changes[KEY_FUZZY].newValue !== false;   // affects subsequent matches
+      }
       if (KEY_DATA in changes) {
         vaultData = changes[KEY_DATA].newValue || null;
         index = null;
@@ -631,6 +666,18 @@
         const nv = changes[KEY_RESULTS].newValue;
         if (!nv || nv.updatedAt !== _lastWrittenTs) applyStoredResults(nv || {});
       }
+    });
+  }
+
+  // Right-click "Check in Vault" — the background service worker sends the
+  // selected text here. Works regardless of the Detection toggle (explicit user
+  // action) and collects into scanResults like everything else.
+  if (RT && RT.onMessage && RT.onMessage.addListener) {
+    RT.onMessage.addListener((msg) => {
+      if (!msg || msg.type !== 'vc-check') return;
+      loadScanResults();   // ensure the shared store is loaded before collecting
+      const text = msg.text || (window.getSelection ? String(window.getSelection()) : '');
+      runCheck(text, currentSelectionRect());
     });
   }
 

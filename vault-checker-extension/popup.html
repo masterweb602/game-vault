@@ -85,6 +85,20 @@
   <div class="card">
     <div class="row">
       <div>
+        <div class="toggle-label">Fuzzy match</div>
+        <div class="toggle-state" id="fuzzy-state">On</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="fuzzy-toggle" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="hint">On = fuzzy match (uses the threshold below). Off = exact name match only.</div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div>
         <div class="toggle-label">Results</div>
         <div class="toggle-state" id="results-count">0 collected</div>
       </div>

@@ -156,6 +156,12 @@
         db.textContent = '— ' + e.db;
         li.appendChild(db);
       }
+      if (typeof e.score === 'number') {
+        const conf = document.createElement('span');
+        conf.className = 'conf';
+        conf.textContent = '· ' + Math.round(e.score * 100) + '%';
+        li.appendChild(conf);
+      }
       ul.appendChild(li);
     }
     host.appendChild(ul);

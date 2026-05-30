@@ -27,12 +27,15 @@
   const KEY_ENABLED = 'enabled';
   const KEY_AUTOSCAN = 'autoScan';
   const KEY_RESULTS = 'scanResults';
+  const KEY_FUZZY = 'fuzzy';
 
   const $ = (id) => document.getElementById(id);
   const enabledToggle = $('enabled-toggle');
   const toggleState = $('toggle-state');
   const autoscanToggle = $('autoscan-toggle');
   const autoscanState = $('autoscan-state');
+  const fuzzyToggle = $('fuzzy-toggle');
+  const fuzzyState = $('fuzzy-state');
   const viewResultsBtn = $('view-results');
   const resultsCount = $('results-count');
   const jsonInput = $('json-input');
@@ -200,7 +203,7 @@
       return;
     }
     try {
-      const res = await storageGet([KEY_DATA, KEY_ENABLED, KEY_AUTOSCAN, KEY_RESULTS]);
+      const res = await storageGet([KEY_DATA, KEY_ENABLED, KEY_AUTOSCAN, KEY_RESULTS, KEY_FUZZY]);
       const isOn = res[KEY_ENABLED] === true;   // default OFF unless explicitly enabled
       enabledToggle.checked = isOn;
       toggleState.textContent = isOn ? 'On' : 'Off';
@@ -208,6 +211,10 @@
       const scanOn = res[KEY_AUTOSCAN] === true;   // default OFF
       autoscanToggle.checked = scanOn;
       autoscanState.textContent = scanOn ? 'On' : 'Off';
+
+      const fz = res[KEY_FUZZY] !== false;   // default ON
+      fuzzyToggle.checked = fz;
+      fuzzyState.textContent = fz ? 'On' : 'Off';
 
       renderResultsCount(res[KEY_RESULTS]);
 
@@ -238,6 +245,14 @@
     autoscanState.textContent = isOn ? 'On' : 'Off';
     if (!hasStorage) { setStatus('Storage unavailable.', 'err'); return; }
     try { await storageSet({ [KEY_AUTOSCAN]: isOn }); }
+    catch (e) { setStatus('Could not save toggle: ' + e.message, 'err'); }
+  });
+
+  fuzzyToggle.addEventListener('change', async () => {
+    const isOn = fuzzyToggle.checked;
+    fuzzyState.textContent = isOn ? 'On' : 'Off';
+    if (!hasStorage) { setStatus('Storage unavailable.', 'err'); return; }
+    try { await storageSet({ [KEY_FUZZY]: isOn }); }
     catch (e) { setStatus('Could not save toggle: ' + e.message, 'err'); }
   });
 

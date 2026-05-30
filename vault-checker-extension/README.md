@@ -16,7 +16,9 @@ Works on **Chromium** (Chrome / Edge / Brave / Opera) and **Firefox**, Manifest 
   this extension agrees with.
 - Cross-browser via the bundled **`webextension-polyfill`** (`vendor/browser-polyfill.js`,
   local — no CDN). All code uses the promise-based `browser.*` API.
-- **No background/service worker** — everything lives in the content script + popup.
+- **Event-driven service worker only** — used solely for the "Check in Vault"
+  context menu; it sleeps when idle and wakes on the menu click. All matching
+  lives in the content script + popup.
 - Your vault list is stored **offline** in `browser.storage.local`. Nothing leaves your
   machine.
 
@@ -59,6 +61,24 @@ results arrive, and each entry links back to the page it was seen on.
 
 Manual text selection (Detection) collects into the **same** `scanResults` store
 as Auto-scan — one place, nothing lost — deduplicated by `normalize()`.
+
+## Right-click "Check in Vault"
+Select text on any page, right-click → **Check in Vault**. It checks the selection
+against your vault and shows the result panel — and works **regardless** of the
+Detection toggle (it's an explicit action). Backed by an event-driven MV3 service
+worker that does nothing until you click the menu (it sleeps when idle — no
+persistent background). Results collect into the same `scanResults` store.
+
+## Fuzzy match toggle
+A **Fuzzy match** toggle in the popup (default **On**):
+- **On** — fuzzy matching using the threshold below (handles minor differences).
+- **Off** — exact name match only (normalized exact + word-order + acronym; no
+  fuzzy distance). Applies to both manual selection and Auto-scan.
+
+## Confidence
+Matched results show a confidence **%** — `100%` for an exact match, or the fuzzy
+match score otherwise — both in the popup/selection panel and on the results page.
+(Misses show no percentage.)
 
 ## Auto-sync (recommended — no manual upload)
 The extension syncs your **full game database** straight from a Game Vault page
@@ -108,6 +128,7 @@ click away to dismiss.
 ```
 manifest.json              MV3 manifest (Chrome + Firefox)
 match-engine.js            verbatim Game Vault matching pipeline (do not edit)
+background.js              event-driven SW: "Check in Vault" context menu
 content.js                 selection detection + Shadow-DOM result panel
 sync.js                    auto-sync the game DB from a Game Vault page
 results.html / results.js  full-page results view (3 lists, copy/clear)
