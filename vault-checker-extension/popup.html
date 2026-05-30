@@ -69,6 +69,20 @@
   </div>
 
   <div class="card">
+    <div class="row">
+      <div>
+        <div class="toggle-label">Auto-scan</div>
+        <div class="toggle-state" id="autoscan-state">Off</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="autoscan-toggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="hint">Scrolls pages and marks detected game names inline (✓ in vault / ✓ completed / ✗ not in vault). Passive — runs only while scrolling.</div>
+  </div>
+
+  <div class="card">
     <label class="field" for="json-input">Paste Game Vault JSON export</label>
     <textarea id="json-input" placeholder='{ "version": 2, "vault": [ { "name": "Elden Ring" } ], "played": [ ... ] }
 

@@ -22,10 +22,13 @@
   const VM = window.VaultMatch;
   const KEY_DATA = 'vaultData';
   const KEY_ENABLED = 'enabled';
+  const KEY_AUTOSCAN = 'autoScan';
 
   const $ = (id) => document.getElementById(id);
   const enabledToggle = $('enabled-toggle');
   const toggleState = $('toggle-state');
+  const autoscanToggle = $('autoscan-toggle');
+  const autoscanState = $('autoscan-state');
   const jsonInput = $('json-input');
   const fileInput = $('file-input');
   const loadBtn = $('load-btn');
@@ -191,10 +194,14 @@
       return;
     }
     try {
-      const res = await storageGet([KEY_DATA, KEY_ENABLED]);
+      const res = await storageGet([KEY_DATA, KEY_ENABLED, KEY_AUTOSCAN]);
       const isOn = res[KEY_ENABLED] === true;   // default OFF unless explicitly enabled
       enabledToggle.checked = isOn;
       toggleState.textContent = isOn ? 'On' : 'Off';
+
+      const scanOn = res[KEY_AUTOSCAN] === true;   // default OFF
+      autoscanToggle.checked = scanOn;
+      autoscanState.textContent = scanOn ? 'On' : 'Off';
 
       const d = res[KEY_DATA];
       const msg = statusMsg(d);
@@ -215,6 +222,14 @@
     toggleState.textContent = isOn ? 'On' : 'Off';
     if (!hasStorage) { setStatus('Storage unavailable.', 'err'); return; }
     try { await storageSet({ [KEY_ENABLED]: isOn }); }
+    catch (e) { setStatus('Could not save toggle: ' + e.message, 'err'); }
+  });
+
+  autoscanToggle.addEventListener('change', async () => {
+    const isOn = autoscanToggle.checked;
+    autoscanState.textContent = isOn ? 'On' : 'Off';
+    if (!hasStorage) { setStatus('Storage unavailable.', 'err'); return; }
+    try { await storageSet({ [KEY_AUTOSCAN]: isOn }); }
     catch (e) { setStatus('Could not save toggle: ' + e.message, 'err'); }
   });
 

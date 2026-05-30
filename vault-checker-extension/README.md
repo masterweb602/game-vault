@@ -26,6 +26,23 @@ until you open the popup and flip the **Detection** switch **On**. When OFF both
 content scripts are fully inert. State is saved in `chrome.storage.local`
 (`enabled`, default `false`).
 
+## Auto-scan
+A separate **Auto-scan** toggle (also OFF by default) marks game names *inline* on
+any page as you scroll. When On it watches page structure (links, list items,
+headings, card/title text, image alt) with an `IntersectionObserver` +
+`MutationObserver` — **passive, no polling** — filters out non-games (UI/nav
+words, platforms, years/dates, scores, company names, pure numbers/gibberish),
+cleans each name and matches it against your vault, then places a small inline
+mark: green **✓** in vault · teal **✓** completed · red **✗** not in vault.
+
+- Independent of **Detection** — manual text selection is unaffected; you can run
+  either, both, or neither.
+- Fully inert when off (no observers, no page changes). Turning it off removes all
+  inline marks.
+- Detected names are accumulated into three lists in `chrome.storage.local`
+  (`scanResults`, with each entry's source URL) for an upcoming results view.
+  This data is **preserved** when you toggle Auto-scan off.
+
 ## Auto-sync (recommended — no manual upload)
 The extension syncs your **full game database** straight from a Game Vault page
 (vault + played + every custom DB), so you never have to export/upload by hand,
