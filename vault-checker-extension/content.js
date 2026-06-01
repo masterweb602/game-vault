@@ -340,8 +340,8 @@
    * / SPA pages). NO polling. Reuses the same vault index, threshold and
    * playedSet as manual Detection. Independent toggle; OFF by default and
    * fully inert when off. Manual select is untouched. */
-  const MARK_COLOR = { done: '#38bdf8', hit: '#4ade80', miss: '#f87171' };
-  const MARK_GLYPH = { done: '✓', hit: '✓', miss: '✗' };
+  const MARK_COLOR = { done: '#38bdf8', hit: '#4ade80', partial: '#fbbf24', miss: '#f87171' };
+  const MARK_GLYPH = { done: '✓', hit: '✓', partial: '≈', miss: '✗' };
   // Candidate TITLE elements only: headings, links, and explicit title/name
   // class hooks. We deliberately exclude li / generic containers / img[alt] so
   // we mark the prominent game title, not whole rows or surrounding metadata.
@@ -445,7 +445,8 @@
   function placeMark(el, state, score) {
     const badge = document.createElement('span');
     badge.setAttribute('data-vc-mark', state);
-    // Append the rounded confidence % for matches (✓92 / ✓100); misses stay just ✗.
+    // Append the rounded confidence % for matches and partials (✓92 / ✓100 /
+    // ≈64); true misses stay just ✗.
     const pct = (state !== 'miss' && typeof score === 'number') ? Math.round(score * 100) : '';
     badge.textContent = MARK_GLYPH[state] + pct;
     badge.style.cssText = 'display:inline-block;margin-left:4px;font-weight:700;' +
@@ -530,6 +531,21 @@
     try { return !el.querySelector(SCAN_SELECTOR); } catch (e) { return true; }
   }
 
+  // Best similarity (0..1) of `norm` to any vault item, ignoring matchOne's
+  // threshold + sequel/edition guards — so we can show how close a non-match is.
+  // Pure read over the existing engine API (idx.getCandidates + VM.stringSim);
+  // no engine changes. Returns 0 when nothing is reasonably close.
+  function nearestScore(idx, norm) {
+    if (!idx || !norm) return 0;
+    const cands = idx.getCandidates(norm, 200);
+    let best = 0;
+    for (let i = 0; i < cands.length; i++) {
+      const sim = VM.stringSim(norm, cands[i]._norm, 0.3);
+      if (sim > best) best = sim;
+    }
+    return best;
+  }
+
   function processEl(el) {
     if (!el || el.nodeType !== 1 || el.hasAttribute('data-vc-scanned')) return;
     const idx = ensureIndex();
@@ -541,14 +557,18 @@
     if (!clean || isExcluded(clean)) { el.setAttribute('data-vc-scanned', 'skip'); return; }
     const m = idx.matchOne(clean, fuzzy, getThreshold());   // fuzzy off = exact path
     let state, matchName = null, db = '', score = null;
-    if (!m) {
-      state = 'miss';
-    } else {
+    if (m) {
       matchName = m.item.name;
       const rawNorm = VM.normalize(m.item._raw || m.item.name);
       state = playedSet.has(rawNorm) ? 'done' : 'hit';
       db = (vaultData && vaultData.dbMap && vaultData.dbMap[rawNorm]) || '';
       score = m.score;
+    } else {
+      // No vault match — show how close the nearest item is so there's never a
+      // bare miss with no info. > 0.3 = yellow "partial"; otherwise a true miss.
+      const best = nearestScore(idx, VM.normalize(clean));
+      if (best > 0.3) { state = 'partial'; score = best; }
+      else { state = 'miss'; }
     }
     placeMark(el, state, score);
     collectResult(state, clean, matchName, db, score);
