@@ -67,6 +67,8 @@
   function normalize(str) {
     if (!str) return '';
     let s = str.toLowerCase();
+    s = s.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, ' ');
+    s = s.replace(/\b(third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b/g, m => ({third:'3',fourth:'4',fifth:'5',sixth:'6',seventh:'7',eighth:'8',ninth:'9',tenth:'10'})[m]);
     s = s.replace(APOSTROPHE_RX, '');     // remove apostrophes (Assassin's → Assassins)
     s = s.replace(TM_RX, ' ');
     s = s.replace(PAREN_RX, ' ');         // strip (...) [...] {...}
