@@ -442,10 +442,12 @@
     return (el.textContent || '').trim();
   }
 
-  function placeMark(el, state) {
+  function placeMark(el, state, score) {
     const badge = document.createElement('span');
     badge.setAttribute('data-vc-mark', state);
-    badge.textContent = MARK_GLYPH[state];
+    // Append the rounded confidence % for matches (✓92 / ✓100); misses stay just ✗.
+    const pct = (state !== 'miss' && typeof score === 'number') ? Math.round(score * 100) : '';
+    badge.textContent = MARK_GLYPH[state] + pct;
     badge.style.cssText = 'display:inline-block;margin-left:4px;font-weight:700;' +
       'font-size:12px;line-height:1;vertical-align:baseline;pointer-events:none;' +
       'color:' + MARK_COLOR[state] + ';';
@@ -548,7 +550,7 @@
       db = (vaultData && vaultData.dbMap && vaultData.dbMap[rawNorm]) || '';
       score = m.score;
     }
-    placeMark(el, state);
+    placeMark(el, state, score);
     collectResult(state, clean, matchName, db, score);
   }
 
