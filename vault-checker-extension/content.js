@@ -561,25 +561,54 @@
     }
   }
 
+  // True if the element is on screen or within one viewport-margin of it. Uses
+  // the same 120px margin as the IntersectionObserver's rootMargin so the two
+  // paths agree on what counts as "near". 0×0 / unrendered elements are NOT
+  // near (let the IO catch them once laid out).
+  const NEAR_MARGIN = 120;
+  function isNearViewport(el) {
+    let r;
+    try { r = el.getBoundingClientRect(); } catch (e) { return false; }
+    if (!r || (r.width === 0 && r.height === 0)) return false;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    return r.bottom >= -NEAR_MARGIN && r.top <= vh + NEAR_MARGIN &&
+           r.right  >= -NEAR_MARGIN && r.left <= vw + NEAR_MARGIN;
+  }
+
+  // Decide what to do with one candidate. Virtualized lists (RAWG/React) create
+  // and destroy cards faster than the async IntersectionObserver fires, so any
+  // candidate already on/near screen is processed+marked IMMEDIATELY; off-screen
+  // ones are handed to the IO for when they scroll in.
+  function registerCandidate(el) {
+    if (!io || !el || el.nodeType !== 1) return 'skip';
+    if (el.hasAttribute && el.hasAttribute('data-vc-scanned')) return 'skip';
+    if (inSkippedRegion(el)) return 'skip';   // don't touch nav/aside/form regions
+    if (isNearViewport(el)) {
+      io.unobserve(el);   // drop any pending observation; we handle it now
+      processEl(el);
+      return 'immediate';
+    }
+    io.observe(el);
+    return 'observed';
+  }
+
   function observeCandidates(root) {
     if (!io) return;
     let els;
     try { els = (root || document).querySelectorAll(SCAN_SELECTOR); } catch (e) { return; }
-    for (const el of els) {
-      if (el.hasAttribute && el.hasAttribute('data-vc-scanned')) continue;
-      if (inSkippedRegion(el)) continue;   // don't observe nav/aside/form regions
-      io.observe(el);
-    }
+    for (const el of els) registerCandidate(el);
   }
 
   function onMutations(muts) {
     for (const mu of muts) {
       for (const node of mu.addedNodes) {
         if (!node || node.nodeType !== 1) continue;
-        if (node.matches && node.matches(SCAN_SELECTOR) && !node.hasAttribute('data-vc-scanned')) {
-          if (io) io.observe(node);
-        }
-        observeCandidates(node);
+        // The added node itself may be a candidate (RAWG cards are added whole);
+        // route it through registerCandidate so an on-screen card is marked now,
+        // not on a later IO tick that may never come before it's recycled away.
+        if (node.matches && node.matches(SCAN_SELECTOR)) registerCandidate(node);
+        observeCandidates(node);   // and its descendants
       }
     }
   }

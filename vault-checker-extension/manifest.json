@@ -23,7 +23,14 @@
       "all_frames": false
     },
     {
-      "matches": ["file:///*/game-vault.html", "https://masterweb602.github.io/game-vault/*"],
+      "matches": ["file:///*"],
+      "include_globs": ["*game-vault.html"],
+      "js": ["match-engine.js", "sync.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://masterweb602.github.io/game-vault/*"],
       "js": ["match-engine.js", "sync.js"],
       "run_at": "document_idle",
       "all_frames": false
